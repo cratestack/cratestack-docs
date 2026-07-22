@@ -48,14 +48,23 @@ contract every list route already has:
 GET /transactions?limit=20&offset=40&sort=-postedAt
 ```
 
-- both are optional `Int`s; a non-numeric value is a `400` with a
-  message naming the bad parameter
-- **`limit` is not defaulted and not capped.** Omitting it returns
-  every row from `offset` onward, in one response, and — per the
-  `hasNextPage` semantics below — that response reports itself as the
-  final page. If you need an enforced page-size ceiling, apply it in
-  your own policy or gateway layer; the framework doesn't impose one.
+- both are optional `Int`s; a non-numeric value or a negative value is
+  a `400` naming the specific problem
+- **`limit` is capped at `MAX_LIST_LIMIT` (1000), and omitting it is
+  not "no limit."** An explicit `limit` above the cap is a `400`.
+  Omitting `limit` entirely defaults it to the cap — it does *not*
+  fall through to an unbounded fetch, so `GET /transactions` with no
+  `limit` at all still only returns (at most) the first 1000 rows
+  matching the read policy and any `where` filter
 - `offset` defaults to `0` when omitted
+- **`MAX_LIST_LIMIT` is a hard ceiling, not per-model configurable.**
+  Every generated list route enforces the same constant
+  (`cratestack_core::page::MAX_LIST_LIMIT`, currently `1000`),
+  regardless of whether the model is `@@paged` — a non-paged model's
+  list route caps an omitted or over-limit `limit` exactly the same
+  way. There is no schema-level override today; if your use case
+  genuinely needs a different ceiling, that's a framework-level
+  change, not something you can raise per model.
 
 RPC transport takes the same two keys in the unary call's input object
 (`{"limit": 20, "offset": 40}` for `model.Transaction.list`) — the
@@ -83,11 +92,10 @@ Canonical shape: `cratestack_core::page::{Page, PageInfo}`.
   filter, ignoring `limit`/`offset`. Computed with a second query (a
   `COUNT` over the same filtered predicate) run alongside the list
   query — a paged list costs two round trips to the database, not one.
-- `pageInfo.limit` / `pageInfo.offset` — echo exactly what the request
-  supplied (`null` if the caller omitted `limit`)
-- `pageInfo.hasNextPage` — `false` whenever `limit` was omitted (an
-  unbounded fetch is definitionally the last page); otherwise
-  `offset + limit < totalCount`
+- `pageInfo.limit` — the limit actually applied, including the
+  `MAX_LIST_LIMIT` default when the request omitted it (never `null`)
+- `pageInfo.offset` — echoes exactly what the request supplied
+- `pageInfo.hasNextPage` — `offset + limit < totalCount`
 - `pageInfo.hasPreviousPage` — `offset > 0`
 
 A non-`@@paged` model's list route is unaffected — it keeps returning a
@@ -141,9 +149,10 @@ Rust/Dart selection/projection API this composes with.
 1. **not cursor-based** — no opaque cursor token, no keyset pagination.
    `offset` on a table that's being written to concurrently can skip or
    repeat rows across page fetches, same as any offset-based scheme.
-2. **not a size limit enforcement mechanism** — see the query-contract
-   note above; nothing in the framework stops a caller from requesting
-   every row in one shot.
+2. **not a per-model-tunable size limit** — `MAX_LIST_LIMIT` rejects
+   pathological requests, but it's one fixed constant for the whole
+   framework. It's a safety ceiling, not a page-size policy you can set
+   per model or per caller — build that on top if you need it.
 3. **not free** — every paged fetch is two queries (list + count), not
    one. A model that's always fetched in full (small reference tables)
    doesn't want `@@paged`.
