@@ -42,7 +42,8 @@
           "guides/offline-first-sqlite",
           "guides/async-io-with-embedded-sqlite",
           "guides/materialized-views",
-          "guides/rpc-transport"
+          "guides/rpc-transport",
+          "guides/typescript-client-generation"
         ]
       },
       {
