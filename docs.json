@@ -73,6 +73,7 @@
         "group": "Tooling",
         "pages": [
           "tooling/cli-install",
+          "tooling/schema-diff",
           "tooling/editor-tooling"
         ]
       },
