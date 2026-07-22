@@ -69,9 +69,38 @@ buckets behind a `Mutex`. It is appropriate for:
 2. development and testing
 3. per-pod fairness in deployments where the upstream load balancer already shards by principal
 
-Multi-replica deployments need a shared store. The `RateLimitStore` trait
-is async and dyn-compatible — Redis-backed implementations are the typical
-choice:
+Multi-replica deployments need a shared store.
+
+### Redis (`cratestack-redis`)
+
+`RedisRateLimitStore` backs the same trait with a Redis hash per bucket key
+and a Lua script that does the read-refill-decrement-write cycle in one
+round-trip, so concurrent replicas can't race the same bucket:
+
+```rust
+use cratestack_axum::ratelimit::{RateLimitConfig, RateLimitLayer};
+use cratestack_redis::RedisRateLimitStore;
+use std::sync::Arc;
+
+let store = Arc::new(RedisRateLimitStore::open(
+    "redis://127.0.0.1/",
+    "bank:prod", // key prefix; the store appends `:rl:<sha256(key)>`
+)?);
+let config = RateLimitConfig::new(/* burst */ 60, /* refill */ 1.0);
+
+let router = cratestack_schema::axum::router(db, procedures, JsonCodec, auth)
+    .layer(RateLimitLayer::new(store, config));
+```
+
+Each `consume` refreshes the bucket's `EXPIRE` to the time it would take to
+refill from empty (clamped to 24h), so idle buckets evict themselves —
+no separate reaper needed even under a high-cardinality, tenant-scoped key
+space.
+
+### Writing a custom store
+
+The `RateLimitStore` trait is async and dyn-compatible, so a store other
+than the two shipped above is a small surface to implement:
 
 ```rust
 #[async_trait::async_trait]
@@ -106,8 +135,10 @@ caps how many of those retries actually run the handler.
    should swap to a TTL-aware store.
 2. The token bucket is wall-clock-driven; a process pause longer than one
    bucket-fill window grants a fresh burst on resume.
-3. The shipped store does not persist across restarts. That is the right
-   choice for per-pod fairness and the wrong choice for global enforcement.
+3. `InMemoryRateLimitStore` does not persist across restarts. That is the
+   right choice for per-pod fairness and the wrong choice for global
+   enforcement — reach for `RedisRateLimitStore` when buckets need to
+   survive a restart or be shared across replicas.
 
 ## Read Next
 
