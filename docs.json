@@ -72,6 +72,7 @@
       {
         "group": "Tooling",
         "pages": [
+          "tooling/cli-install",
           "tooling/editor-tooling"
         ]
       },
