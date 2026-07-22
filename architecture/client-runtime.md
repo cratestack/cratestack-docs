@@ -814,6 +814,47 @@ cargo run -p cratestack-cli -- generate-dart \
   --base-path "/api"
 ```
 
+### Detecting drift in CI
+
+`generate-dart` and `generate-typescript` both accept `--check`: it generates in
+memory and diffs the result file-by-file against `--out` instead of writing.
+It exits `0` when they match, and non-zero with a list of the drifted files
+(modified, missing, or unexpected) when they don't — without touching anything
+under `--out`. That covers both a schema that changed since the package was
+last regenerated, and a committed generated file that was hand-edited.
+
+Wire it into CI as a guard that fails before a stale client ships silently:
+
+```yaml
+# .github/workflows/check-generated-clients.yml
+name: check-generated-clients
+on: pull_request
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo run -p cratestack-cli -- generate-dart \
+            --schema services/auth-service/schema/auth.cstack \
+            --out frontends/your-mobile-app/packages/gen_auth_client \
+            --library-name gen_auth_client \
+            --base-path /api \
+            --check
+          cargo run -p cratestack-cli -- generate-typescript \
+            --schema services/blog-service/schema/blog.cstack \
+            --out frontends/web-app/packages/blog-client \
+            --package-name @example/blog-client \
+            --base-path /api \
+            --check
+```
+
+A non-zero exit fails the job and prints which files drifted, so the fix is
+`cratestack generate-dart`/`generate-typescript` without `--check` before
+re-pushing.
+
 Current enum limitation:
 
 1. generated Rust and Dart clients understand schema enums
