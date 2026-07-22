@@ -30,6 +30,7 @@ cargo run -p cratestack-cli -- generate-typescript \
 | `--package-name` | no | `cratestack-client` | written into the generated `package.json`; also derives the client class name (see below) |
 | `--base-path` | no | `/api` | default API base path baked into the runtime |
 | `--template-dir` | no | none | override individual `.j2` templates; anything not overridden falls back to the bundled default |
+| `--full-selection` | no | off | emit fully-required model interfaces instead of the projection-driven optional-everywhere default — see [Full selection: fully-required model types](#full-selection-fully-required-model-types) |
 
 The client class name is derived from `--package-name`: non-alphanumeric characters become spaces, the result is PascalCased, and `Client` is appended. `@example/blog-client` becomes `ExampleBlogClientClient`. Pick a package name with that in mind if the resulting class name matters to you.
 
@@ -45,6 +46,7 @@ let package = generate_package(&schema, &TypeScriptGeneratorConfig {
     package_name: "@example/blog-client".to_owned(),
     base_path: "/cstack".to_owned(),
     template_dir: None,
+    full_selection: false,
 })?;
 
 for file in package.files {
@@ -126,6 +128,45 @@ Every generated package ships `package.json`, `tsconfig.json`, `README.md`, and 
 | `src/react-query.ts` | ✓ | ✓ | `useXListQuery`, `useCreateXMutation`, etc. — TanStack Query hooks over the client |
 
 The per-model classes in `client.ts` aren't hardcoded fetch calls duplicated per endpoint — each method is a few lines that delegates into the single shared runtime class, so the actual request/serialization/error-handling logic exists once regardless of how many models the schema declares.
+
+## Full selection: fully-required model types
+
+By default, every scalar field on a generated model interface is optional — because a REST `list`/`get` call can return a partial projection via `fields`/`include`, the static type has to allow for any field being absent from the wire response:
+
+```ts
+export interface Widget {
+  id?: number;
+  name?: string;
+  weight?: number | null;
+}
+```
+
+That's correct for a consumer who sometimes requests partial objects, but it's dead weight for a consumer whose runtime never does — every read of `widget.id` has to be narrowed or non-null-asserted even though the field is always present in practice. Pass `--full-selection` to opt a generation run out of that:
+
+```bash
+cargo run -p cratestack-cli -- generate-typescript \
+  --schema crates/cratestack-pg/tests/fixtures/blog.cstack \
+  --out packages/blog-client \
+  --package-name @example/blog-client \
+  --base-path /cstack \
+  --full-selection
+```
+
+With the flag, the same `Widget` (`id Int @id`, `name String`, `weight Int?` in the schema) becomes:
+
+```ts
+export interface Widget {
+  id: number;
+  name: string;
+  weight?: number | null;
+}
+```
+
+Field presence now tracks the schema's own nullability instead of wire-projection optionality: `id`/`name` are required because the schema declares them non-nullable, and `weight` stays optional because the schema declares it nullable (`Int?`) — that part of the contract doesn't change. Only the plain per-model read interface is affected. `Create{Model}Input` already derives optionality from schema nullability and is untouched; `Update{Model}Input` stays entirely optional, since PATCH semantics mean every field is inherently a partial update regardless of this flag.
+
+This is a per-invocation choice, not a schema-level one — deliberately. Whether a given client always fetches full objects or sometimes uses `fields`/`include` is a property of how that particular consumer calls the API, not of the schema itself; two client packages generated from the same schema can pick differently. Omitting the flag leaves existing generated output unchanged.
+
+**Only use `--full-selection` for a consumer that truly never sends partial `fields`/`include` selection.** If that consumer's runtime later starts using projection, the generated types will silently no longer match what the server can actually omit from the response — there's no runtime check tying the flag to actual call sites.
 
 ## Using the REST client
 
