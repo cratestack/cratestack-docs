@@ -8,7 +8,8 @@ description: Reference for `.cstack` field attributes, including the banking-rea
 This reference covers every supported field-level attribute. Model-level
 (`@@`) attributes live in their dedicated guides — see
 [audit log](../guides/audit-log) for `@@audit`,
-[soft delete](../guides/soft-delete) for `@@soft_delete`, and
+[soft delete](../guides/soft-delete) for `@@soft_delete`,
+[pagination](../guides/pagination) for `@@paged`, and
 [auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`.
 
 ## Identity & Defaults

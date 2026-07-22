@@ -57,6 +57,7 @@
           "guides/transaction-isolation",
           "guides/rate-limiting",
           "guides/soft-delete",
+          "guides/pagination",
           "guides/migrations"
         ]
       },
