@@ -9,7 +9,35 @@ A materialized view stores the result of its `SELECT` as physical rows and serve
 
 CrateStack supports materialized views on the server (Postgres) backend via `@@materialized`. They are not supported on the embedded (SQLite) backend — building such a schema for the embedded target is a hard compile error referencing [ADR 0003](../internals/views-adr).
 
-For the schema syntax, see the [Views reference](../reference/views). This guide is about **when to use materialization** and **how to refresh**.
+For the full syntax reference, see [Views](../reference/views). This guide is about **when to use materialization** and **how to refresh**.
+
+## Schema declaration
+
+```cstack
+view AccountBalance from Account, Transfer {
+  accountId Uuid     @id  @from(Account.id)
+  balance   Decimal
+
+  @@materialized
+  @@server_sql("""
+    SELECT a.id AS account_id,
+           a.opening_balance
+           + COALESCE(SUM(t.amount), 0) AS balance
+    FROM   account a
+    LEFT JOIN transfer t ON t.account_id = a.id
+    GROUP  BY a.id, a.opening_balance
+  """)
+
+  @@allow("read", auth().id == accountId)
+}
+```
+
+`@@materialized` marks the view as a Postgres materialized view rather than a plain saved query. It requires:
+
+* **`@@server_sql`** — the SQL body, server-dialect only. `@@materialized` cannot be paired with the portable `@@sql` shorthand; the parser rejects that combination at parse time.
+* **`@id`** on exactly one field — `@@no_unique` is rejected for materialized views, since concurrent refresh needs a unique index to refresh against.
+
+The macro emits `CREATE MATERIALIZED VIEW` plus a backing `CREATE UNIQUE INDEX` during migration generation, and generates the `refresh()` method used throughout the rest of this guide. `@@materialized` is server-only — building an embedded target with one in scope is a hard compile error referencing [ADR 0003](../internals/views-adr).
 
 ## When materialization is the right tool
 
