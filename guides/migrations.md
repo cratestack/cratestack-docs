@@ -161,5 +161,6 @@ idempotently by `ensure_migrations_table`.
 ## Read Next
 
 1. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr) — how `.cstack` changes turn into the SQL this runner applies
-2. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
-3. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
+2. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
+3. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
+4. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
