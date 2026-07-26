@@ -7,6 +7,8 @@ description: Five batch primitives — `batch_get`, `batch_create`, `batch_updat
 
 External producers send rows in groups: a webhook delivers ten transactions, a CSV import fans out a thousand line items, an offline-first device flushes its outbox after reconnecting. CrateStack exposes five batch ORM primitives that take those groups whole, run each item independently, and return a structured envelope per item so the caller can split successes from failures without unwrapping a flat error.
 
+This page is about that server-side ORM concept — a handler deliberately calling `batch_create`/`batch_update`/etc. with an array of rows. It's unrelated to `@cratestack/api`'s `createBatchLink`, which is client-side automatic RPC-call coalescing (N small calls a caller already made → 1 `/rpc/batch` request, transparently). See [RPC transport: automatic call coalescing](./rpc-transport#automatic-call-coalescing-with-cratestackapi) for that.
+
 ## Wire envelope
 
 Every batch call returns a [`BatchResponse<M>`](https://docs.rs/cratestack-core/latest/cratestack_core/struct.BatchResponse.html) with a `Vec<BatchItemResult<M>>` and a summary count:

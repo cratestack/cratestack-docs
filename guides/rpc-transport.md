@@ -1,6 +1,6 @@
 ---
 title: RPC transport
-description: Pick `transport rpc` in your `.cstack` schema to swap REST routes for `POST /rpc/{op_id}` + `POST /rpc/batch`. Unary, batch, and streaming work today; WebSocket + subscriptions are designed but not yet built.
+description: Pick `transport rpc` in your `.cstack` schema to swap REST routes for `POST /rpc/{op_id}` + `POST /rpc/batch`. Unary, batch, and streaming work today, along with a composable `RpcLink` client middleware chain and `@cratestack/api`'s automatic batch-coalescing link; WebSocket + subscriptions are designed but not yet built.
 ---
 
 # RPC transport
@@ -303,6 +303,85 @@ The `code` field uses **gRPC-style lowercase strings**: `not_found`, `invalid_ar
 
 HTTP status codes match the error category. Clients that catch by status work unchanged from REST; clients that parse the body get a stable string vocabulary.
 
+## Client middleware — the `RpcLink` chain
+
+Before today, the generated TypeScript RPC client had exactly two extension points: a single `fetch` override and a single `headers` value. That's fine for one concern, but layering independent ones — logging, retry, auth-refresh — meant one consumer's override clobbering another's; there was no way to compose them.
+
+`CratestackRpcClientOptions` now takes a `links?: RpcLink[]` array instead, modeled on [tRPC's Links](https://trpc.io/docs/client/links) and Dio's interceptor chain: each link wraps the next, terminating in the real network call. An empty or omitted `links` array is a true no-op — byte-identical to not having the option at all, so existing generated clients are unaffected until you opt in.
+
+The types live in a new generated `src/links.ts`, re-exported from the client's `index.ts`:
+
+```ts
+export interface RpcLinkRequest {
+  readonly kind: "unary" | "batch";
+  readonly opId: string;
+  readonly input: unknown;           // raw, pre-codec-encode
+  readonly headers: Headers;
+  readonly signal: AbortSignal | null;
+  readonly idempotencyKey?: string;
+  readonly codec: CratestackRpcCodec;
+  readonly fetchFn: typeof fetch;
+  readonly urls: { unary(opId: string): string; batch(): string };
+}
+
+export interface RpcLinkResponse { readonly response: Response; }
+
+export type RpcLinkNext = (request: RpcLinkRequest) => Promise<RpcLinkResponse>;
+
+export type RpcLink = (request: RpcLinkRequest, next: RpcLinkNext) => Promise<RpcLinkResponse>;
+
+// Reference link, ships in every generated project:
+export function createLoggerLink(logger?: Pick<Console, "info" | "error">): RpcLink;
+```
+
+Wire one or more links in at construction time:
+
+```ts
+import { ExampleWidgetClientClient } from "@example/widget-client";
+import { createLoggerLink } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", {
+  links: [createLoggerLink()],
+});
+```
+
+Two composition rules to keep straight:
+
+1. **`next` re-runs everything below it in the chain** — the real fetch *and* any links declared after it — never "just" the terminal fetch. That's what lets a retry link compose with an auth-refresh link declared earlier: calling `next` from the retry link re-invokes the auth-refresh link's own `next` chain on each attempt, not a shortcut straight to the network.
+2. **`stream()` calls bypass the chain entirely.** A link that wants to inspect a response body would need to clone/replay a streamed body, which defeats the point of streaming — so `call()` and `batch()` go through `links`, `stream()` doesn't. If you need logging or auth-refresh on streaming calls today, wrap the call site itself rather than relying on a link.
+
+This is **RPC-transport (`transport rpc`) only.** The REST binding (`transport rest`) and the gRPC-Web binding don't have a link chain yet — that's a future ticket, not an oversight.
+
+### Automatic call coalescing with `@cratestack/api`
+
+[`@cratestack/api`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-api) is a new, hand-written (not generated) npm package, published standalone with provenance, inspired by [batshit](https://github.com/yornaath/batshit). It ships `createBatchLink()` — a batshit/tRPC-`httpBatchLink`/Apollo-`BatchHttpLink`-style automatic batch scheduler, implemented as an `RpcLink` so it composes with `createLoggerLink()` or any other link instead of being a `fetch` override that would clobber them. It transparently collapses multiple unary RPC calls issued within the same tick into one `POST /rpc/batch` request — the same batch envelope described [above](#batch-post-rpcbatch), just assembled for you instead of hand-built.
+
+```ts
+import { createBatchLink, createLoggerLink } from "@cratestack/api";
+import { CratestackRpcRuntime } from "./generated/runtime";
+
+const runtime = new CratestackRpcRuntime("https://api.example.com", {
+  links: [createLoggerLink(), createBatchLink()],
+});
+const client = new MyGeneratedClient(runtime);
+
+// These three calls, issued in the same tick, become ONE /rpc/batch request:
+const [a, b, c] = await Promise.all([
+  client.widgets.get(1), client.widgets.get(2), client.widgets.get(3),
+]);
+```
+
+Semantics worth knowing before you reach for it:
+
+| Behavior | Detail |
+|---|---|
+| Batching window | A microtask by default — same-tick calls collapse. Widen it across ticks with the `windowMs` option. |
+| Dedup | Only collapses calls that share an explicit `idempotencyKey`. Unmarked calls are never auto-collapsed, even if textually identical — blindly merging two unmarked mutations would be unsafe, and the server does no dedup of its own. |
+| Aggregate headers | The `/rpc/batch` request reuses the **first** queued call's headers. Per-call custom headers on later calls in the same window are not applied to the aggregate — put anything that must apply batch-wide on the runtime's own `headers` option instead. |
+| Abort | Cancelling an individual call only cancels it pre-flush. Once its batch has been sent, the call rides the in-flight batch to completion. |
+
+**This is unrelated to the server-side ORM batch primitives in [Batches](./batches)** (`batch_get`/`batch_create`/`batch_update`/`batch_delete`/`batch_upsert`). Both are called "batch" and both end up as one round trip, but they solve different problems at different layers: `createBatchLink` is client-side RPC-call coalescing — turning N small HTTP requests the *caller* issued into one `/rpc/batch` request, transparently, with no change to caller code. The ORM batch primitives are a server-side API a handler calls deliberately, taking an array of rows and processing them with per-item success/failure. Don't conflate the two — a call through `createBatchLink` still dispatches to whatever the schema's routes do per op; it doesn't imply the handler on the other end is using `batch_create` internally.
+
 ## When to pick RPC
 
 | You want | Pick |
@@ -327,4 +406,5 @@ Streaming shipped without ceremony because the shape was concrete — list-retur
 
 1. [ADR 0005: RPC Binding for `transport rpc` schemas](../internals/rpc-transport-adr) — the canonical design, including the design decisions made along the way (URL routing, dispatcher delegation, error wire shape) and the deferred items.
 2. [Transport architecture](../architecture/transport-architecture) — the codec / framing / envelope model that both bindings sit on top of.
-3. [Idempotency](./idempotency), [Batches](./batches) — closely related primitives that work the same way on either binding.
+3. [Idempotency](./idempotency), [Batches](./batches) — closely related primitives that work the same way on either binding. Note that `Batches` covers the server-side ORM primitives, a different concept from the client-side `createBatchLink` covered above.
+4. [TypeScript client generation](./typescript-client-generation) — where the generated `CratestackRpcRuntime` and its `links` option are constructed day-to-day.

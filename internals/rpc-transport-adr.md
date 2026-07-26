@@ -173,7 +173,16 @@ The wire design from this ADR's §3.4 (the rejected drafts of §3.4 in the local
 | #22 | CRUD over RPC unary + `POST /rpc/batch` | merged |
 | #23 | Uniform `RpcErrorBody` with gRPC-style codes | merged |
 | #24 | Streaming test coverage for `Sequence`-kind ops (no code change) | merged |
+| #182 | Composable `RpcLink` chain on the generated TypeScript client + standalone `@cratestack/api` (`createBatchLink`, `createLoggerLink`) | merged |
 | — | WS binding + `@@subscribe` directive + subscription runtime | pending — see above |
+
+## Addendum: automatic client-side batching (#182)
+
+The "Batching" motivation in this ADR's Context section (doing N writes in one round-trip) was scoped to the **server**: `POST /rpc/batch` accepting a hand-assembled sequence of frames. It didn't say anything about who assembles that sequence — every caller had to hand-build the `RpcRequest[]` array itself.
+
+#182 closes that loop from the client side without changing this ADR's server-side design at all. The generated TypeScript RPC client gained a composable `RpcLink` chain (`CratestackRpcClientOptions.links`, modeled on tRPC's Links / Dio's interceptor chain), and a new standalone package, `@cratestack/api`, ships `createBatchLink()` — an `RpcLink` that transparently coalesces same-tick unary calls into one `POST /rpc/batch` request. The wire shape, per-frame error isolation, and no-in-batch-dependencies rules above are all unchanged; `createBatchLink` is purely a client-side scheduler sitting in front of the same batch endpoint. See the [RPC transport guide](../guides/rpc-transport#client-middleware-the-rpclink-chain) for the full design and usage.
+
+This is TypeScript/RPC-transport only for now — the REST binding and gRPC-Web don't have an equivalent link chain, and Rust/Dart clients don't have one either.
 
 ## Read Next
 

@@ -297,6 +297,8 @@ await client.widgets.create(input, { idempotencyKey: crypto.randomUUID() });
 
 Sequence-returning ops can be consumed as an async iterable via `runtime.stream(...)`. Today this only decodes JSON-array responses — the default runtime doesn't yet ship a CBOR-sequence decoder, so a server that picks `application/cbor-seq` for a streaming call will surface `CratestackRpcTransportError` until a decoder is wired in.
 
+`CratestackRpcClientOptions` also accepts a `links?: RpcLink[]` array for composing cross-cutting concerns (logging, retry, auth-refresh, automatic batch coalescing via `@cratestack/api`) in front of `call()`/`batch()` without one override clobbering another — see [RPC transport: client middleware](./rpc-transport#client-middleware-the-rpclink-chain) for the full design. `stream()` calls bypass `links` entirely.
+
 TanStack Query hooks are generated for RPC schemas too, with the same naming as REST (`useWidgetListQuery`, `useEchoNameQuery`/`useEchoNameMutation` depending on whether the procedure is declared `query` or `mutation`).
 
 ## Side-by-side: TypeScript, Dart, and Rust
