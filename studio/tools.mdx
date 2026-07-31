@@ -1,11 +1,11 @@
 ---
 title: Studio Power Tools
-description: SQL preview, drift detection, CSV/JSON export, schema search, and the audit log — the Phase 4 admin surface beyond CRUD.
+description: SQL preview, query plans, drift detection, CSV/JSON export, schema search, and the audit log — the admin surface beyond CRUD.
 ---
 
 # Studio Power Tools
 
-Phase 4 adds five surfaces on top of the
+These surfaces sit on top of the
 [read](./read-api) and [write](./write-api) APIs. They're optional —
 none of them change the CRUD contract — but they're what makes Studio
 useful as an admin tool rather than just a row browser.
@@ -13,7 +13,7 @@ useful as an admin tool rather than just a row browser.
 ## SQL preview
 
 ```
-GET /api/targets/:key/models/:model/sql?op=list|get|create|update|delete&pk=…
+GET /api/targets/:key/models/:model/sql?op=list|get|create|update|delete&pk=…&explain=true
 ```
 
 Renders the SQL Studio _would_ run for an operation without touching
@@ -36,6 +36,53 @@ curl 'http://127.0.0.1:7878/api/targets/catalog/models/Post/sql?op=update&pk=p1'
 
 API-backed targets return `501 UNSUPPORTED` — Studio doesn't render
 SQL it doesn't run.
+
+### Query plans (`explain=true`)
+
+Adding `explain=true` asks the driver to *plan* the rendered
+statement and returns the result in a `plan` field alongside the SQL:
+
+```bash
+curl 'http://127.0.0.1:7878/api/targets/catalog/models/Post/sql?op=list&explain=true'
+# {
+#   "driver": "sqlite",
+#   "sql": "SELECT json_object('id', \"id\", 'authorId', \"author_id\", …) AS row FROM \"posts\" …",
+#   "params": [ { "index": 1, "binding": "cursor (NULL on first page)", "kind": "text" } ],
+#   "plan": "SCAN posts USING INDEX sqlite_autoindex_posts_1"
+# }
+```
+
+<Frame caption="The same request from the UI — tick **Explain** next to **Show SQL**.">
+  <img src="/images/studio/studio-explain.png" alt="Studio SQL preview showing rendered SQL, bound parameters, and a SQLite query plan" />
+</Frame>
+
+This is the one part of the preview endpoint that reaches the
+database, which is why it's opt-in rather than on by default:
+rendering SQL is pure and instant, planning it is a round trip.
+
+Two guarantees worth stating plainly:
+
+- **Studio never runs `EXPLAIN ANALYZE`.** There is no config knob, no
+  query parameter, and no code path that emits it — so "plan this"
+  can never become "execute this".
+- **Only reads are planned.** `create` / `update` / `delete` return
+  the preview plus a note instead of a plan. Beyond the
+  defence-in-depth argument, the mutation previews bind placeholder
+  sample values, so asking Postgres to plan them would fail on type
+  inference rather than produce a plan worth reading.
+
+Per-dialect specifics:
+
+| Driver     | Statement issued        | Notes                                                                    |
+| ---------- | ----------------------- | ------------------------------------------------------------------------ |
+| Postgres   | `EXPLAIN <sql>`         | Plain `EXPLAIN`; costs and node types, no timings.                        |
+| SQLite     | `EXPLAIN QUERY PLAN <sql>` | Not bare `EXPLAIN`, which dumps SQLite's bytecode program rather than the `SCAN` / `SEARCH … USING INDEX` shape you actually want. |
+| API-backed | —                       | `501 UNSUPPORTED`, same as the SQL preview itself.                        |
+
+`op=get` needs a `pk=` to bind against; without one you get a note
+saying so rather than a plan. A backend that can't plan at all still
+returns the SQL preview you successfully asked for — a missing plan
+never costs you the preview.
 
 ## Drift
 
@@ -142,10 +189,50 @@ Entries are returned newest-first:
 }
 ```
 
-The buffer lives in process memory only — Studio is a local admin
-tool, not a logging pipeline. Restarting the binary clears the log.
 The UI's "Audit" button in the header opens an overlay listing the
-most recent 100 entries.
+most recent 100 entries:
+
+<Frame caption="The audit overlay after two edits to `catalog/Post`, newest first.">
+  <img src="/images/studio/studio-audit.png" alt="Studio audit overlay listing two UPDATE entries against catalog/Post with timestamps" />
+</Frame>
+
+### Persisting the log
+
+By default the ring buffer lives in process memory only, so restarting
+the binary clears it. Set `audit_file` to also append every entry to a
+JSONL file, replayed on boot:
+
+```toml
+[workspace]
+name = "acme"
+audit_file = ".cratestack-studio/audit.jsonl"   # relative to studio.toml
+```
+
+- **Opt-in.** Unset, Studio writes nothing to your filesystem.
+  Silently starting to drop a log file into someone's repo is a
+  behavioural change they didn't ask for.
+- **Studio-local, never your database.** The sink is a file next to
+  `studio.toml`. Studio has never created a table, and persisting
+  audit rows into the target's own schema would mean migrating the
+  user's database behind their back — wrong twice over for `ro`
+  targets and for API-only targets that have no database at all.
+- **Append-only, never rotated.** That's what makes it cheap to write
+  under a lock and safe to `tail -f`. Not rotating is deliberate: an
+  audit log that silently discards its own history is worse than no
+  audit log. The in-memory ring the API serves stays capped however
+  large the file grows.
+- **Ids resume across restarts.** Boot replays the file, keeps the
+  newest entries up to the cap, and continues numbering above the
+  highest id it saw — so resumed ids never collide with historical
+  ones.
+
+Failure handling is deliberately asymmetric:
+
+| When                   | Behavior                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| At boot                | **Fatal.** You asked for persistence explicitly; booting into a state where Studio silently isn't persisting would misreport what it's doing. |
+| On append, mid-flight  | Logged once at `error`, then demoted to `debug`. Losing an audit line is bad; refusing the CREATE/UPDATE/DELETE the operator asked for is worse. |
+| Torn or hand-edited line at replay | Skipped and counted, not fatal — a half-written tail from a `kill -9` must not brick boot. |
 
 ## Constraint errors → VALIDATION_ERROR
 
