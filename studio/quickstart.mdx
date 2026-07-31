@@ -15,16 +15,16 @@ Studio replaces the older `generate-studio` codegen scaffold from the
 0.3.x line. If you were generating a Leptos+Axum project per schema set,
 see the [migration](#migration-from-generate-studio) section.
 
-<Warning>
-**Phase 1d + 4 (current)** complete the rewrite. Phase 1d retires
-the one-text-box-per-field create + edit forms in favor of typed
-inputs (enum dropdowns, JSON textarea, `datetime-local`, numeric
-inputs). Phase 4 ships
-[SQL preview](./tools#sql-preview),
+<Note>
+The rewrite is complete. Studio today gives you typed create + edit
+forms (enum dropdowns, JSON textarea, `datetime-local`, numeric
+inputs), plus
+[SQL preview and query plans](./tools#sql-preview),
 [drift detection](./tools#drift),
 [CSV/JSON export](./tools#csv-json-export),
 [schema search](./tools#schema-search),
-an [audit log](./tools#audit-log), and a SQLSTATE →
+an [audit log](./tools#audit-log) that can
+[persist across restarts](./tools#persisting-the-log), and a SQLSTATE →
 [`VALIDATION_ERROR`](./tools#constraint-errors-validation_error)
 mapping so unique / foreign-key violations come back through the same
 per-field envelope as the in-process validators.
@@ -33,7 +33,7 @@ Reference pages: [Studio Read API](./read-api),
 [Studio Write API](./write-api),
 [Studio UI](./ui), [Studio Power Tools](./tools),
 [Studio Eject](./eject).
-</Warning>
+</Note>
 
 ## 1. Install The CLI
 
@@ -67,6 +67,7 @@ is a key, a schema path, and one of `[target.db]` / `[target.api]`:
 [workspace]
 name = "acme"
 default_mode = "ro"             # "ro" | "rw" — applied when a target omits `mode`
+# audit_file = ".cratestack-studio/audit.jsonl"   # optional; see below
 
 [[target]]
 key = "catalog"                 # URL-safe; used in routes and the target switcher
@@ -88,6 +89,11 @@ prefer_for = ["procedures"]     # which operations to route here instead of the 
 A target with neither `[target.db]` nor `[target.api]` is rejected at
 load time — Studio has no other way to reach data.
 
+The optional `audit_file` key persists Studio's own writes to an
+append-only JSONL file, replayed on boot. Left unset, the audit log
+lives in process memory only and Studio writes nothing to your
+filesystem — see [persisting the log](./tools#persisting-the-log).
+
 ## 3. Run It
 
 ```bash
@@ -102,17 +108,32 @@ cratestack studio run --config infra/studio.toml --bind 0.0.0.0:9000
 
 While Studio is running:
 
-| Endpoint        | Phase 0 behavior                                                |
-| --------------- | --------------------------------------------------------------- |
-| `GET /`         | Stub page with a link to `/api/health`.                          |
-| `GET /api/health` | JSON: workspace name + per-target `has_db` / `has_api` / `mode`. |
+| Endpoint          | Behavior                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `GET /`           | The Studio UI, when the binary was built with the default `embed-ui` feature. Otherwise a stub page pointing at `/api/health`. |
+| `GET /api/health` | Liveness JSON: `ok`, the workspace name, and how many targets loaded.                        |
+| `GET /api/targets`| The per-target detail (`key`, `mode`, `has_db`, `has_api`) — see the [read API](./read-api). |
 
 Quick smoke test:
 
 ```bash
 curl http://127.0.0.1:7878/api/health
-# {"ok":true,"workspace":"acme","targets":[{"key":"catalog","has_db":true,"has_api":true,"mode":"rw"}]}
+# {"ok":true,"workspace":"acme","target_count":3}
 ```
+
+Open `http://127.0.0.1:7878` and you get the browser UI against those
+targets:
+
+<Frame caption="Studio browsing a `rw` target. Sidebar = models in the schema; the RW badge and `+ New` only appear on read/write targets.">
+  <img src="/images/studio/studio-records.png" alt="CrateStack Studio records table showing the Post model with five rows" />
+</Frame>
+
+<Tip>
+Want to see this without wiring up a database first? The framework
+repo ships a dev harness that boots Studio against an in-memory SQLite
+workspace with seeded rows — see
+[Try it with demo data](./ui#try-it-with-demo-data).
+</Tip>
 
 ## 4. Multiple Schemas
 
@@ -230,12 +251,14 @@ If you were on the 0.3.x scaffold generator:
 3. Add a `[target.db]` block if you want direct DB browsing. The old
    generator's reverse-proxy mode mapped to `[target.api]` exclusively.
 
-If you forked the Leptos UI, you'll want to wait for Phase 2 — `cratestack
-studio eject --out ./fork` will then copy Studio's own sources into a
-workspace you can customize. In Phase 0 / 1 the `eject` subcommand
-returns `NotImplemented`.
+If you forked the Leptos UI, `cratestack studio eject --out ./fork`
+copies Studio's own sources into a workspace you can customize — see
+[Studio Eject](./eject).
 
 ## Phase roadmap
+
+Every phase of the rewrite has shipped; the table is kept as a record
+of what landed where.
 
 | Phase | Scope                                                                                                | Status        |
 | ----- | ---------------------------------------------------------------------------------------------------- | ------------- |
@@ -247,3 +270,4 @@ returns `NotImplemented`.
 | 3     | Write API: POST / PATCH / DELETE, validator pass-through, mode gate, inline create/edit/delete UI    | **Shipped**   |
 | 1d    | Typed pickers for enums, rich editors for JSON / DateTime / Decimal in the create + edit forms       | **Shipped**   |
 | 4     | SQL preview, drift, CSV/JSON export, schema search, audit log, SQLSTATE → VALIDATION_ERROR mapping   | **Shipped**   |
+| 4.1   | Query plans (`explain=true`), persistent audit log (`audit_file`)                                    | **Shipped**   |
