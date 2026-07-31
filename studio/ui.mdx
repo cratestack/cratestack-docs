@@ -17,11 +17,11 @@ workspace (it targets `wasm32-unknown-unknown`), so it has its own
 `Cargo.toml` and `Cargo.lock`. The two development paths below run it
 through a Trunk dev server alongside `cratestack studio run`.
 
-There are two ways to take the UI with you when you're done
-iterating: the [`embed-ui` cargo feature](./eject#bundle-the-ui-into-the-binary)
-bundles the SPA into the Studio binary so you can hand `cratestack` to
-a colleague, and [`cratestack studio eject`](./eject#eject-the-ui-sources)
-writes the sources to a writable directory you can fork.
+[`cratestack studio eject`](./eject) gives you a standalone Studio
+binary project with the UI already bundled in — no Trunk needed.
+Pass `--with-ui` to also unpack the Leptos+Trunk sources into a
+[writable directory you can fork](./eject#customizing-the-ui-with-ui)
+and iterate on with `trunk serve`.
 </Note>
 
 ## Running the UI locally
