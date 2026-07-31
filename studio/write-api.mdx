@@ -5,7 +5,7 @@ description: Create, update, and delete records through Studio. Server-side vali
 
 # Studio Write API
 
-Phase 3 adds three endpoints on top of the
+Three endpoints sit on top of the
 [read API](./read-api). They share its URL shape, error envelope,
 and authentication conventions — the only new ingredients are HTTP
 methods, request bodies, and a structured validation envelope.
@@ -66,8 +66,8 @@ Two implicit checks run alongside:
 - `TYPE_MISMATCH` — the JSON value's type doesn't line up with the
   field's declared scalar (e.g. an `Int` field got a string).
 
-Phase 4 adds two more, surfaced from the driver layer once the SQL
-hits the database:
+Two more are surfaced from the driver layer once the SQL hits the
+database:
 
 - `UNIQUE` — Postgres SQLSTATE `23505` or SQLite
   `SQLITE_CONSTRAINT_UNIQUE` / `…_PRIMARYKEY` returned for the write.
@@ -148,15 +148,15 @@ Returns the deleted row (the API source returns an empty `{ "row":
 {} }` if the upstream service uses `204 No Content` semantics). A
 second DELETE against the same PK returns **400 INVALID_PRIMARY_KEY**.
 
-## Error codes (Phase 3 additions)
+## Error codes added by writes
 
 | HTTP | Code               | When                                                                                                                |
 | ---- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | 403  | `FORBIDDEN`        | Target is read-only (`mode = "ro"`) and the request was a write.                                                    |
 | 422  | `VALIDATION_ERROR` | One or more field-level validators (or `REQUIRED` / `TYPE_MISMATCH`) rejected the payload. Per-field detail in `error.fields`. |
 
-These join Phase 1b's set: `UNKNOWN_TARGET`, `UNKNOWN_MODEL`,
-`UNKNOWN_FIELD`, `NOT_A_RELATION`, `NO_PRIMARY_KEY`,
+These join the [read API](./read-api#errors)'s set: `UNKNOWN_TARGET`,
+`UNKNOWN_MODEL`, `UNKNOWN_FIELD`, `NOT_A_RELATION`, `NO_PRIMARY_KEY`,
 `INVALID_PRIMARY_KEY`, `UNSUPPORTED`, `DATABASE_ERROR`, `UPSTREAM_ERROR`,
 `INTERNAL_ERROR`.
 
@@ -168,10 +168,13 @@ These join Phase 1b's set: `UNKNOWN_TARGET`, `UNKNOWN_MODEL`,
 | SQLite       | ✅      | ✅      | ✅      | `RETURNING json_object(…)`. Values land via rusqlite's typed Value enum.                                          |
 | Deployed API | ✅      | ✅      | ✅      | Forwards POST / PATCH / DELETE to the upstream's generated `/api/<plural-snake-model>` routes. Upstream auth and policy still apply. |
 
-Constraint-level failures (UNIQUE, NOT NULL, CHECK) that slip past
-Studio's validators still surface as **500 DATABASE_ERROR** with the
-underlying driver text. Mapping known SQLSTATE codes to friendlier
-validation envelopes is Phase 4.
+Constraint-level failures (UNIQUE, FOREIGN_KEY, NOT NULL, CHECK,
+string truncation, invalid text representation) that slip past
+Studio's own validators are mapped back to the same **422
+VALIDATION_ERROR** envelope via the well-known SQLSTATE codes above —
+see the [full mapping table](./tools#constraint-errors-validation_error).
+Only a driver error Studio doesn't recognize still surfaces as **500
+DATABASE_ERROR** with the underlying driver text.
 
 ## What the UI does with this
 
