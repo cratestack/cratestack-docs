@@ -6,9 +6,9 @@ description: The HTTP surface Studio exposes for browsing schemas and records. S
 # Studio Read API
 
 Once `cratestack studio run` is up, Studio serves a stable JSON API
-over the bind address (default `127.0.0.1:7878`). The Leptos UI in
-Phase 1b is one consumer; you can hit the same endpoints from a
-script, a notebook, or your own tool.
+over the bind address (default `127.0.0.1:7878`). The [Leptos UI](./ui)
+is one consumer; you can hit the same endpoints from a script, a
+notebook, or your own tool.
 
 All responses are JSON. All error responses use the same envelope:
 
@@ -19,14 +19,17 @@ All responses are JSON. All error responses use the same envelope:
 Stable codes: `UNKNOWN_TARGET`, `UNKNOWN_MODEL`, `UNKNOWN_FIELD`,
 `NOT_A_RELATION`, `NO_PRIMARY_KEY`, `INVALID_PRIMARY_KEY`, `UNSUPPORTED`,
 `FORBIDDEN`, `VALIDATION_ERROR`, `DATABASE_ERROR`, `UPSTREAM_ERROR`,
-`INTERNAL_ERROR`. Writes use the Phase 3 codes (`FORBIDDEN`,
+`INTERNAL_ERROR`. Writes add two more codes (`FORBIDDEN`,
 `VALIDATION_ERROR`); see the [write API](./write-api) page for the
 mutation surface.
 
 <Note>
-Phase 1b adds SQLite drivers (via `rusqlite`), relation follow, and
-API-backed list/get. Many-to-many through a junction table still
-returns `UNSUPPORTED`.
+Studio supports Postgres and SQLite (via `rusqlite`) natively, plus
+API-backed targets that proxy through a deployed CrateStack service.
+Relation follow works against the two DB-backed drivers; API-backed
+targets return `UNSUPPORTED` for follow, and many-to-many through a
+junction table returns `UNSUPPORTED` on every driver — see
+[What's not here yet](#whats-not-here-yet).
 </Note>
 
 ## Endpoints
@@ -169,7 +172,7 @@ Primary-key literals are typed:
 - **`Int`** → `42_i64`.
 
 Other primary-key scalars (`DateTime`, `Bytes`, etc.) return `501
-UNSUPPORTED` in Phase 1a.
+UNSUPPORTED`.
 
 ## Errors
 
@@ -204,7 +207,7 @@ When `next_cursor` is `null`, you've hit the end.
 
 ## Secrets in `studio.toml`
 
-Phase 1a resolves two reference forms on boot:
+Studio resolves two reference forms on boot:
 
 ```toml
 [target.db]
@@ -223,13 +226,15 @@ broke.
 
 ## What's not here yet
 
-- **Many-to-many** through a junction table returns `UNSUPPORTED`.
-  Phase 2 widens relation resolution.
+- **Many-to-many** through a junction table returns `UNSUPPORTED` on
+  every driver. Not yet implemented.
 - **Relation follow against API targets** returns `UNSUPPORTED` — the
   generated REST surface doesn't expose arbitrary column filters, so
   the target needs a `[target.db]` block for traversal.
-- **Mutations** (create / update / delete with policy-validation
-  pass-through) land in Phase 3.
+
+Mutations (create / update / delete, with the same validator
+pass-through) are not part of the read API at all — see the
+[write API](./write-api).
 
 ## Driver coverage
 

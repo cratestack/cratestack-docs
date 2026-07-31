@@ -6,7 +6,7 @@ description: Fork the Studio UI's source tree into a writable directory, or bund
 # Studio Eject
 
 Studio's Leptos+Trunk UI lives in the framework repo, but you don't
-have to consume it from there. Phase 2 ships two ways to take it with
+have to consume it from there. There are two ways to take it with
 you:
 
 1. **`cratestack studio eject`** — copies the UI sources into a
@@ -70,11 +70,10 @@ If your changes are upstream-friendly, please open a PR to
 
 ## Bundle the UI into the binary
 
-Phase 1b's local-dev story (`cratestack studio run` + `trunk serve`)
-is fine for a single developer on a laptop, but it's awkward to hand
-to a colleague. The `embed-ui` cargo feature solves this: build the
-SPA into the same Rust binary that serves the API, then ship that
-binary.
+The local-dev story (`cratestack studio run` + `trunk serve`) is fine
+for a single developer on a laptop, but it's awkward to hand to a
+colleague. The `embed-ui` cargo feature solves this: build the SPA
+into the same Rust binary that serves the API, then ship that binary.
 
 ### Build prerequisites
 
@@ -86,14 +85,14 @@ rustup target add wasm32-unknown-unknown
 ### Build
 
 ```bash
-cd crates/cratestack-studio/ui
+cd crates/cratestack-studio-ui
 trunk build --release
-cd ../../..
+cd ../..
 cargo build -p cratestack-cli --bin cratestack \
   --features cratestack-studio/embed-ui --release
 ```
 
-The first step writes `crates/cratestack-studio/ui/dist/`, which
+The first step writes `crates/cratestack-studio-ui/dist/`, which
 `rust-embed` reads at compile time during the second step. Skip step
 one and Cargo will fail at the embed step with rust-embed's standard
 "folder does not exist" error, naming the missing path.
@@ -115,16 +114,17 @@ cratestack studio run
 
 | You want…                                                              | Use                                                                       |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Quick iteration on the UI while hacking on the framework               | Phase 1b's `trunk serve` (no `embed-ui` needed)                           |
+| Quick iteration on the UI while hacking on the framework               | `trunk serve` (no `embed-ui` needed)                                      |
 | A single binary to give to a colleague who isn't running Trunk         | `--features cratestack-studio/embed-ui`                                    |
 | Total control over the UI (custom theme, internal actions, etc.)        | `cratestack studio eject --out ./fork`, then run `trunk serve` in `./fork` |
-| Single binary, *and* a custom UI                                        | Eject, customize, `trunk build --release` in the fork, then point the bundled-UI path at the fork's `dist/` (Phase 2.5 — not in this release)        |
+| Single binary, *and* a custom UI                                        | Not supported out of the box (see below)                                  |
 
 The last row isn't supported out of the box yet — the `embed-ui`
-feature reads from a fixed `crates/cratestack-studio/ui/dist/`
-path. A future small change will let `embed-ui` point at an arbitrary
-`dist/` directory via an env var so an ejected fork can produce a
-single-binary distribution.
+feature reads from a fixed `crates/cratestack-studio-ui/dist/`
+path, with no environment-variable or config override. A future
+small change would let `embed-ui` point at an arbitrary `dist/`
+directory so an ejected fork could produce a single-binary
+distribution.
 
 ## Defaults stay light
 
