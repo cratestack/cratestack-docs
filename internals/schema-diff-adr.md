@@ -88,7 +88,7 @@ CreateMaterializedView, DropMaterializedView
 CreateEnum, AlterEnumAddVariant, RenameEnumVariant, DropEnumVariant, DropEnum
 ```
 
-Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers both hand-written `@@check` constraints and `@@db_enforce`-promoted validators (see "Validator promotion" below).
+Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers both hand-written `@@check` constraints and `@@db_enforce`-promoted validators (see "Validator promotion" below). `AddForeignKey` / `DropForeignKey` covers foreign keys promoted from `@relation` (see "Foreign-key promotion" below).
 
 Each op carries a **destructiveness class**:
 
@@ -199,6 +199,47 @@ The generator emits CHECK constraints with stable, predictable names — `<table
 
 Validator changes without `@@db_enforce` produce **no migration** — they are pure app-level behavior changes and the database stays exactly as it was.
 
+### Foreign-key promotion (`@relation`)
+
+A `@relation(fields:[...], references:[...])` field previously produced only a plain, same-named column — the emitted DDL carried no database-level reference at all. The owning side of a relation (the field typed as a single model, not a `Model[]` list) now promotes to a real foreign-key constraint, emitted as `AddForeignKey` / `DropForeignKey` IR ops:
+
+```cstack
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id       String @id
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+```
+
+**Postgres (server target):** emits a real constraint, added after every table/column it depends on already exists in the same migration:
+
+```sql
+ALTER TABLE applications
+  ADD CONSTRAINT applications_tenant_id_fkey
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+```
+
+**SQLite (embedded target):** SQLite has no `ALTER TABLE ADD/DROP CONSTRAINT` at all — a foreign key can only be declared inline at `CREATE TABLE` time, which a diff against an existing table never re-runs. Rather than staying silent, the generator emits a marker comment naming the constraint that would otherwise not exist, matching the same posture as `@@db_enforce` CHECK constraints on SQLite (see "Validator promotion" below):
+
+```sql
+-- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id)
+-- REFERENCES tenants (id) ON DELETE CASCADE — requires table rebuild on
+-- SQLite. Hand-write up.pre.sql.
+```
+
+**Referential actions (`onDelete` / `onUpdate`):** both are optional and accept the SQL-standard vocabulary — `Cascade`, `Restrict`, `SetNull`, `SetDefault`, `NoAction` — as bareword identifiers, matching the schema language's existing convention (`fields:[authorId]`, not `fields:["authorId"]`). `NoAction` is the default and is omitted from the emitted DDL entirely, so a relation declared with no `onDelete`/`onUpdate` emits identical SQL to before this attribute existed. Two rules are enforced at `cratestack check` time rather than surfacing as a runtime `ADD CONSTRAINT` failure:
+
+* An action can only be declared on the relation's **owning side** — the `Model[]` "has-many" side has no physical column, so there is no constraint to attach the action to.
+* `SetNull` requires the local FK column to be optional; `SetDefault` requires it to declare `@default(...)`. Postgres enforces both at `ADD CONSTRAINT` time regardless of which action triggers it.
+
+**Ordering:** `AddForeignKey` ops are always emitted after every `CreateTable` / `AddColumn` op in the same migration, so a relation declared alongside two brand-new models resolves correctly regardless of table creation order. `DropTable` ops are topologically sorted within a migration so that a table whose FK references another table being dropped in the same migration drops first — alphabetical order is not safe once a real constraint exists to enforce the dependency.
+
+**Destructiveness:** both `AddForeignKey` and `DropForeignKey` are classified **safe** — the same as `AddIndex` / `DropIndex`. A `FOREIGN KEY` (like a `UNIQUE` index) can fail against pre-existing orphaned data, but the DDL either succeeds outright or the migration transaction aborts; there is no partial data loss either way.
+
 ### Verification semantics
 
 `cratestack migrate verify` is the load-bearing CI step. Without it, the snapshot and the migration tree can diverge silently — someone hand-edits the snapshot, or hand-edits an already-applied migration's SQL, and `diff` happily produces no-op or wrong-op output forever after. `verify`:
@@ -255,6 +296,7 @@ This is the only step that catches snapshot tampering. It must be required in CI
 11. `@@db_enforce` for validators — `AddCheck` / `DropCheck` emission for the translatable subset.
 12. View IR ops (`CreateView`, `ReplaceView`, `DropView`).
 13. Materialized view IR ops.
+14. `AddForeignKey` / `DropForeignKey` — foreign-key promotion from `@relation`, including `onDelete` / `onUpdate` referential actions.
 
 ## Read Next
 
