@@ -93,6 +93,7 @@
         "pages": [
           "reference/mixins",
           "reference/field-attributes",
+          "reference/composite-keys",
           "reference/scalars",
           "reference/auth-support-matrix",
           "reference/crypto",

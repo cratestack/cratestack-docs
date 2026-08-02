@@ -50,7 +50,9 @@ model Account {
 The compile-time gate is intentional: a server-PK upsert can't target a
 specific row without leaking server identity to the caller, and v1 doesn't
 support unique-key (non-PK) conflict targets. Widening to `@unique`
-columns is a future, non-breaking addition.
+columns — including [composite `@@unique([...])`](../reference/composite-keys)
+constraints, which are enforced in the database but not yet reachable
+from this builder — is a future, non-breaking addition.
 
 ## Programmatic use
 
