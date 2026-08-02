@@ -9,8 +9,9 @@ This reference covers every supported field-level attribute. Model-level
 (`@@`) attributes live in their dedicated guides — see
 [audit log](../guides/audit-log) for `@@audit`,
 [soft delete](../guides/soft-delete) for `@@soft_delete`,
-[pagination](../guides/pagination) for `@@paged`, and
-[auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`.
+[pagination](../guides/pagination) for `@@paged`,
+[auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`, and
+[composite keys](./composite-keys) for `@@id([...])` / `@@unique([...])`.
 
 ## Identity & Defaults
 
