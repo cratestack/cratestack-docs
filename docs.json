@@ -43,6 +43,7 @@
           "guides/async-io-with-embedded-sqlite",
           "guides/materialized-views",
           "guides/rpc-transport",
+          "guides/no-database-procedures",
           "guides/typescript-client-generation"
         ]
       },
