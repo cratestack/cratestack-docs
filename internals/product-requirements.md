@@ -1,5 +1,7 @@
 # CrateStack v0 PRD
 
+> **Historical document.** This is the original v0 product requirements doc, current only as of its 0.3.0 patch note below. Multiple major capabilities have shipped since that this document doesn't mention at all: RPC transport (now an Accepted ADR — see [ADR 0005](./rpc-transport-adr)), `transport grpc`, the embedded SQLite/rusqlite backend across native + wasm, `cratestack-migrate`/`cratestack migrate diff`, SQL views (ADR 0003), Studio (the admin UI/API), the LSP + VS Code extension, the `cratestack-pg`/`cratestack-sqlite`/`cratestack-api` facade split, and the Dart/TypeScript client preset family — several of these are listed below as explicit **Non-Goals**, which is no longer accurate. For current scope, see [Current State](../overview/current-state) and [Roadmap](../overview/roadmap); treat this page as an artifact of intent (why the project started), not a description of what it is today.
+
 ## 0.3.0 macro-split update
 
 This PRD was authored when CrateStack exposed a single `include_schema!` macro. As of 0.3.0, the developer surface is **three role-specific macros**, replacing the single one:
