@@ -43,7 +43,8 @@
           "guides/async-io-with-embedded-sqlite",
           "guides/materialized-views",
           "guides/rpc-transport",
-          "guides/typescript-client-generation"
+          "guides/typescript-client-generation",
+          "guides/dart-client-generation"
         ]
       },
       {
