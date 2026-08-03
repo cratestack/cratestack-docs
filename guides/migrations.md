@@ -144,6 +144,54 @@ Generated migrations remain reviewable SQL diffs — that property is preserved.
 
 Hand-written migration steps coexist with generated ones via optional `up.pre.sql` / `up.post.sql` files inside the migration directory; the generator never overwrites them. Use these for backfills, lookup-table seeds, materialized-view refreshes, and any transform the diff engine cannot infer.
 
+## Foreign keys, referential actions, and composite uniqueness
+
+The generator emits real integrity constraints for two `.cstack` attributes, not just the columns behind them.
+
+**`@relation` fields emit a `FOREIGN KEY` constraint.** The owning side of a relation (the side with `fields:`/`references:`, not the has-many `List` side) is projected into an `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY (...) REFERENCES ...` statement, named `<table>_<column>_fkey` to match Postgres's own auto-generated name:
+
+```cstack
+model Application {
+  id       String @id
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+}
+```
+
+```sql
+ALTER TABLE applications ADD CONSTRAINT applications_tenant_id_fkey
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE ON UPDATE RESTRICT;
+```
+
+`onDelete`/`onUpdate` accept `Cascade`, `Restrict`, `SetNull`, `SetDefault`, or `NoAction`. Both are optional and default to `NoAction` — Postgres's own default — which the generator omits from the DDL rather than spelling out. Two rules are enforced at `cratestack check` time, before they'd otherwise surface as a Postgres `ADD CONSTRAINT` failure with no `.cstack` context:
+
+1. `onDelete`/`onUpdate` can only be declared on the relation's owning side — the `List`-typed "many" side has no physical column of its own to attach a constraint to.
+2. `onDelete: SetNull` / `onUpdate: SetNull` requires the local foreign-key field to be optional (`tenantId String?`); `SetDefault` requires it to declare `@default(...)`.
+
+**Model-level `@@unique([...])` emits a `CREATE UNIQUE INDEX`.** Field-level `@unique` already did this for a single column; `@@unique` extends the same `<table>_<col1>_<col2>_..._key` naming convention across every listed column, in declaration order:
+
+```cstack
+model Application {
+  id          String @id
+  tenantId    String
+  name        String
+  environment String
+
+  @@unique([tenantId, name, environment])
+}
+```
+
+```sql
+CREATE UNIQUE INDEX applications_tenant_id_name_environment_key
+  ON applications (tenant_id, name, environment);
+```
+
+This matters beyond integrity: Postgres only accepts `ON CONFLICT (a, b, c) DO UPDATE` when a unique index over exactly that column tuple exists, so upsert-based idempotency (see [Upsert](./upsert)) depends on this DDL actually being emitted.
+
+**SQLite has no `ALTER TABLE ... ADD CONSTRAINT`.** The embedded backend can't retrofit a foreign key onto an existing table, so instead of silently producing no constraint, the generator emits a comment marking where the constraint would be, naming it explicitly so the gap is visible in the generated migration rather than invisible in the database.
+
+Framework source of truth: [issue #260](https://github.com/cratestack/cratestack/issues/260) / [PR #261](https://github.com/cratestack/cratestack/pull/261) (foreign keys), [issue #262](https://github.com/cratestack/cratestack/issues/262) / [PR #266](https://github.com/cratestack/cratestack/pull/266) (`@@unique` indexes), and [PR #268](https://github.com/cratestack/cratestack/pull/268) (`onDelete`/`onUpdate`).
+
 ## Schema
 
 ```sql
@@ -164,3 +212,4 @@ idempotently by `ensure_migrations_table`.
 2. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
 3. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
 4. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
+5. [Field attributes](../reference/field-attributes) — full `@relation`/`onDelete`/`onUpdate`/`@@unique` syntax reference
