@@ -160,7 +160,7 @@ SSE (`text/event-stream`) is wired in the codec layer and works the same way for
 
 ## Consuming streams
 
-The wire side is one paragraph; the interesting question is what a client looks like on the other end of that pipe. CrateStack ships three client paths and you can pick per-app or per-request.
+The wire side is one paragraph; the interesting question is what a client looks like on the other end of that pipe. CrateStack ships four client paths and you can pick per-app or per-request.
 
 ### The wire shape
 
@@ -277,6 +277,46 @@ final dio = Dio(BaseOptions(baseUrl: baseUrl))
 
 Errors flow through Dart's normal stream error channel: decoder exceptions propagate as the underlying type; a stream that closes mid-frame raises a `FormatException`. Cancellation through `subscription.cancel()` propagates upstream into dio's request cancellation contract.
 
+### Path 4 — TypeScript via `runtime.stream(...)` + `RpcStreamLink` chain
+
+The browser/Node path, entirely in TypeScript — no Rust FFI in the loop at all. `cratestack generate-typescript` emits `CratestackRpcRuntime.stream()` for every RPC schema (both the `default` and `swr` output presets), backed by `fetch()`'s native streaming body reader and the same boundary-scan logic as the other three paths, reimplemented in TypeScript rather than shared through FFI.
+
+```ts
+import { ExampleWidgetClientClient, CratestackRpcStreamError } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", { basePath: "/api" });
+
+try {
+  for await (const tick of client.runtime.stream<Tick>("procedure.ticks", { count: 100 })) {
+    renderRow(tick);
+  }
+} catch (error) {
+  if (error instanceof CratestackRpcStreamError) {
+    // Mid-stream sentinel (tag 48900) — the stream ends here either way.
+    handleError(error.body);
+  } else {
+    // Transport failure: network error, malformed/truncated cbor-seq body.
+    throw error;
+  }
+}
+```
+
+`stream()` negotiates `Accept: application/cbor-seq, <configured codec>` on every call. When the server picks the configured codec (the common case for a small/finite result), the body is a single encoded array, decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, a `CborSeqBoundaryScanner` reads the response body's `ReadableStream` chunk by chunk and yields each self-delimiting CBOR item as soon as its bytes are complete — never after buffering the whole response. A tag-48900 item ends the iteration by throwing `CratestackRpcStreamError` instead of yielding one more item; any other transport failure (a dropped connection, a truncated final item) throws `CratestackRpcTransportError` instead.
+
+Unlike `call()`/`batch()`, `stream()` doesn't reuse the `RpcLink` chain — a `Response`-shaped link contract can't work for streaming (a link wanting to retry would need to clone an already-streaming body, defeating the point). Streaming links are shaped as async generators instead, via a separate `streamLinks` option:
+
+```ts
+// createLoggerStreamLink is generated alongside the runtime (src/links.ts)
+// and re-exported from the package root, same as the runtime class itself.
+import { ExampleWidgetClientClient, createLoggerStreamLink } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", {
+  streamLinks: [createLoggerStreamLink()],
+});
+```
+
+A stream link consumes the `AsyncIterable<RpcStreamFrame>` its `next` hands it and yields its own frames onward — `{ kind: "output", output }` for a decoded item, `{ kind: "error", error }` for the mid-stream sentinel — so a link author checks `frame.kind` rather than catching an exception. `links`/`streamLinks` are two separate chains on the same `CratestackRpcRuntime`; passing neither is a true no-op on both. See the [TypeScript client generation guide's "Composable links" section](/guides/typescript-client-generation#composable-links-cratestack) for the `@cratestack/*` package family that ships ready-made links (batching, logging) for the `links` chain — as of this writing that family doesn't yet ship a published `streamLinks` link, so a custom one (or the generated reference `createLoggerStreamLink`) is the starting point today.
+
 ### Pick one
 
 | Path | Shape on the consumer side | When to pick |
@@ -284,6 +324,7 @@ Errors flow through Dart's normal stream error channel: decoder exceptions propa
 | Rust `RpcClient::call_streaming` | `Receiver<Result<O, RpcClientError>>` | Rust server-to-server, Rust CLIs, anything where the consumer is Rust. Bounded mpsc gives backpressure for free. |
 | Flutter `FlutterRuntime::rpc_call_streamed` + frb `StreamSink` | `Stream<FlutterChunkWire>` in Dart | Flutter apps that are fine with one HTTP stack (reqwest in Rust); items decode Dart-side. |
 | dio + `CborSeqStreamTransformer` + `FlutterCborSeqDecoder` | `Stream<Uint8List>` in Dart | Flutter apps that want native HTTP visibility, dio interceptors, or Flutter DevTools network inspection. HTTP lives in Dart; only frame-boundary detection lives in Rust. |
+| TypeScript `runtime.stream(...)` + `streamLinks` | `AsyncIterable<O>` in TypeScript | Browser and Node consumers of a `transport rpc` schema — the generated web/Node client, no Rust or Dart toolchain involved. |
 
 For a worked end-to-end Rust example see [`examples/rpc-streaming-client-rust`](https://github.com/cratestack/cratestack/tree/main/examples/rpc-streaming-client-rust). For the three-crate client split see [Client Runtime](../architecture/client-runtime); for the framing decisions see [ADR 0005 §3.3](../internals/rpc-transport-adr).
 

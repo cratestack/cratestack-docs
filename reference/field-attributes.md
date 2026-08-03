@@ -84,6 +84,43 @@ The macro excludes `@version` from both Create and Update inputs. The
 runtime seeds it to `0` on create and bumps it in the same statement as
 every update or soft-delete.
 
+## Relations
+
+| Attribute                          | Behaviour                                                                                          |
+|-------------------------------------|-----------------------------------------------------------------------------------------------------|
+| `@relation(fields:[...], references:[...])` | Declares the owning side of a relation. Emits a `FOREIGN KEY` constraint in generated migrations. |
+| `onDelete: <action>`                | Referential action on delete. One of `Cascade`, `Restrict`, `SetNull`, `SetDefault`, `NoAction`. Optional inside `@relation(...)`; defaults to `NoAction`. |
+| `onUpdate: <action>`                | Referential action on update. Same vocabulary and default as `onDelete`.                            |
+
+```cstack
+model Application {
+  id       String @id
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+}
+```
+
+`onDelete`/`onUpdate` can only be declared on the relation's owning side — the has-many (`List`-typed) side has no physical column to attach a constraint to, and `cratestack check` rejects the attempt. `SetNull` additionally requires the local field to be optional (`tenantId String?`); `SetDefault` requires it to declare `@default(...)`. See [Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness) for the generated DDL and naming convention.
+
+## Model-level uniqueness
+
+| Attribute            | Behaviour                                                                 |
+|-----------------------|----------------------------------------------------------------------------|
+| `@@unique([...])`     | Composite uniqueness across the listed fields. Emits a `CREATE UNIQUE INDEX` spanning all of them, in declaration order. |
+
+```cstack
+model Application {
+  id          String @id
+  tenantId    String
+  name        String
+  environment String
+
+  @@unique([tenantId, name, environment])
+}
+```
+
+Field-level `@unique` (a single-column shorthand) is unaffected by this — `@@unique` is for composite constraints that span more than one field. See [Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness) for the emitted DDL, and [Upsert](../guides/upsert) for why a matching unique index is required for `ON CONFLICT` targets.
+
 ## Validators
 
 | Attribute              | Applies to        | Behaviour                                                  |

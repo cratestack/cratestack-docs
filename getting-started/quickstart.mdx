@@ -41,7 +41,7 @@ use cratestack::include_server_schema;
 include_server_schema!("schema.cstack", db = Postgres);
 ```
 
-The `db = Postgres` argument is required today (the only accepted value). The parser is wired so future `db = MySql` / `db = Sqlite` support is non-breaking at call sites that already pass `Postgres`.
+`db = Postgres` is the argument for a schema with a real `datasource { provider = "postgresql" }` block. A schema declaring `datasource { provider = "none" }` instead pairs with `db = None` — see [Procedures-only servers](#procedures-only-servers-no-database) below. The two must agree: passing `db = Postgres` against a `provider = "none"` schema (or vice versa) is a compile-time macro error, not a runtime one.
 
 Embedded (mobile / desktop / browser-via-OPFS) and HTTP-client crates use different macros — see [Offline-First Embedded SQLite](../guides/offline-first-sqlite) and the client-runtime docs respectively.
 
@@ -96,9 +96,14 @@ let app = axum::Router::new().nest(
 );
 ```
 
+## Procedures-only servers (no database)
+
+Not every server owns a database — see [Procedures-Only Servers with No Database](../guides/no-database-procedures) for `datasource { provider = "none" }`, `db = None`, and the `cratestack-api` facade.
+
 ## Read Next
 
 1. `../guides/auth-provider` for the host auth boundary
 2. `../architecture/transport-architecture` for codec, framing, and envelope rules
 3. `../overview/banking-readiness` for the regulated-workload primitives
 4. `../guides/offline-first-sqlite` if you want to run the same schema **embedded** against a local SQLite database — same `.cstack` file, sync API on native, OPFS-backed in the browser, no tokio
+5. `../guides/no-database-procedures` for procedures-only servers with no database at all
