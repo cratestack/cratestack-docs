@@ -36,6 +36,11 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 25. **composable `RpcLink` client middleware chain** on the generated TypeScript RPC client (`CratestackRpcClientOptions.links`), plus a standalone `@cratestack/api` npm package shipping `createBatchLink()` (automatic same-tick RPC-call coalescing into `POST /rpc/batch`) and `createLoggerLink()` — see [RPC transport: client middleware](../guides/rpc-transport#client-middleware-the-rpclink-chain). RPC-transport/TypeScript only; REST binding, gRPC-Web, and the Rust/Dart clients don't have an equivalent chain yet
 26. **`db = None` — procedures-only servers with no database** — `include_server_schema!("…", db = None)` requires the schema's `datasource` block to declare `provider = "none"`, checked at compile time (a schema declaring `provider = "none"` alongside any `model` block is rejected with an error naming the offending model), and produces a genuinely database-free, zero-parameter `Cratestack::builder()` — no `PgPool` threaded through anywhere. Built for pure business-logic services, RPC facades in front of another system, or stateless computation endpoints that own no models and no database
 27. **`cratestack-api` facade** — a third disjoint facade crate (`cratestack = { package = "cratestack-api" }`), structurally parallel to the existing `cratestack-pg` / `cratestack-sqlite` split, purpose-built for `db = None` servers: `sqlx` and `cratestack-sqlx` are genuinely absent from its dependency graph — not feature-gated off, structurally not a dependency at all — unlike `cratestack-pg`, which still depends on `cratestack-sqlx` by default and only sheds it when a consumer opts into `default-features = false`
+28. **SQL views** — a `view <Name> from <Model>, …` block with `@from(M.f)` source bindings and per-backend `@@server_sql` / `@@embedded_sql` (`@@sql` shorthand), generating a read-only `ViewDelegate` (or `ViewDelegateNoUnique` for `@@no_unique` views); `@@materialized` for a Postgres-backed materialized view with a manually-invoked `refresh()`. See [ADR 0003](../internals/views-adr) and the [Views reference](../reference/views)
+29. **`transport grpc`** — a third mutually-exclusive generation style alongside REST and RPC: a real gRPC server runtime (CRUD-only surface, matching REST/RPC today) plus generated clients in all three languages — native Rust via `include_client_schema!` (`tonic`-based), a hand-rolled gRPC-Web TypeScript client, and a native Dart client. `cratestack generate-proto` emits the `.proto` contract standalone even without the `grpc` Cargo feature enabled
+30. **composite primary keys** — `@@id([...])` / `@@unique([...])` on a model, with parser validation and Postgres/SQLite DDL emission; query builders, generated clients, and policy evaluation for composite keys are still catching up (see [Still Narrow Or Deferred](#still-narrow-or-deferred))
+31. **`cratestack diff`** — a standalone CLI command that detects wire-breaking schema changes (a field/model removed or retyped in a way existing clients can't tolerate) independent of the migration-diff generator
+32. **Second, opinionated client presets** — TypeScript `--preset swr` (file-per-model, framework-free plain functions plus `useSWR`/`useSWRMutation` hooks) alongside the default react-query preset; Dart `--preset riverpod` (file-per-model, one `@riverpod` provider per operation, `dart_mappable`-backed value equality) alongside the default preset. Both are generation-time choices, not runtime flips
 
 ## Still Narrow Or Deferred
 
@@ -50,6 +55,8 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 9. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
 10. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
 11. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
+12. composite primary keys (`@@id([...])`) have parser validation and DDL emission, but query builders, generated clients, and policy evaluation don't yet have first-class composite-key support
+13. `transport grpc` is CRUD-only — no procedures, no streaming, matching the current REST/RPC server surface; a Dart gRPC client generator's own middleware/link chain doesn't exist yet either (see item 25 above)
 
 ## Best Fit Right Now
 
@@ -70,4 +77,6 @@ CrateStack is currently strongest for:
 4. `../guides/offline-first-sqlite` for the embedded SQLite backend (native + browser via OPFS)
 5. `../guides/no-database-procedures` for procedures-only servers with no database at all (`db = None`, the `cratestack-api` facade)
 6. `../architecture/transport-architecture` for transport design
-7. `../reference/auth-support-matrix` for the current auth and policy surface
+7. `../reference/views` for the `view`/`@@materialized` surface
+8. `../reference/composite-keys` for `@@id([...])`/`@@unique([...])`
+9. `../reference/auth-support-matrix` for the current auth and policy surface

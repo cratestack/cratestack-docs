@@ -134,11 +134,16 @@ All three statements land atomically. A failure in the `INSERT` rolls the
 
 The runner consumes SQL migrations identically whether they are hand-written or generated. CrateStack ships a separate **schema diff generator** that produces those migrations from `.cstack` against a committed schema snapshot — see [ADR 0004](../internals/schema-diff-adr) for the full design.
 
-Three commands cover the lifecycle:
+One command is shipped today:
 
 * `cratestack migrate diff` — offline. Diffs the current `.cstack` against `migrations/<backend>/schema.snapshot.json` and writes a new migration directory.
-* `cratestack migrate verify` — CI gate. Replays the full migration history against an ephemeral DB and checks the result matches the snapshot.
-* `cratestack migrate drift` — ops tool. Reports differences between the snapshot and a live database. Read-only.
+
+Two more are designed but not yet built — see [ADR 0004](../internals/schema-diff-adr) for the full design:
+
+* `cratestack migrate verify` — CI gate. Would replay the full migration history against an ephemeral DB and check the result matches the snapshot.
+* `cratestack migrate drift` — ops tool. Would report differences between the snapshot and a live database, read-only.
+
+Without `verify`, nothing today catches someone hand-editing an already-applied migration's SQL or the committed snapshot — `diff` will keep producing no-op or wrong-op output silently if that happens.
 
 Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@rename` annotation.
 

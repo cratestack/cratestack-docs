@@ -92,31 +92,31 @@ Three ASCII uppercase letters. The framework does **not** check the value
 against the registered ISO 4217 list — that table churns. Banks pin
 allowed currencies via a separate allow-list or a policy check.
 
-## Database-level enforcement (`@@db_enforce`)
+## Database-level enforcement (`@db_enforce`)
 
 Validators are app-level by default — they run in the framework-generated `validate(&self)` and the database has no record of them. That is the right default for `@email`, `@uri`, and complex `@regex` patterns: those rely on host-language parsers, and expressing them in SQL means a regex approximation that drifts from the Rust behavior.
 
-For validators whose semantics translate cleanly to SQL, opt into database-level CHECK constraints with `@@db_enforce`:
+For validators whose semantics translate cleanly to SQL, opt into database-level CHECK constraints with `@db_enforce`:
 
 ```cstack
 model Member {
-  amount   Decimal @range(min: 0, max: 1000000) @@db_enforce
-  currency String  @iso4217                     @@db_enforce
+  amount   Decimal @range(min: 0, max: 1000000) @db_enforce
+  currency String  @iso4217                     @db_enforce
   email    String  @email                       // app-only — @email is not eligible
 }
 ```
 
-Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@@db_enforce` to a non-eligible validator is a parse-time error.
+Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@db_enforce` to a non-eligible validator is silently skipped today rather than rejected — a parser-level check that promotes this to a parse-time error is tracked as a follow-up, not yet built.
 
 When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion-db_enforce)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. Subsequent validator changes flow through the diff engine:
 
 * **Loosening** the rule (widening a range, dropping the attribute) — safe.
 * **Tightening** the rule (narrowing a range) — lossy if existing rows fall outside the new bound; requires `--allow-destructive` or a hand-written `up.pre.sql` that resolves violators first.
-* **Adding `@@db_enforce`** to a field that previously lacked it — treated as a tightening, for the same reason: data written before the constraint existed may not satisfy it.
+* **Adding `@db_enforce`** to a field that previously lacked it — treated as a tightening, for the same reason: data written before the constraint existed may not satisfy it.
 
-Defense-in-depth — app validators still run before the request reaches the database. `@@db_enforce` is the safety net for non-framework writers (direct SQL, replication tools, sibling services). For banking workloads where the storage tier must enforce invariants independently, prefer `@@db_enforce` on every eligible validator.
+Defense-in-depth — app validators still run before the request reaches the database. `@db_enforce` is the safety net for non-framework writers (direct SQL, replication tools, sibling services). For banking workloads where the storage tier must enforce invariants independently, prefer `@db_enforce` on every eligible validator.
 
-**Error path:** a CHECK violation surfaces as a constraint error from the database driver and is mapped to `CoolError::Internal` by default, not the 422 contract documented above. Validators run app-side first specifically so the 422 path remains the user-facing surface; `@@db_enforce` violations are the "should be unreachable" backstop.
+**Error path:** a CHECK violation surfaces as a constraint error from the database driver and is mapped to `CoolError::Internal` by default, not the 422 contract documented above. Validators run app-side first specifically so the 422 path remains the user-facing surface; `@db_enforce` violations are the "should be unreachable" backstop.
 
 ## Composition with policies
 
@@ -142,4 +142,4 @@ Skip validators when:
 
 1. [Field attributes](../reference/field-attributes) — the broader attribute surface
 2. [Auth provider](./auth-provider) — policies run after validators
-3. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr#validator-promotion-db_enforce) — how `@@db_enforce` flows through migration generation
+3. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr#validator-promotion-db_enforce) — how `@db_enforce` flows through migration generation
