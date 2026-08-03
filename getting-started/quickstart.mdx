@@ -98,50 +98,7 @@ let app = axum::Router::new().nest(
 
 ## Procedures-only servers (no database)
 
-Not every server owns a database. A pure RPC/REST facade in front of another service, a stateless computation endpoint, or a gateway that only validates and forwards requests has no models to persist. For that shape, declare `datasource { provider = "none" }` instead of a real Postgres datasource:
-
-```cstack
-datasource db {
-  provider = "none"
-}
-
-type PingArgs {
-  message String
-}
-
-type PingReply {
-  echo String
-}
-
-procedure ping(args: PingArgs): PingReply
-  @allow(auth() != null)
-```
-
-A `provider = "none"` schema can **never** declare a `model` block — the parser rejects it at check time, not at runtime. This mode is for procedures and business logic only, typically calling out to your own existing systems.
-
-Pair it with `db = None` at the call site:
-
-```rust
-use cratestack::include_server_schema;
-
-include_server_schema!("schema.cstack", db = None);
-```
-
-Under `db = None`, `Cratestack::builder()` takes **zero arguments** — there's no `PgPool`, no connection string, and no `Option<PgPool>` standing in for one. `Cratestack` itself is a zero-field marker type; procedure dispatch and `@allow` policy evaluation work exactly as they do under `db = Postgres` (neither ever touched the database connection to begin with):
-
-```rust
-let db = cratestack_schema::Cratestack::builder().build();
-let app = cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth);
-```
-
-Two facade crates support this mode:
-
-* `cratestack = { package = "cratestack-api" }` — the dedicated no-database facade. It has no `cratestack-sqlx` dependency at all, under any Cargo feature, so a `db = Postgres` schema fails to compile against it with a clear error rather than a wall of unrelated symbol-resolution errors. Recommended for new procedures-only services.
-* `cratestack = { package = "cratestack-pg", default-features = false }` — turns the `postgres` Cargo feature off, which drops `sqlx`/`cratestack-sqlx` from the dependency graph the same way. Still fully supported; not deprecated in favor of `cratestack-api`.
-
-Both are genuinely `sqlx`-free — this used to be a known gap (an earlier `db = None` consumer still compiled `sqlx` in unconditionally), tracked as [issue #329](https://github.com/cratestack/cratestack/issues/329), which has since shipped alongside the `cratestack-api` facade ([issue #347](https://github.com/cratestack/cratestack/issues/347)).
-
-See `crates/cratestack-pg/tests/no_database_procedures.rs` in the framework repo for a full worked example, and [epic #326](https://github.com/cratestack/cratestack/issues/326) for the design history.
+Not every server owns a database — see [Procedures-Only Servers with No Database](../guides/no-database-procedures) for `datasource { provider = "none" }`, `db = None`, and the `cratestack-api` facade.
 
 ## Read Next
 
@@ -149,3 +106,4 @@ See `crates/cratestack-pg/tests/no_database_procedures.rs` in the framework repo
 2. `../architecture/transport-architecture` for codec, framing, and envelope rules
 3. `../overview/banking-readiness` for the regulated-workload primitives
 4. `../guides/offline-first-sqlite` if you want to run the same schema **embedded** against a local SQLite database — same `.cstack` file, sync API on native, OPFS-backed in the browser, no tokio
+5. `../guides/no-database-procedures` for procedures-only servers with no database at all

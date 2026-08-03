@@ -1,0 +1,131 @@
+---
+title: Procedures-Only Servers with No Database
+description: Use datasource { provider = "none" } and db = None to build a CrateStack server that owns no models and no database — pure business logic, an RPC facade, or a stateless computation endpoint.
+---
+
+# Procedures-Only Servers with No Database
+
+Not every CrateStack service owns data. A procedures-only facade in front of another system, a stateless computation endpoint, or a pure business-logic layer has no need for a `PgPool` — but it still wants generated routes, procedure policies, and a typed client. `datasource { provider = "none" }` plus `include_server_schema!("…", db = None)` gives you exactly that: a server macro that never threads a database connection through, backed by a facade crate that never links `sqlx` in the first place.
+
+## When to Reach for It
+
+- a procedures-only RPC facade in front of another service (another CrateStack schema, a third-party API, an internal gRPC backend)
+- a stateless computation endpoint — validation, scoring, transformation — with no persisted state
+- pure business logic that composes calls to other systems instead of owning a table
+
+If your schema declares even one `model`, this is the wrong shape — reach for `db = Postgres` (`cratestack-pg`) or the embedded SQLite backend (`cratestack-rusqlite`) instead; see [Offline-First with Embedded SQLite](./offline-first-sqlite).
+
+## The Hard Constraint
+
+A schema with `datasource { provider = "none" }` can **never** declare a `model` block. This is enforced at schema-check time, not left as a runtime surprise: the semantic checker rejects the schema and names the offending model directly.
+
+```cstack
+datasource db {
+  provider = "none"
+}
+
+model Widget {
+  id Int @id
+}
+```
+
+```text
+error: model `Widget` is not allowed in a schema with `datasource { provider = "none" }`
+  no-database schemas own no data — remove the model, or switch the
+  datasource to `provider = "postgresql"` / `provider = "sqlite"`
+```
+
+This isn't a "not yet supported" gap — it's structural. A `provider = "none"` schema has nothing to render a table for, so the checker treats declaring one as a schema error rather than quietly ignoring it.
+
+## Add the Dependency
+
+```toml
+[dependencies]
+cratestack = { package = "cratestack-api", version = "0.6" }
+```
+
+`cratestack-api` is a third facade crate, structurally parallel to `cratestack-pg` and `cratestack-sqlite`: same rename-via-`package =` pattern, same re-exported macro surface, but `sqlx` and `cratestack-sqlx` are genuinely absent from its dependency graph — not a Cargo feature you have to remember to turn off.
+
+<Info>
+Already on `cratestack-pg` and just want to shed `sqlx` from a database-free build without switching facades? `cratestack-pg`'s `postgres` feature is default-on and gates `cratestack-sqlx` out when you opt into `default-features = false`:
+
+```toml
+cratestack = { package = "cratestack-pg", version = "0.6", default-features = false }
+```
+
+Both paths work and neither is being removed. `cratestack-api` is the leaner default for anyone starting a database-free service from scratch; `cratestack-pg` with `default-features = false` is there for teams that already standardized on that facade.
+</Info>
+
+## Schema
+
+Set `provider = "none"` on the `datasource` block. Everything else — `auth`, `procedure`, `@allow`/`@deny`, `transport rpc` or the default REST binding — works exactly as it does on a database-backed schema:
+
+```cstack
+datasource db {
+  provider = "none"
+}
+
+auth Operator {
+  id Int
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
+```
+
+<Note>
+Procedure-level `@allow` / `@deny` policies never depended on a database connection to evaluate — they check `auth()` and argument shape, both of which exist independent of `provider`. They keep working unchanged on `provider = "none"` schemas.
+</Note>
+
+## Minimal Setup
+
+```rust
+use cratestack::include_server_schema;
+
+include_server_schema!("schema.cstack", db = None);
+
+struct MyProcedures;
+
+// implement the generated procedure trait for MyProcedures here —
+// same shape as on a `db = Postgres` schema, minus any database handle.
+
+#[tokio::main]
+async fn main() {
+    let cool = cratestack_schema::Cratestack::builder().build();
+
+    let app = axum::Router::new().nest(
+        "/api",
+        cratestack_schema::axum::procedure_router(
+            cool.clone(),
+            MyProcedures,
+            cratestack_codec_cbor::CborCodec,
+            AppAuthProvider,
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+        .await
+        .unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+`Cratestack::builder()` takes **zero parameters** here — there's no pool to configure, no connection string to thread through, no `PgPool` anywhere in the type. Compare this to the `db = Postgres` path (see [Quickstart](../getting-started/quickstart)), where the builder takes a pool and every generated model delegate borrows it; on `db = None` there are no model delegates to borrow it, so the builder has nothing left to ask for. Only `procedure_router` gets mounted — there's no `model_router` to nest alongside it, because there are no models.
+
+## What You Give Up, What Still Works
+
+Given up, structurally, not "not yet":
+
+- **no models, ever, in this schema.** Not a temporary limitation — the checker enforces it at compile time, and a schema built this way has no table-backed storage to add one to. If you need a model later, that's a different schema (or a different `datasource`), not an upgrade path for this one.
+
+Still works exactly as on a database-backed schema:
+
+- `transport rpc` (`POST /rpc/{op_id}` + `POST /rpc/batch`) or the default REST procedure route (`POST /$procs/<name>`) — see [RPC transport](./rpc-transport)
+- procedure-level `@allow` / `@deny` policies, since those only ever evaluated `auth()` and argument shape
+- generated Rust/Dart/TypeScript client stubs via `include_client_schema!` against this schema, from another service's point of view
+
+## Read Next
+
+1. `./rpc-transport` for the RPC binding this shape pairs naturally with
+2. `./offline-first-sqlite` for the embedded SQLite backend, if your service turns out to need local storage after all
+3. `../overview/current-state` for where `db = None` and the `cratestack-api` facade sit in the current implemented surface

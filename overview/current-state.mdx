@@ -11,7 +11,7 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 
 1. a Rust 2024 multi-crate workspace under `cratestack/`
 2. schema parsing and semantic validation for an initial `.cstack` subset
-3. compile-time **role-specific macros**: `include_server_schema!("…", db = Postgres)`, `include_embedded_schema!`, `include_client_schema!` — each emits a `cratestack_schema` module shaped for one deployment shape, with strict disjoint backend output (server never emits rusqlite, embedded never emits sqlx)
+3. compile-time **role-specific macros**: `include_server_schema!("…", db = Postgres)` (also `db = None` for database-free servers), `include_embedded_schema!`, `include_client_schema!` — each emits a `cratestack_schema` module shaped for one deployment shape, with strict disjoint backend output (server never emits rusqlite, embedded never emits sqlx)
 4. SQLx-backed model delegates for `create`, `upsert` (insert-or-update on PK conflict), `find_many`, `find_unique`, `update`, `delete`, plus the five batch primitives (`batch_get`, `batch_create`, `batch_update`, `batch_delete`, `batch_upsert`) returning a per-item `BatchResponse<M>` envelope with savepoint isolation
 5. generated Axum model CRUD and procedure routes — for `transport rest` schemas (the default); `transport rpc` schemas instead get `POST /rpc/{op_id}` (unary, every CRUD verb + every procedure) plus `POST /rpc/batch` (sequence of frames in, sequence out in same order, per-frame error isolation, no in-batch dependencies). Streaming for `Sequence`-kind ops (list-return procedures) works on the same unary route via `Accept: application/cbor-seq`. Errors on the RPC binding are uniform `RpcErrorBody { code, message, details? }` with gRPC-style codes — see [ADR 0005](../internals/rpc-transport-adr)
 6. host-owned authentication through `AuthProvider` and internal binding through `bind_auth(...)` and `bind_context(...)`
@@ -34,6 +34,8 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 23. **projection-decode tolerance** (0.4.x) — generated client decoders for `?fields=…` reads tolerate the server omitting fields the projection didn't ask for, while still hard-failing on a missing *required* scalar. Optional scalars (`T?`) fall back to `None`; list-arity fields fall back to an empty `Vec`; required scalars reject. Same `MissingFieldFallback` ladder powers model `?fields=…` reads and view projections
 24. **`codec-json` opt-out** on `cratestack-pg`, `cratestack-sqlite`, `cratestack-client-rust`, and `cratestack-client-flutter` (0.4.x) — default-on so existing setups are unchanged. Backend services that have standardized on CBOR can build with `default-features = false` on the facade to drop the `JsonCodec` wrapper type, the JSON fallback in `CborCodec`'s content-negotiation path, and the `RuntimeTransportClient::Json` FFI variant. `serde_json` stays linked (the view methods decode into `serde_json::Value` and the FFI bridge still encodes/decodes its bridge payloads as JSON); the opt-out narrows codec-negotiation behavior, not the `serde_json`-shaped surface area. CBOR stays unconditional (the schema macros emit `pub struct Client<C = CborCodec>`); the projection-view client methods (`get_view` / `list_view` / `list_view_paged`) route through the client's codec, so they keep working over CBOR
 25. **composable `RpcLink` client middleware chain** on the generated TypeScript RPC client (`CratestackRpcClientOptions.links`), plus a standalone `@cratestack/api` npm package shipping `createBatchLink()` (automatic same-tick RPC-call coalescing into `POST /rpc/batch`) and `createLoggerLink()` — see [RPC transport: client middleware](../guides/rpc-transport#client-middleware-the-rpclink-chain). RPC-transport/TypeScript only; REST binding, gRPC-Web, and the Rust/Dart clients don't have an equivalent chain yet
+26. **`db = None` — procedures-only servers with no database** — `include_server_schema!("…", db = None)` requires the schema's `datasource` block to declare `provider = "none"`, checked at compile time (a schema declaring `provider = "none"` alongside any `model` block is rejected with an error naming the offending model), and produces a genuinely database-free, zero-parameter `Cratestack::builder()` — no `PgPool` threaded through anywhere. Built for pure business-logic services, RPC facades in front of another system, or stateless computation endpoints that own no models and no database
+27. **`cratestack-api` facade** — a third disjoint facade crate (`cratestack = { package = "cratestack-api" }`), structurally parallel to the existing `cratestack-pg` / `cratestack-sqlite` split, purpose-built for `db = None` servers: `sqlx` and `cratestack-sqlx` are genuinely absent from its dependency graph — not feature-gated off, structurally not a dependency at all — unlike `cratestack-pg`, which still depends on `cratestack-sqlx` by default and only sheds it when a consumer opts into `default-features = false`
 
 ## Still Narrow Or Deferred
 
@@ -47,8 +49,7 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 8. the migration runner is forward-only — schema-diff generation and zero-downtime coordination remain out of scope
 9. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
 10. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
-11. the umbrella `cratestack` crate compiles both backends unconditionally; binary-size feature gating to opt out of the sqlx/tokio stack on embedded-only builds is planned but not yet shipped (embedded-only consumers can already depend directly on `cratestack-macros` + `cratestack-rusqlite` to shed the server-side weight)
-12. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument but only Postgres is wired today; MySQL and SQLite-via-sqlx are non-breaking future additions
+11. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
 
 ## Best Fit Right Now
 
@@ -67,5 +68,6 @@ CrateStack is currently strongest for:
 2. `./banking-readiness` for the regulated-workload primitives shipped on `feat/banking-readiness`
 3. `../guides/auth-provider` for the host auth boundary
 4. `../guides/offline-first-sqlite` for the embedded SQLite backend (native + browser via OPFS)
-5. `../architecture/transport-architecture` for transport design
-6. `../reference/auth-support-matrix` for the current auth and policy surface
+5. `../guides/no-database-procedures` for procedures-only servers with no database at all (`db = None`, the `cratestack-api` facade)
+6. `../architecture/transport-architecture` for transport design
+7. `../reference/auth-support-matrix` for the current auth and policy surface
