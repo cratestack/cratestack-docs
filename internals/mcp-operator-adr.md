@@ -210,7 +210,7 @@ cratestack_schema::mcp::tools(cool)
 Possible application setup:
 
 ```rust
-let cool = cratestack_schema::CrateStack::builder(pool)
+let cool = cratestack_schema::Cratestack::builder(pool)
     .codec(cratestack_codec_cbor::CborCodec::default())
     .procedures(AppProcedures)
     .build();

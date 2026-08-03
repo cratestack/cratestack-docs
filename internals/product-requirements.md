@@ -122,7 +122,7 @@ cratestack::include_schema!("schema.cstack");
 async fn main() -> anyhow::Result<()> {
     let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
 
-    let cool = cratestack_schema::CrateStack::builder(pool)
+    let cool = cratestack_schema::Cratestack::builder(pool)
         .codec(cratestack_codec_cbor::CborCodec::default())
         .procedures(AppProcedures)
         .build();
@@ -851,7 +851,7 @@ pub trait CoolProcedures: Send + Sync + 'static {
 Applications register procedure implementations through the builder:
 
 ```rust
-let cool = CrateStack::builder(pool)
+let cool = Cratestack::builder(pool)
     .procedures(AppProcedures)
     .build();
 ```
@@ -1498,7 +1498,7 @@ impl cratestack_schema::CoolProcedures for AppProcedures {
 async fn main() -> anyhow::Result<()> {
     let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
 
-    let cool = cratestack_schema::CrateStack::builder(pool)
+    let cool = cratestack_schema::Cratestack::builder(pool)
         .codec(cratestack_codec_cbor::CborCodec::default())
         .envelope(cratestack::NoEnvelope::default())
         .procedures(AppProcedures)
@@ -1514,7 +1514,7 @@ async fn main() -> anyhow::Result<()> {
 ## 10.2 COSE Setup
 
 ```rust
-let cool = cratestack_schema::CrateStack::builder(pool)
+let cool = cratestack_schema::Cratestack::builder(pool)
     .codec(cratestack_codec_cbor::CborCodec::default())
     .envelope(cratestack_cose::CoseSign1Envelope::new(verifier, signer))
     .procedures(AppProcedures)
