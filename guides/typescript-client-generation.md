@@ -309,6 +309,8 @@ const published = await client.procedures.publishPost({
 
 Procedure argument interfaces are generated straight from the procedure's declared parameters — `getFeed(limit: Int?)` becomes `GetFeedArgs { limit?: number | null }`; `publishPost(args: PublishPostInput)` becomes `PublishPostArgs { args: PublishPostInput }`, mirroring the parameter name declared in the schema.
 
+Two argument types get dedicated generated shapes rather than a plain scalar mapping: `PageInput` (`{ limit: number | null; offset: number | null; }`, hardcoded once per package) and `FindMany<Model>` (a per-model `PostWhere`/`PostFindMany` pair, backed by shared `StringFilter`/`NumberFilter`/etc. interfaces) — see [Pagination](../guides/pagination#procedure-arguments-pageinput) and [Search with Filters](../guides/find-many) for the full contract each one generates.
+
 ### TanStack Query hooks
 
 ```tsx

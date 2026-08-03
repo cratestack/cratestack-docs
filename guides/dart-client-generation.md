@@ -181,6 +181,8 @@ That's fixed now, unconditionally, for every generated class in this preset. A r
 
 Relation fields get the same treatment for free: a `Task.board` field (typed `Board?`) recurses into `Board`'s own generated `==` rather than falling back to identity, and list-valued relations get element-wise comparison rather than `List.==`.
 
+A `FindMany<Model>` procedure argument is the same story one level deeper: `PostFindMany`'s own `where`/`orderBy` fields are typed `PostWhere?`/`List<PostOrderByClause>?`, and `PostWhere`'s own fields are typed `StringFilter?`/`NumberFilter?`/etc. — every one of those, including the six shared filter classes, is `@MappableClass()`-annotated too, so a freshly-built `PostFindMany` passed to a `@riverpod` family provider gets the identical deep-equality treatment described above, all the way down. See [Search with Filters](./find-many) for the full `FindMany<Model>` contract, and [Pagination](./pagination#procedure-arguments-pageinput) for `PageInput` (a plain, hardcoded procedure-argument class like `Page`/`PageInfo`, generated the same way regardless of preset).
+
 ## The `--run-build-runner` flag
 
 `riverpod`-preset output isn't directly runnable Dart — the `@riverpod` and `@MappableClass()` annotations are inert until `build_runner` expands them into `.g.dart`/`.mapper.dart` part files. Without that step the package doesn't compile, let alone `flutter analyze` clean.
