@@ -352,7 +352,7 @@ Everything else — `widget(id)`, `WidgetCreateController.create(...)`, `WidgetU
 
 ## Caveats
 
-- **`@@paged` models aren't supported by the `riverpod` preset yet.** The generator doesn't emit `Page<T>`-returning list providers for a paged model under this preset — the same gap the TypeScript `swr` preset has for its own list hooks.
+- **`@@paged` models are supported by the `riverpod` preset.** A paged model's list provider returns `Page<Model>`, same as the REST/RPC cases elsewhere in this guide — the generator only skips the `IList<Model>` substitution (used for unpaged list results) for a paged model's return type.
 - **Update/delete controllers are single, global controllers per model, not keyed by id.** `<Model>UpdateController`/`<Model>DeleteController`'s `save`/`delete` methods take the target `id` as an argument, rather than the provider itself being a family keyed by id. Fine at small-to-medium screen scale; a screen with many concurrent in-flight updates per row might want a per-row wrapper of its own.
 - **List/get providers forwarding `query`/`input` needs a live server that understands it.** The provider parameter is forwarded as-is to the underlying REST or RPC call — there's no client-side filtering fallback if the server doesn't support a given filter.
 - **RPC transport has no typed query-builder class.** Unlike REST's `CratestackListQuery`, an RPC list provider's optional argument stays a raw `IMap<String, Object?>` — see [Using the riverpod preset over RPC](#using-the-riverpod-preset-over-rpc) above.

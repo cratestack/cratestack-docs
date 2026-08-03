@@ -36,7 +36,7 @@ Tracking [ADR 0004](../internals/schema-diff-adr).
 
 - **Status:** Designed
 - **What:** `CreateView` / `ReplaceView` / `DropView` / `CreateMaterializedView` / `DropMaterializedView` operations in the migration IR, with Postgres / SQLite emitters that order view DDL after the source-model DDL the view depends on.
-- **Why deferred:** The `view` block itself ([ADR 0003](./views-adr)) needs parser, AST, validator, and macro work before the diff engine has anything to lower into IR. See "View block" below.
+- **Why deferred:** The `view` block itself ([ADR 0003](../internals/views-adr)) needs parser, AST, validator, and macro work before the diff engine has anything to lower into IR. See "View block" below.
 - **Unblocks on:** View block landing (parser → AST → validator → macros → delegates).
 
 ### `DropEnumVariant`
@@ -81,6 +81,8 @@ Tracking [ADR 0003](../internals/views-adr).
 - **Unblocks on:** Concrete demand. The seam is wide enough that adding a backend doesn't require a rewrite.
 
 ## Transport and codecs
+
+`transport rest`, `transport rpc`, and `transport grpc` are all shipped today — see [Current State](./current-state). `transport grpc` currently covers model CRUD only; procedures aren't wired into the generated gRPC service yet. The items below are the remaining deferred seams, not a list of missing transports.
 
 ### COSE transport envelope
 

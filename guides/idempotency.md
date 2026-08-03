@@ -159,6 +159,9 @@ CREATE TABLE cratestack_idempotency (
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (principal_fingerprint, key)
 );
+
+CREATE INDEX IF NOT EXISTS cratestack_idempotency_expires_idx
+    ON cratestack_idempotency (expires_at);
 ```
 
 `SqlxIdempotencyStore::garbage_collect()` deletes rows whose `expires_at`

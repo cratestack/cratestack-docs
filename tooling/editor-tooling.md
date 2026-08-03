@@ -91,8 +91,8 @@ Supported extension settings:
 
 The extension resolves the server in this order:
 
-1. bundled binary under `server/<platform>/cratestack-lsp`
-2. configured `cratestack.lsp.path`
+1. configured `cratestack.lsp.path`, if set to something other than the default `cratestack-lsp`
+2. bundled binary under `server/<platform>/cratestack-lsp`
 3. `cratestack-lsp` on `PATH`
 
 ## CLI Fallback And CI
@@ -159,7 +159,7 @@ Highest-value follow-up work:
 2. Add semantic tokens so schema highlighting is less dependent on the TextMate grammar alone.
 3. Add rename, find-references, and document-wide symbol search on top of the precise spans now carried in the schema model.
 4. Add stronger extension-host end-to-end tests that assert definition, hover, and diagnostics through the actual VS Code APIs.
-5. Reduce VSIX size with a `files` allowlist or `.vscodeignore` and add missing package metadata such as repository and license fields.
+5. Add a marketplace icon to `packages/cratestack-vscode/package.json` — `.vscodeignore`, `license`, and `repository` metadata are already in place, but there's still no `icon` field.
 
 Likely medium-term work:
 

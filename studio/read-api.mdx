@@ -104,7 +104,7 @@ Studio binds and casts in SQL.
 
 ### `GET /api/targets/:key/models/:model/records/:pk`
 
-Single row by primary-key value. 404 with `INVALID_PRIMARY_KEY` if no
+Single row by primary-key value. 400 with `INVALID_PRIMARY_KEY` if no
 row matches.
 
 ```json

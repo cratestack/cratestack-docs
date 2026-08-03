@@ -159,7 +159,7 @@ Defaulting to `spawn_blocking` everywhere is the safe call. Skip it only where y
 Two examples in the framework repo demonstrate the full pattern end-to-end:
 
 - **[`examples/embedded-daemon`](https://github.com/cratestack/cratestack/tree/main/examples/embedded-daemon)** — `notify` watcher → tokio mpsc → debouncer state machine → `spawn_blocking` flush. The "long-running daemon with local SQLite state" shape. Includes a pure `Debouncer` unit-test boundary (the persistence layer is testable without tokio, the daemon layer requires it).
-- **[`examples/embedded-webhook`](https://github.com/cratestack/cratestack/tree/main/examples/embedded-webhook)** — axum + `include_embedded_schema!`, no Postgres. The "small HTTP service with its own SQLite" shape — the inverted twin of the [`server_basic`](https://github.com/cratestack/cratestack/blob/main/crates/cratestack/examples/server_basic.rs) example, which uses `include_server_schema!` + Postgres.
+- **[`examples/embedded-webhook`](https://github.com/cratestack/cratestack/tree/main/examples/embedded-webhook)** — axum + `include_embedded_schema!`, no Postgres. The "small HTTP service with its own SQLite" shape — the inverted twin of the [`server_basic`](https://github.com/cratestack/cratestack/blob/main/crates/cratestack-pg/examples/server_basic.rs) example, which uses `include_server_schema!` + Postgres.
 
 Both have a `lib.rs` / `main.rs` split: `lib.rs` exposes a `build_router` (webhook) or pure `Debouncer` + `persist_event` (daemon) so integration tests can exercise the persistence layer without binding a TCP port or watching a real filesystem. `main.rs` is the thinnest possible wrapper around `tokio::main`.
 

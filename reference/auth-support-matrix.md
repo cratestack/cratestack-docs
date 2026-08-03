@@ -403,11 +403,11 @@ Current security posture is intentionally conservative:
 
 Current coverage for the supported matrix lives primarily in:
 
-* `cratestack/crates/cratestack/tests/include_schema.rs`
-* `cratestack/crates/cratestack/tests/policy_db.rs`
-* `cratestack/crates/cratestack/tests/policy_db_advanced.rs`
-* `cratestack/crates/cratestack/tests/policy_db_auth_engine.rs`
-* `cratestack/crates/cratestack/tests/policy_db_recursive.rs`
+* `crates/cratestack-pg/tests/include_schema.rs`
+* `crates/cratestack-pg/tests/policy_db.rs`
+* `crates/cratestack-pg/tests/policy_db_advanced.rs`
+* `crates/cratestack-pg/tests/policy_db_auth_engine.rs`
+* `crates/cratestack-pg/tests/policy_db_recursive.rs`
 
 Those tests cover:
 

@@ -44,7 +44,7 @@ Conventions banks adopt:
 
 1. `id` is sortable — `YYYYMMDDHHMMSS_<slug>` is canonical
 2. `description` is short and human-readable
-3. `up` is the SQL applied forward; multiple statements are split on `;` and run in one transaction
+3. `up` is the SQL applied forward, sent as a single batch to Postgres and run inside one transaction
 4. `down` is recorded but **never executed** by the runner — irreversible-by-default is the safe banking posture
 
 ## Running
@@ -61,9 +61,11 @@ The runner:
 1. compares each input migration against `cratestack_migrations`
 2. skips already-applied rows whose checksum matches
 3. aborts with `CoolError::Internal` if an applied row's checksum has drifted
-4. for each pending row: opens a transaction, executes every statement in `up`, inserts the record into `cratestack_migrations`, commits
+4. for each pending row: opens a transaction, sends the entire `up` script in
+   one batch via `sqlx::raw_sql(&migration.up)`, inserts the record into
+   `cratestack_migrations`, commits
 
-A failure in any statement rolls the whole migration back. A multi-
+A failure anywhere in the batch rolls the whole migration back. A multi-
 statement script with a broken second statement leaves zero artefacts —
 the first `CREATE TABLE` rolls back with the failed `CREATE INDEX`, and
 `cratestack_migrations` does **not** record the partial attempt.
@@ -106,9 +108,14 @@ the next deploy attempt.
 
 ## Multi-statement scripts
 
-Postgres prepared statements accept exactly one command per round-trip,
-so the runner splits `up` on `;` and executes each non-empty statement
-sequentially inside the same transaction. Common patterns this enables:
+An earlier version of the runner split `up` on `;` client-side before
+executing each statement. That approach broke on dollar-quoted PL/pgSQL
+bodies, which routinely contain their own semicolons ([issue #270](https://github.com/cratestack/cratestack/issues/270)), so as of v0.6.0
+the runner no longer parses or splits `up` at all: the entire script is
+sent to Postgres in a single batch via `sqlx::raw_sql(&migration.up)`,
+which uses the simple-query protocol and lets Postgres itself handle
+statement boundaries — dollar-quoting included. Common patterns this
+enables:
 
 ```sql
 CREATE TABLE transfers (
@@ -134,11 +141,16 @@ All three statements land atomically. A failure in the `INSERT` rolls the
 
 The runner consumes SQL migrations identically whether they are hand-written or generated. CrateStack ships a separate **schema diff generator** that produces those migrations from `.cstack` against a committed schema snapshot — see [ADR 0004](../internals/schema-diff-adr) for the full design.
 
-Three commands cover the lifecycle:
+Today, exactly one subcommand is shipped:
 
 * `cratestack migrate diff` — offline. Diffs the current `.cstack` against `migrations/<backend>/schema.snapshot.json` and writes a new migration directory.
-* `cratestack migrate verify` — CI gate. Replays the full migration history against an ephemeral DB and checks the result matches the snapshot.
-* `cratestack migrate drift` — ops tool. Reports differences between the snapshot and a live database. Read-only.
+
+Two more are planned but **not yet implemented** — `MigrateAction` has
+only the `Diff` variant today, and both remain un-started per the
+["shipping order"](../internals/schema-diff-adr) list:
+
+* `cratestack migrate verify` — deferred. Intended as a CI gate that replays the full migration history against an ephemeral DB and checks the result matches the snapshot; blocked on ephemeral-DB spawning support.
+* `cratestack migrate drift` — deferred. Intended as an ops tool reporting differences between the snapshot and a live database, read-only.
 
 Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@rename` annotation.
 

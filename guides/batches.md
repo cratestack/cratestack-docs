@@ -123,10 +123,16 @@ Per-item `BatchItemError { code, message }` uses the same string codes as the fr
 | `FORBIDDEN` | create/update/delete policy denied this item |
 | `NOT_FOUND` | `batch_get` / `batch_update` / `batch_delete` saw no row at this PK |
 | `PRECONDITION_FAILED` | versioned `batch_update` with stale `if_match` |
-| `CONFLICT` | `batch_create` tripped a unique constraint (incl. duplicate client PKs) |
+| `CONFLICT` | a unique constraint was tripped (incl. duplicate client PKs) |
 | `DATABASE_ERROR` | unexpected DB failure — usually means escalate via outer error |
 
 The codes mirror `CoolError::code()` so a single mapping table covers single-route responses and batch envelope entries.
+
+`CONFLICT` isn't specific to `batch_create` — `classify_unique_violation` is
+shared uniformly across `batch_create`, `batch_update`, and `batch_upsert`,
+so a unique-constraint hit on any of the three (a `batch_update` colliding
+on a unique column, or a `batch_upsert` conflict) surfaces the same
+`CONFLICT` code in its envelope slot, not just duplicate PKs on create.
 
 ## Comparison with `IdempotencyLayer` and `.upsert(...)`
 

@@ -115,12 +115,14 @@ that escape to the pool will not see the snapshot the wrapper opened, and
 won't roll back on retry. The closure signature pins this:
 
 ```rust
-Fn(Transaction<'static, Postgres>) -> impl Future<
+FnMut(Transaction<'static, Postgres>) -> impl Future<
     Output = Result<(T, Transaction<'static, Postgres>), CoolError>,
-> + Send
+>
 ```
 
 The transaction goes in, the value plus the same transaction comes out.
+It's `FnMut`, not `Fn` — the retry loop calls the closure again on each
+serialization-failure retry, so it must be callable more than once.
 
 ## When commit-time retry matters
 

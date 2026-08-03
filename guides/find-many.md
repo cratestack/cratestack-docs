@@ -80,7 +80,20 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
 
 ## Filter operators
 
-Every `<Model>Where` field is one of six shared filter shapes, matching
+The six named filter types below (`StringFilter`, `NumberFilter`, etc.) are
+what the **TypeScript and Dart generated clients** expose — one interface/class
+per scalar family, each with only the operators that make sense for it. The
+**Rust** side is different: every `<Model>Where` field, regardless of scalar
+type, is the same single generic `FieldFilterInput<V>` (as shown above,
+`PostWhere { id: Option<FieldFilterInput<i64>>, title: Option<FieldFilterInput<String>>, ... }`)
+— there's one Rust type, not six, and it carries every operator field
+(`eq`, `ne`, `in`, `lt`, `lte`, `gt`, `gte`, `contains`, `starts_with`, `is_null`)
+regardless of `V`, whether or not they're meaningful for that particular `V`.
+The table below reflects which operators the TypeScript/Dart clients
+actually surface per scalar family — it does not describe distinct Rust
+types.
+
+Every generated TypeScript/Dart `<Model>Where` field is one of six shared filter shapes, matching
 whichever operators actually make sense for that scalar type:
 
 | Filter | Fields | Applies to |

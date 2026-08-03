@@ -116,9 +116,9 @@ curl -X POST 'http://127.0.0.1:7878/api/targets/blog/models/Post/records' \
 Body shape: a JSON object with one key per writable field (anything
 that isn't a relation or a list-typed field).
 
-`@id` fields are required unless the schema declares
-`@default(dbgenerated())`. Generated defaults like `createdAt`
-populated by the database are visible in the response row.
+`@id` fields are required unless the schema declares any
+`@default(...)` attribute on the field. Generated defaults like
+`createdAt` populated by the database are visible in the response row.
 
 ## UPDATE — `PATCH …/records/:pk`
 

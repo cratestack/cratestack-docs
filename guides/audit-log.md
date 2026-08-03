@@ -32,7 +32,12 @@ model Transfer {
 Constraints enforced at parse time:
 
 1. `@@audit` takes no arguments
-2. one model can declare it at most once
+
+Unlike `@@paged`, `@@emit`, and `@@id` — which do reject a duplicate
+declaration at parse time — `@@audit` has no such check today. The
+parser simply recognizes the attribute, and the macro descriptor detects
+it with an `.any(...)` scan, so declaring `@@audit` twice on the same
+model is silently a no-op rather than a validation error.
 
 ## What gets captured
 

@@ -89,17 +89,25 @@ identical list path, so the envelope below is transport-independent.
 Canonical shape: `cratestack_core::page::{Page, PageInfo}`.
 
 - `totalCount` — total rows matching the read policy and any `where`
-  filter, ignoring `limit`/`offset`. Computed with a second query (a
-  `COUNT` over the same filtered predicate) run alongside the list
-  query — a paged list costs two round trips to the database, not one.
+  filter, ignoring `limit`/`offset`. Computed by re-running the same
+  filtered `FindMany` query with no `limit`/`offset` and taking the
+  length of the resulting row set — **not** a lightweight SQL
+  `COUNT(*)`. The second query fetches and deserializes every matching
+  row, so a paged list costs two round trips to the database and the
+  second one scales with the total match count, not one cheap count
+  plus one page.
 - `pageInfo.limit` — the limit actually applied, including the
   `MAX_LIST_LIMIT` default when the request omitted it (never `null`)
 - `pageInfo.offset` — echoes exactly what the request supplied
 - `pageInfo.hasNextPage` — `offset + limit < totalCount`
 - `pageInfo.hasPreviousPage` — `offset > 0`
 
-A non-`@@paged` model's list route is unaffected — it keeps returning a
-bare array, and `limit`/`offset` have no special handling for it.
+A non-`@@paged` model's list route is unaffected under REST and RPC — it
+keeps returning a bare array, and `limit`/`offset` have no special
+handling for it. **`transport grpc` schemas are the exception:** every
+model's `list` op returns `Page<Model>` under gRPC regardless of
+whether `@@paged` is declared — `@@paged` there only gates REST/RPC
+envelope shape, not a semantic switch a gRPC schema can opt out of.
 
 ## Generated clients
 
@@ -221,6 +229,31 @@ await client.procedures.listFeed(
   const ListFeedArgs(page: PageInput(limit: 20, offset: 40)),
 );
 ```
+
+## Embedded (on-device) pagination
+
+Everything above describes the REST/RPC/gRPC server surface, but pagination
+isn't limited to it. Every embedded (`cratestack-rusqlite`) model **and
+view** delegate exposes `.find_many(...).paginate(page: PageInput) ->
+Page<M>` unconditionally — `@@paged` is neither rejected nor required on
+an embedded schema; the method is just always there.
+
+```rust
+let page = delegate
+    .find_many()
+    .paginate(PageInput { limit: Some(20), offset: Some(40) })?;
+println!("{} of {}", page.items.len(), page.total_count.unwrap_or(0));
+```
+
+This isn't a cheap approximation: it runs a real `COUNT(*)` over the same
+filters followed by the paginated `SELECT`, both inside one connection
+borrow so a concurrent write can't split what the count describes from
+the page it's paired with — the same `Page<M>` / `PageInfo` shape the
+server-side envelope uses, assembled locally instead of over the wire.
+Unlike the server path, there's no separate wire contract to fix per
+model here, so there's nothing for `@@paged` to gate: the caller is the
+same binary that defines the schema, choosing per call site whether it
+wants `Page<M>` (`.paginate(...)`) or a bare `Vec<M>` (`.run()`).
 
 ## What this is not
 

@@ -78,6 +78,9 @@ mode = "rw"                     # overrides workspace default for this target
 [target.db]
 url = "env:CATALOG_DB_URL"      # `env:NAME` resolves at boot; literals also work
 driver = "postgres"             # "postgres" (sqlx) or "sqlite" (rusqlite)
+                                 # "mysql" parses but isn't supported yet — it
+                                 # fails at workspace-load time with an
+                                 # `UnsupportedDriver` error
 max_connections = 5             # Postgres only; SQLite uses a single connection
 
 [target.api]

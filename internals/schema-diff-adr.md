@@ -7,7 +7,7 @@ description: State-based migration generation from .cstack vs a committed schema
 
 ## Status
 
-Proposed
+Proposed. Most of the design below has since shipped in `cratestack-migrate`: schema snapshotting, the diff engine and IR, both SQL emitters, `@@db_enforce` → `AddCheck`/`DropCheck` promotion, `@relation` → `AddForeignKey`/`DropForeignKey` promotion, enum IR ops, and view/materialized-view IR ops are all implemented and driven by the `cratestack migrate diff` CLI command today. `cratestack migrate verify` and `cratestack migrate drift` (shipping-order items 6–7 below) remain unimplemented — see `crates/cratestack-migrate/README.md`'s own "Not yet implemented" section in the source repo.
 
 ## Date
 

@@ -101,8 +101,10 @@ Each change lands in one of three buckets:
 ### Additive
 
 * Adding a model, an optional field, or a procedure.
-* Adding a required field/argument that carries a `@default(...)` — the server fills it in, so existing
-  payloads still work.
+* Adding a required field that carries a `@default(...)` — the server fills it in, so existing
+  payloads still work. This only applies to model fields: a procedure argument can't carry
+  `@default(...)` in the current schema model, so adding a required procedure argument is always
+  Breaking, regardless of any default.
 * Widening arity: required → optional.
 
 ### Internal-only
