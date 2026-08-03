@@ -120,8 +120,12 @@ Every `default`-preset package ships `package.json`, `tsconfig.json`, `README.md
 | `src/models.ts` | ✓ | ✓ | model/input interfaces, enums, `Page<T>` |
 | `src/runtime.ts` | ✓ | ✓ | `CratestackRuntime` (REST) or `CratestackRpcRuntime` (RPC) — the one place HTTP/serialization logic actually lives |
 | `src/client.ts` | ✓ | ✓ | per-model API classes (`list`/`get`/`create`/`update`/`delete`) and `ProceduresApi`, all thin wrappers over the runtime |
-| `src/queries.ts` | ✓ | — | `CratestackFetchQuery` / `toSearchQuery` — REST-only, since RPC dispatches by op ID instead of query-string projection params |
+| `src/queries.ts` | ✓ | ✓ | REST: `CratestackFetchQuery` / `toSearchQuery`. RPC: `CratestackRpcListQuery` / `toRpcListInput` — same job, shaped for RPC's plain-object list input instead of a URL query string |
 | `src/react-query.ts` | ✓ | ✓ | `useXListQuery`, `useCreateXMutation`, etc. — TanStack Query hooks over the client |
+| `src/links.ts` | — | ✓ | `RpcLink`/`RpcStreamLink` and the rest of the composable-chain types — RPC-only, see [Composable links](#composable-links-cratestack) below |
+| `src/cbor-item.ts` | — | ✓ | the low-level single-CBOR-item structural walker (item-boundary skipping) that `cbor-seq.ts`'s stateful scanner is built on — RPC-only |
+| `src/cbor-seq.ts` | — | ✓ | the stateful `application/cbor-seq` boundary scanner backing `runtime.stream(...)` — RPC-only |
+| `src/stream-terminal.ts` | — | ✓ | the `streamLinks` chain's terminal link — performs the real network call for `runtime.stream(...)` and turns the response into the yielded `AsyncIterable` — RPC-only |
 
 The per-model classes in `client.ts` aren't hardcoded fetch calls duplicated per endpoint — each method is a few lines that delegates into the single shared runtime class, so the actual request/serialization/error-handling logic exists once regardless of how many models the schema declares.
 
@@ -141,9 +145,11 @@ Instead of one `client.ts` class fronting every model, `swr` emits one module pe
 | File | REST | RPC | Contains |
 |---|---|---|---|
 | `src/runtime.ts` | ✓ | ✓ | `CratestackRuntime` (REST) or `CratestackRpcRuntime` (RPC) — same runtime classes as the `default` preset |
-| `src/queries.ts` | ✓ | — | `CratestackQueryRequestConfig`/`toSearchQuery` — REST-only |
+| `src/queries.ts` | ✓ | ✓ | REST: `CratestackQueryRequestConfig`/`toSearchQuery`. RPC: `CratestackRpcListQuery`/`toRpcListInput` — same reused templates as the `default` preset |
 | `src/links.ts` | — | ✓ | `RpcLink`/`RpcStreamLink` and the rest of the composable-chain types — RPC-only, see [Composable links](#composable-links-cratestack) below |
-| `src/cbor-seq.ts` | — | ✓ | the CBOR-sequence boundary scanner backing `runtime.stream(...)` — RPC-only |
+| `src/cbor-item.ts` | — | ✓ | the low-level single-CBOR-item structural walker (item-boundary skipping) that `cbor-seq.ts`'s stateful scanner is built on — RPC-only |
+| `src/cbor-seq.ts` | — | ✓ | the stateful `application/cbor-seq` boundary scanner backing `runtime.stream(...)` — RPC-only |
+| `src/stream-terminal.ts` | — | ✓ | the `streamLinks` chain's terminal link — performs the real network call for `runtime.stream(...)` and turns the response into the yielded `AsyncIterable` — RPC-only |
 | `src/models/shared.ts` | ✓ | ✓ | types referenced by 2+ models, or by no model at all — see "Type ownership" below |
 | `src/models/<model>.ts` | that model's own types plus a plain `async` function per CRUD verb (`listWidgets`, `getWidget`, `createWidget`, `updateWidget`, `deleteWidget`) — no client class, no framework import |
 | `src/models/<model>.hooks.ts` | a **sibling** file: one `useSWR`/`useSWRMutation` hook per verb (`useWidgets`, `useWidget`, `useCreateWidget`, ...), each a thin wrapper that calls the plain function from `<model>.ts` |
@@ -187,7 +193,7 @@ This rule isn't configurable per call. If you need different invalidation, call 
 
 **Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
 
-**Known gaps.** As of this writing, `swr` doesn't support `transport grpc` schemas, and doesn't yet special-case `@@paged` models (it never imports `Page`/`PageInfo` for one) — both are tracked as generator follow-ups, not permanent limitations.
+**Known gaps.** As of this writing, `swr` doesn't support `transport grpc` schemas — tracked as a generator follow-up, not a permanent limitation. `@@paged` models are already handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/models/shared.ts`, same as the `default` preset.
 
 ## Build the generated package
 
@@ -379,7 +385,7 @@ for await (const ping of client.runtime.stream<Ping>("procedure.manyPings", {}))
 }
 ```
 
-When the server picks the negotiated codec (`application/cbor` by default), the body is a single array decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, the runtime's own CBOR-sequence boundary scanner decodes and yields each item as it arrives on the wire — never after buffering the whole body first. A response that ends in the mid-stream error sentinel throws `CratestackRpcStreamError` instead of yielding a final item. See the [RPC transport guide's "Consuming streams" section](/guides/rpc-transport#consuming-streams) for the wire-level details and how this compares to the Rust/Flutter/dio client paths.
+When the server picks the negotiated non-streaming codec (JSON by default — see below), the body is a single array decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, the runtime's own CBOR-sequence boundary scanner decodes and yields each item as it arrives on the wire — never after buffering the whole body first. A response that ends in the mid-stream error sentinel throws `CratestackRpcStreamError` instead of yielding a final item. See the [RPC transport guide's "Consuming streams" section](/guides/rpc-transport#consuming-streams) for the wire-level details and how this compares to the Rust/Flutter/dio client paths.
 
 `CratestackRpcClientOptions` also accepts a `links?: RpcLink[]` array for composing cross-cutting concerns (logging, retry, auth-refresh, automatic batch coalescing via `@cratestack/api`) in front of `call()`/`batch()` without one override clobbering another — see [RPC transport: client middleware](./rpc-transport#client-middleware-the-rpclink-chain) for the full design. `stream()` calls bypass `links` entirely.
 
@@ -389,7 +395,7 @@ TanStack Query hooks are generated for RPC schemas too, with the same naming as 
 
 `CratestackRpcRuntime` accepts a `links` array (unary/batch calls) and a separate `streamLinks` array (`stream()` calls) — interceptor chains where each link wraps the next, terminating in the real network call. Passing neither is a true no-op: requests are byte-identical to not having the option at all. Both types (`RpcLink`, `RpcStreamLink`, `RpcLinkRequest`, ...) are generated directly into `src/links.ts`, so a link doesn't need to import anything from the generated package to be assignable there — TypeScript's structural typing means any object shaped like `RpcLink` fits.
 
-That structural fit is what the `@cratestack/*` npm family builds on: nine small packages (plus a backward-compatible umbrella) that ship ready-made links, alternate transports, and framework adapters for **RPC-transport** generated clients, published and installable independently of the generated package itself:
+That structural fit is what the `@cratestack/*` npm family builds on: twelve small packages (plus a backward-compatible umbrella) that ship ready-made links, alternate transports, codecs, and framework adapters for **RPC-transport** generated clients, published and installable independently of the generated package itself:
 
 | Package | What it is |
 |---|---|
@@ -402,6 +408,22 @@ That structural fit is what the `@cratestack/*` npm family builds on: nine small
 | [`@cratestack/validator-yup`](https://www.npmjs.com/package/@cratestack/validator-yup) | Same idea, yup schemas. |
 | [`@cratestack/adapter-tanstack-query`](https://www.npmjs.com/package/@cratestack/adapter-tanstack-query) | `rpcQueryOptions`/`rpcMutationOptions` — generic TanStack Query option builders for hand-written hooks the generated `react-query.ts` doesn't cover. |
 | [`@cratestack/adapter-rtk`](https://www.npmjs.com/package/@cratestack/adapter-rtk) | `createRpcBaseQuery(...)` — an RTK Query `BaseQueryFn` that dispatches through the same runtime and link chain. |
+| [`@cratestack/cbor-node`](https://www.npmjs.com/package/@cratestack/cbor-node) | Native N-API CBOR codec (wraps the framework's `cratestack-codec-cbor` Rust crate via `crates/cratestack-cbor-napi`) for byte-identical wire behavior with the server and Rust client, in Node. |
+| [`@cratestack/cbor-web`](https://www.npmjs.com/package/@cratestack/cbor-web) | wasm-bindgen CBOR codec for browsers — async one-time WASM init, synchronous encode/decode after, backed by the same Rust `CborCodec`. |
+| [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) | Umbrella package: conditional `exports` auto-select `@cratestack/cbor-node` in Node or `@cratestack/cbor-web` in the browser behind one import path and one async `createCborCodec()` factory. |
+
+The generated RPC runtime's default codec is JSON (`this.codec = options.codec ?? jsonRpcCodec`, sending/expecting `application/json`) — a stock generated TypeScript client speaks JSON until you wire in something else. To switch a client to CBOR, pass `createCborCodec()`'s result as the `codec` option:
+
+```ts
+import { createCborCodec } from "@cratestack/cbor";
+import { ExampleWidgetClientClient } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", {
+  codec: await createCborCodec(),
+});
+```
+
+(This is unrelated to the Rust client, `cratestack-client-rust`, which defaults to CBOR — see the side-by-side comparison below. The generated TypeScript RPC runtime's default is JSON.)
 
 ```ts
 import { createBatchLink, createLoggerLink } from "@cratestack/api";
@@ -419,7 +441,7 @@ const [a, b, c] = await Promise.all([
 ]);
 ```
 
-`@cratestack/api` is a backward-compatible re-export shim over the split, not a tenth independent package — its root import stays exactly `ts-types` + `link-batch` + `link-logger` (unchanged from before the split), and everything else added since is a named subpath that pulls in only its own peer dependency:
+`@cratestack/api` is a backward-compatible re-export shim over the split, not a thirteenth independent package — its root import stays exactly `ts-types` + `link-batch` + `link-logger` (unchanged from before the split), and everything else added since is a named subpath that pulls in only its own peer dependency:
 
 ```ts
 import { createZodValidatorLink } from "@cratestack/api/validator-zod";
@@ -572,14 +594,14 @@ let published = client
     .await?;
 ```
 
-The pattern holds across languages: model accessors are named after the pluralized model (`posts` / `blogClient.posts` / `client.posts()`), procedures live under a `procedures` namespace, and identifiers are cased per-language convention — `camelCase` in TypeScript and Dart, `snake_case` in Rust — while the schema's own field/procedure names stay recognizable in all three.
+The pattern holds across languages: model accessors are named after the pluralized model (`posts` / `blogClient.posts` / `client.posts()`), procedures live under a `procedures` namespace, and only method/procedure names are cased per-language convention — `camelCase` in TypeScript and Dart, `snake_case` in Rust (`.posts()`, `get_feed`). Struct field names (e.g. `authorId`, `postId`) keep the schema's own original casing verbatim in all three languages, Rust included — there's no serde rename, so a Rust `CreatePostInput` literal still reads `authorId: 1`, not `author_id: 1`, as the code samples above show.
 
 ## Caveats
 
 - **Bundle size on large schemas, `default` preset only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `swr` preset's file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error contract across the generated clients today.
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
-- **`swr` preset gaps.** No `transport grpc` support yet, and no special-cased `Page`/`PageInfo` handling for `@@paged` models — both tracked as generator follow-ups.
+- **`swr` preset gap.** No `transport grpc` support yet — tracked as a generator follow-up. `@@paged` models are supported: `Page`/`PageInfo` are imported into every file that needs them, same as the `default` preset.
 
 ## See also
 

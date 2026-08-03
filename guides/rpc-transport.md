@@ -5,7 +5,7 @@ description: Pick `transport rpc` in your `.cstack` schema to swap REST routes f
 
 # RPC transport
 
-CrateStack ships **two generation styles** for a `.cstack` schema. The default is REST — per-model `/users`, `/users/{id}`, `/$procs/<name>` routes, the shape this framework was built around. The alternative is **RPC** — a single `POST /rpc/{op_id}` route per callable, a `POST /rpc/batch` endpoint that takes N frames at a time, and content-negotiated streaming on the same unary route. One binding per schema; the macro emits exactly one binding's worth of routes and client surface. There is no runtime flip and no schema runs both.
+A `.cstack` schema's `TransportStyle` has three variants — REST, RPC, and gRPC (`transport grpc`, its own `cratestack-grpc` crate and codegen). The default is REST — per-model `/users`, `/users/{id}`, `/$procs/<name>` routes, the shape this framework was built around. This guide covers the second style, **RPC** — a single `POST /rpc/{op_id}` route per callable, a `POST /rpc/batch` endpoint that takes N frames at a time, and content-negotiated streaming on the same unary route. gRPC is out of scope here; see its own docs if you're picking that binding. One binding per schema; the macro emits exactly one binding's worth of routes and client surface. There is no runtime flip and no schema runs both.
 
 This guide covers what the RPC binding does today and when to pick it. The full design is in [ADR 0005](../internals/rpc-transport-adr).
 
@@ -146,7 +146,7 @@ A malformed batch envelope (body that isn't a sequence of frames) returns `400`.
 
 ## Streaming — `Accept: application/cbor-seq`
 
-List-return procedures (those declared as `... : T[]`) get `OpKind::Sequence` from the macro and stream over the **same** `POST /rpc/{op_id}` route as unary. Switch by content negotiation:
+List-return procedures (those declared as `... : T[]`) get `OpKind::Sequence` from the macro and negotiate over the **same** `POST /rpc/{op_id}` route as unary. Switch by content negotiation:
 
 ```http
 POST /rpc/procedure.manyPings HTTP/1.1
@@ -156,7 +156,15 @@ Accept: application/cbor-seq
 
 The response is a stream of codec-encoded chunks, terminated by end-of-body. With the default Accept the same op returns a single CBOR `Vec<T>` — the route doesn't change, only the wire shape.
 
-SSE (`text/event-stream`) is wired in the codec layer and works the same way for clients that need EventSource compatibility.
+Genuine incremental delivery is opt-in: only procedures explicitly marked with the `@stream` directive produce items as they're generated (via an `async_stream` generator internally). A plain `T[]`-returning procedure without `@stream` still negotiates `application/cbor-seq` correctly, but the response is fully buffered server-side first, then sent — it's a wire-shape change, not a latency win, unless the procedure opts in with `@stream`:
+
+```cstack
+procedure ticks(args: TickerArgs): Tick[]
+  @allow(auth() != null)
+  @stream
+```
+
+SSE (`text/event-stream`) is not implemented anywhere in the codebase today — it exists only as a forward-looking note in the RPC transport design doc, not as shipped behavior.
 
 ## Consuming streams
 
@@ -164,7 +172,7 @@ The wire side is one paragraph; the interesting question is what a client looks 
 
 ### The wire shape
 
-`application/cbor-seq` is a sequence of self-delimiting CBOR top-level items concatenated back-to-back — no envelope, no length prefix, no framing bytes between items. The server emits it from `reqwest`/`axum`'s `bytes_stream()` so the body flushes as items are produced; the response is never fully buffered on the wire. The URL is the same `POST /rpc/{op_id}` that serves unary; only `Accept: application/cbor-seq` (the codec's `sequence_accept_header_value()`) flips the response shape. Op kind is decided by the schema (`OpKind::Sequence` for list-return procedures and the model `list` verb), not by the request.
+`application/cbor-seq` is a sequence of self-delimiting CBOR top-level items concatenated back-to-back — no envelope, no length prefix, no framing bytes between items. The server emits it from `reqwest`/`axum`'s `bytes_stream()` so the body flushes as items are produced; the response is never fully buffered on the wire. The URL is the same `POST /rpc/{op_id}` that serves unary; only `Accept: application/cbor-seq` (the codec's `sequence_accept_header_value()`) flips the response shape. Op kind is decided by the schema (`OpKind::Sequence` for list-return procedures), not by the request — the model `list` verb is always `Unary` today, per the op id table [above](#op-identity).
 
 ### Path 1 — Rust client via `RpcClient::call_streaming`
 
@@ -418,7 +426,7 @@ Semantics worth knowing before you reach for it:
 |---|---|
 | Batching window | A microtask by default — same-tick calls collapse. Widen it across ticks with the `windowMs` option. |
 | Dedup | Only collapses calls that share an explicit `idempotencyKey`. Unmarked calls are never auto-collapsed, even if textually identical — blindly merging two unmarked mutations would be unsafe, and the server does no dedup of its own. |
-| Aggregate headers | The `/rpc/batch` request reuses the **first** queued call's headers. Per-call custom headers on later calls in the same window are not applied to the aggregate — put anything that must apply batch-wide on the runtime's own `headers` option instead. |
+| Aggregate headers | Queued calls are partitioned by full transport signature (headers, fetch impl, codec, URL) before flushing — calls that share a signature share one `/rpc/batch` request; calls with different headers land in **separate** `/rpc/batch` requests instead of silently losing their headers. A `maxBatchSize` option further caps how many entries land in one partition's request before it splits. |
 | Abort | Cancelling an individual call only cancels it pre-flush. Once its batch has been sent, the call rides the in-flight batch to completion. |
 
 **This is unrelated to the server-side ORM batch primitives in [Batches](./batches)** (`batch_get`/`batch_create`/`batch_update`/`batch_delete`/`batch_upsert`). Both are called "batch" and both end up as one round trip, but they solve different problems at different layers: `createBatchLink` is client-side RPC-call coalescing — turning N small HTTP requests the *caller* issued into one `/rpc/batch` request, transparently, with no change to caller code. The ORM batch primitives are a server-side API a handler calls deliberately, taking an array of rows and processing them with per-item success/failure. Don't conflate the two — a call through `createBatchLink` still dispatches to whatever the schema's routes do per op; it doesn't imply the handler on the other end is using `batch_create` internally.

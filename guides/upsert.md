@@ -48,11 +48,33 @@ model Account {
 ```
 
 The compile-time gate is intentional: a server-PK upsert can't target a
-specific row without leaking server identity to the caller, and v1 doesn't
-support unique-key (non-PK) conflict targets. Widening to `@unique`
-columns — including [composite `@@unique([...])`](../reference/composite-keys)
-constraints, which are enforced in the database but not yet reachable
-from this builder — is a future, non-breaking addition.
+specific row without leaking server identity to the caller.
+
+By default the conflict target is the model's primary key, but it isn't
+the only option: `.on_conflict(ConflictTarget::Columns(&["col1",
+"col2"]))` lets the upsert target any column tuple backed by a `UNIQUE`
+constraint or index — including a [composite `@@unique([...])`](../reference/composite-keys)
+constraint. This is a real, currently-working mechanism (`ConflictTarget::{PrimaryKey, Columns}`),
+available on both the server (`cratestack-sqlx`) upsert builder and the
+embedded (`cratestack-rusqlite`) upsert builder symmetrically:
+
+```rust
+// Upsert on a composite unique key instead of the primary key.
+let setting = cool
+    .ownerSetting()
+    .upsert(CreateOwnerSettingInput { owner_id, provider, value })
+    .on_conflict(ConflictTarget::columns(&["owner_id", "provider"]))
+    .run(&ctx)
+    .await?;
+```
+
+Named columns must correspond to a `UNIQUE` constraint/index on the
+target table — the database enforces this and surfaces a clear error if
+not — and the input must carry a value for every column in the target
+tuple, since the conflict probe (`SELECT … FOR UPDATE`) filters on it.
+Composite-constraint-by-name (`ON CONFLICT ON CONSTRAINT my_unique_idx`)
+isn't exposed; pass the matching column tuple via `ConflictTarget::Columns`
+instead.
 
 ## Programmatic use
 
@@ -187,11 +209,14 @@ The on-device (`cratestack-rusqlite`) path is deliberately thinner:
 2. no transactional probe — the upsert is a single statement
 3. no event outbox or audit log to discriminate
 
-The SQL is a straightforward `INSERT … ON CONFLICT (<pk>) DO UPDATE SET …`
-with the same `upsert_update_columns` rule, and `@version` is bumped via
-`<table>.<col> + 1` so concurrent on-device writers converge. Use this
-path when you're processing inbound sync messages from a server-of-truth
-and want each message to be a self-describing convergence step.
+The SQL is a straightforward `INSERT … ON CONFLICT (<pk-or-columns>) DO
+UPDATE SET …` with the same `upsert_update_columns` rule, and `@version`
+is bumped via `<table>.<col> + 1` so concurrent on-device writers
+converge. `.on_conflict(ConflictTarget::Columns(&[...]))` works here too
+— composite-key upsert isn't a server-only capability, it's available on
+the embedded delegate symmetrically. Use this path when you're processing
+inbound sync messages from a server-of-truth and want each message to be
+a self-describing convergence step.
 
 ## HTTP
 

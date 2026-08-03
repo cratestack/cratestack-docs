@@ -95,6 +95,8 @@ Current generated fields include:
 | `cratestack_offset`        | Parsed `offset` query value when present                                                |
 | `cratestack_count`         | Number of items returned by the completed list response                                 |
 | `cratestack_total_count`   | Total result count recorded for paged list responses                                    |
+| `cratestack_detail`        | `CoolError::detail()` on route-level `warn` events — preflight, auth, query-parsing, and selection-validation failures |
+| `cratestack_request_id`    | Request id from `CoolContext`, recorded on procedure route completion/failure events and on model list completion/failure events |
 
 All current generated events use the `cratestack` tracing target.
 

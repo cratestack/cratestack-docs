@@ -65,11 +65,14 @@ view RevenueByDay from Order {
 
 ### `@from(Model.field)`
 
-Binds a view column to a typed source field on one of the `from` models. Lets the parser:
-
-* validate that `Model.field` exists,
-* check the Rust type of the view column matches the source field,
-* propagate column-level policies if the source field has any.
+Documents that a view column is sourced from a typed field on one of the
+`from` models — a hint for readers about provenance, not something the
+parser checks today. `@from(...)` is parsed like any other unrecognized
+`@...` field attribute: an opaque raw string. There is currently no
+validation that `Model.field` exists, that the view column's Rust type
+matches the source field's, or that column-level policies on the source
+field propagate to the view. Treat it as documentation until that
+validation lands.
 
 `@from` is optional. Columns without it are **computed** — the developer declares the Rust type and the macro trusts the SQL.
 
@@ -133,7 +136,7 @@ view AccountBalance from Account, Transfer {
 
 When `@@materialized` is set:
 
-* The generated delegate gains a `pub async fn refresh(&self) -> Result<()>` method that emits `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`.
+* Calling `refresh()` on this view's delegate succeeds, emitting `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`. `refresh()` itself is not conditionally generated — every `ViewDelegate` exposes `pub async fn refresh(&self) -> Result<(), CoolError>` unconditionally, and the check is a runtime one: it returns `CoolError::Forbidden` if the view isn't `@@materialized`. (The separate `ViewDelegateNoUnique` used by `@@no_unique` views omits `refresh()` at the type level, as noted above — but that's a distinct, unique-index-driven restriction, not how non-materialized-but-unique views are handled.)
 * The migration emits `CREATE MATERIALIZED VIEW <name> …` plus `CREATE UNIQUE INDEX <name>_pkey ON <name> (<id_column>)` to back the concurrent refresh.
 * `@@no_unique` is rejected: concurrent refresh requires a unique index, and CrateStack will not silently downgrade to a non-concurrent refresh that takes `ACCESS EXCLUSIVE`.
 
@@ -179,14 +182,13 @@ Views never expose `insert`, `update`, or `delete`. This is enforced **at the ty
 | Rule | Failure mode |
 | --- | --- |
 | Exactly one `@id` field, or `@@no_unique` | Parse error |
-| Every `@from(M.f)` references a model in `from` | Parse error |
-| `M.f` exists on the referenced model | Parse error |
-| Field type matches `M.f` type | Parse error |
 | At least one of `@@server_sql` / `@@embedded_sql` / `@@sql` | Parse error |
 | `@@allow` action is `"read"` | Parse error otherwise |
 | `@@materialized` + `@@no_unique` | Parse error |
-| `@@materialized` requires `@@server_sql` (not `@@sql` alone) | Parse error |
+| `@@materialized` requires `@@server_sql` **or** `@@sql` (either satisfies it) | Parse error |
 | `@@materialized` + embedded build target | Compile error referencing [ADR 0003](../internals/views-adr) |
+
+`@from(M.f)` is **not** validated by the parser today — it's an opaque, unchecked attribute (see above). There is no parse-time check that `M.f` exists, that the model is in `from`, or that the field type matches.
 
 ## Read Next
 

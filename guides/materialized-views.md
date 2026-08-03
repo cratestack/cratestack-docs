@@ -34,10 +34,10 @@ view AccountBalance from Account, Transfer {
 
 `@@materialized` marks the view as a Postgres materialized view rather than a plain saved query. It requires:
 
-* **`@@server_sql`** — the SQL body, server-dialect only. `@@materialized` cannot be paired with the portable `@@sql` shorthand; the parser rejects that combination at parse time.
+* **`@@server_sql` or `@@sql`** — either satisfies the SQL-body requirement. When no `@@server_sql` is present, the view falls back to the portable `@@sql` shorthand for its server-side body, so `@@materialized` paired with only `@@sql` is supported, not rejected.
 * **`@id`** on exactly one field — `@@no_unique` is rejected for materialized views, since concurrent refresh needs a unique index to refresh against.
 
-The macro emits `CREATE MATERIALIZED VIEW` plus a backing `CREATE UNIQUE INDEX` during migration generation, and generates the `refresh()` method used throughout the rest of this guide. `@@materialized` is server-only — building an embedded target with one in scope is a hard compile error referencing [ADR 0003](../internals/views-adr).
+The `cratestack migrate diff` CLI (the `cratestack-migrate` crate) emits `CREATE MATERIALIZED VIEW` plus a backing `CREATE UNIQUE INDEX` during migration generation; the macro's own job stops at generating the Rust struct, descriptor, and the `refresh()` accessor used throughout the rest of this guide. `@@materialized` is server-only — building an embedded target with one in scope is a hard compile error referencing [ADR 0003](../internals/views-adr).
 
 ## When materialization is the right tool
 
@@ -60,7 +60,7 @@ The developer calls `refresh()` explicitly:
 runtime.views().account_balance().refresh().await?;
 ```
 
-This emits `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`. Concurrent refresh requires a unique index on the view, which is why `@id` is required for materialized views — the macro emits the unique index automatically alongside the view DDL.
+This emits `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`. Concurrent refresh requires a unique index on the view, which is why `@id` is required for materialized views — the migrate CLI emits the unique index automatically alongside the view DDL.
 
 ## Refresh trigger patterns
 

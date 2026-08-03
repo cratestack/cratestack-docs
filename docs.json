@@ -16,103 +16,141 @@
     }
   },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Overview",
-        "pages": [
-          "index",
-          "overview/current-state",
-          "overview/banking-readiness",
-          "overview/release-track",
-          "overview/roadmap"
+        "tab": "Documentation",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "index",
+              "overview/current-state",
+              "overview/banking-readiness",
+              "overview/release-track",
+              "overview/roadmap"
+            ]
+          },
+          {
+            "group": "Get Started",
+            "pages": [
+              "getting-started/quickstart",
+              "guides/auth-provider"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/telemetry",
+              "guides/validators",
+              "guides/offline-first-sqlite",
+              "guides/async-io-with-embedded-sqlite",
+              "guides/materialized-views",
+              "guides/find-many",
+              "guides/rpc-transport",
+              "guides/no-database-procedures"
+            ]
+          },
+          {
+            "group": "Client Generation",
+            "pages": [
+              "guides/typescript-client-generation",
+              "guides/dart-client-generation"
+            ]
+          },
+          {
+            "group": "Banking Readiness",
+            "pages": [
+              "guides/idempotency",
+              "guides/upsert",
+              "guides/batches",
+              "guides/optimistic-locking",
+              "guides/audit-log",
+              "guides/transaction-isolation",
+              "guides/rate-limiting",
+              "guides/soft-delete",
+              "guides/pagination",
+              "guides/migrations"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/transport-architecture",
+              "architecture/http-transport-contract",
+              "architecture/client-runtime"
+            ]
+          },
+          {
+            "group": "Tooling",
+            "pages": [
+              "tooling/cli-install",
+              "tooling/schema-diff",
+              "tooling/editor-tooling"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/mixins",
+              "reference/field-attributes",
+              "reference/composite-keys",
+              "reference/scalars",
+              "reference/auth-support-matrix",
+              "reference/crypto",
+              "reference/views"
+            ]
+          }
         ]
       },
       {
-        "group": "Get Started",
-        "pages": [
-          "getting-started/quickstart",
-          "guides/auth-provider"
+        "tab": "Studio",
+        "icon": "layout-dashboard",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "studio/quickstart"
+            ]
+          },
+          {
+            "group": "API",
+            "pages": [
+              "studio/read-api",
+              "studio/write-api"
+            ]
+          },
+          {
+            "group": "Extending",
+            "pages": [
+              "studio/tools",
+              "studio/ui",
+              "studio/eject"
+            ]
+          }
         ]
       },
       {
-        "group": "Guides",
-        "pages": [
-          "guides/telemetry",
-          "guides/validators",
-          "guides/offline-first-sqlite",
-          "guides/async-io-with-embedded-sqlite",
-          "guides/materialized-views",
-          "guides/find-many",
-          "guides/rpc-transport",
-          "guides/no-database-procedures",
-          "guides/typescript-client-generation",
-          "guides/dart-client-generation"
-        ]
-      },
-      {
-        "group": "Banking Readiness",
-        "pages": [
-          "guides/idempotency",
-          "guides/upsert",
-          "guides/batches",
-          "guides/optimistic-locking",
-          "guides/audit-log",
-          "guides/transaction-isolation",
-          "guides/rate-limiting",
-          "guides/soft-delete",
-          "guides/pagination",
-          "guides/migrations"
-        ]
-      },
-      {
-        "group": "Architecture",
-        "pages": [
-          "architecture/transport-architecture",
-          "architecture/http-transport-contract",
-          "architecture/client-runtime"
-        ]
-      },
-      {
-        "group": "Tooling",
-        "pages": [
-          "tooling/cli-install",
-          "tooling/schema-diff",
-          "tooling/editor-tooling"
-        ]
-      },
-      {
-        "group": "Studio",
-        "pages": [
-          "studio/quickstart",
-          "studio/read-api",
-          "studio/write-api",
-          "studio/tools",
-          "studio/ui",
-          "studio/eject"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/mixins",
-          "reference/field-attributes",
-          "reference/composite-keys",
-          "reference/scalars",
-          "reference/auth-support-matrix",
-          "reference/crypto",
-          "reference/views"
-        ]
-      },
-      {
-        "group": "Internals",
-        "pages": [
-          "internals/core-architecture-adr",
-          "internals/mcp-operator-adr",
-          "internals/views-adr",
-          "internals/schema-diff-adr",
-          "internals/rpc-transport-adr",
-          "internals/product-requirements",
-          "internals/package-selection"
+        "tab": "Internals",
+        "icon": "archive",
+        "groups": [
+          {
+            "group": "Architecture Decisions",
+            "pages": [
+              "internals/core-architecture-adr",
+              "internals/mcp-operator-adr",
+              "internals/views-adr",
+              "internals/schema-diff-adr",
+              "internals/rpc-transport-adr"
+            ]
+          },
+          {
+            "group": "Planning",
+            "pages": [
+              "internals/product-requirements",
+              "internals/package-selection"
+            ]
+          }
         ]
       }
     ]

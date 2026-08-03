@@ -60,6 +60,21 @@ Or, working inside the `cratestack` workspace:
 cargo run -p cratestack-cli -- --help
 ```
 
+## GitHub Actions
+
+For CI workflows, the `install-cratestack-cli` composite action downloads a prebuilt binary, verifies
+its checksum, and adds it to `PATH` — no Rust toolchain step needed in the job:
+
+```yaml
+- uses: cratestack/cratestack/.github/actions/install-cratestack-cli@main
+  with:
+    version: "0.6.7" # optional, defaults to "latest"
+- run: cratestack --help
+```
+
+See the action's [README](https://github.com/cratestack/cratestack/tree/main/.github/actions/install-cratestack-cli)
+for its full inputs/outputs. Pin `@main` to a released tag or commit SHA for reproducible CI.
+
 ## Supported platforms
 
 | OS      | Architecture | Target triple                 |
@@ -76,13 +91,17 @@ distribution pipeline this page describes, and open a new issue if you need anot
 
 ## How releases are built
 
-Binaries are built by `.github/workflows/release-cli.yml`, triggered by the `vX.Y.Z` tag push that
-`just release VERSION` produces (with `PUSH=1`). The workflow cross-compiles `cratestack-cli` for
-every target above, packages each as `cratestack-cli-<target>-v<version>.{tar.gz,zip}` with a `.sha256`
-checksum, and attaches them to the tag's GitHub Release. `cargo-binstall` resolution and the npm
-installer both depend on that exact naming — see
+Releases are cut through an automated, PR-based flow: the "Prepare Release" workflow bumps the
+version, opens a release PR, and merging that PR triggers the "Cut Release Tag" workflow to push the
+`vX.Y.Z` tag. That tag push runs `.github/workflows/release-cli.yml`, which cross-compiles
+`cratestack-cli` for every target above, packages each as `cratestack-cli-<target>-v<version>.{tar.gz,zip}`
+with a `.sha256` checksum, and attaches them to the tag's GitHub Release. `cargo-binstall` resolution
+and the npm installer both depend on that exact naming — see
 [`[package.metadata.binstall]`](https://github.com/cratestack/cratestack/blob/main/crates/cratestack-cli/Cargo.toml)
 in `cratestack-cli`'s `Cargo.toml`.
+
+`just release VERSION PUSH=1` remains available as a local/manual fallback that produces the same
+tag push, for when the automated PR flow isn't usable.
 
 Version numbers stay in sync automatically: `just bump` rewrites both the workspace `Cargo.toml`
 versions and the npm package's `version` field from the same source, so a crates.io publish, a
