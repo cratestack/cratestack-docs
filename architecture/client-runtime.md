@@ -2,7 +2,16 @@
 
 ## Status
 
-Proposed and partially spiked.
+Mixed — the codec/framing/envelope architecture below is proposed-and-partially-spiked as originally written, but large parts of the client-generation surface it describes have since shipped and stabilized (the Riverpod and `swr` presets, `dart_mappable`-backed equality, gRPC clients in all three languages). Read this document for the transport/codec/framing contract and the FFI-bridge (`cratestack-client-flutter`) path specifically — for the *actual current default path* most Dart consumers use, see "Two Dart generation paths" immediately below before reading further.
+
+## Two Dart generation paths — read this before the rest of the document
+
+This document was written around a single narrative: Dart never talks to HTTP directly, it goes through an FFI-ready Rust bridge (`cratestack-client-flutter`) that owns transport/codec/framing. That path is real and shipped — see the `cratestack-client-flutter` section below — but it is **not** what the `cratestack generate-dart` CLI's default and `--preset riverpod` output actually do today. Verified against the real generated templates (`crates/cratestack-client-dart/templates/rest-runtime.dart.j2`, `rpc_runtime/dio_cbor.dart.j2`, `dio_json.dart.j2`): generated Dart talks to the server **directly via `dio`**, with no Rust FFI bridge in the loop at all. Concretely, there are two independent paths, not one:
+
+1. **Dio-direct generated Dart** (`cratestack generate-dart`, default and `--preset riverpod`) — a `CratestackDioAdapter`/`CratestackRpcDioAdapter` wraps `dio` and talks HTTP directly; Rust is not in the runtime path. This is what most Dart/Flutter consumers use today. See `crates/cratestack-client-dart/README.md` for its real scope (both presets, plus native gRPC Dart client generation).
+2. **The Rust-FFI-bridge path** (`cratestack-client-flutter`) — for apps that specifically want Rust to own business logic, persistence, and transport, with Dart as UI only, communicating over an FFI bridge rather than issuing its own HTTP calls. This is what the rest of this document describes.
+
+Both are real and shipped; they are not sequential phases of the same effort, and a schema author doesn't choose between them via the schema — it's a choice of *which client generator/crate* to reach for. Neither the `TypeScriptPreset`/`DartPreset` preset axis (`--preset swr`/`--preset riverpod`) nor the native gRPC client generators (Rust `tonic`, TypeScript gRPC-Web, Dart) are covered anywhere else in this document — see each language's own crate README for those.
 
 ## Why this change
 
@@ -14,7 +23,7 @@ CrateStack's transport contract is not JSON-first. The documented direction is:
 4. COSE is an envelope over codec bytes, not a codec
 5. sequence transports such as `application/cbor-seq` must be treated as framing concerns, not just renamed codecs
 
-The current `cratestack-client-dart` slice is still an experiment, but it no longer owns Dio directly. It now targets a byte-oriented bridge/runtime abstraction plus repo-managed templates, while still relying on generic value graphs for typed model conversion. That remaining typing gap is why the generated typed Dart `list` and `get` helpers intentionally stop short of claiming fully exact selection-aware response typing.
+The rest of this document describes the FFI-bridge path (`cratestack-client-flutter`) specifically — see "Two Dart generation paths" above for why that's not the same thing as the default generated-Dart output. That bridge crate still relies on generic value graphs for typed model conversion; that remaining typing gap is why its generated typed Dart `list` and `get` helpers intentionally stop short of claiming fully exact selection-aware response typing.
 
 ## Contract guardrails
 
@@ -67,17 +76,17 @@ Responsibilities:
 
 ### `cratestack-client-dart`
 
-Owns generated Dart contracts and typed facades that target a runtime abstraction rather than `dio` directly.
+Owns generated Dart contracts and typed facades — for its default and `--preset riverpod` output, these talk to the server **directly via `dio`** (`CratestackDioAdapter`/`CratestackRpcDioAdapter`), not through the FFI bridge crate — see "Two Dart generation paths" at the top of this document. A separate native gRPC Dart client generator also lives in this crate.
 
 Responsibilities:
 
-1. generated Dart models and inputs
+1. generated Dart models and inputs, with real `operator ==`/`hashCode` via `dart_mappable` in the `riverpod` preset (needed for Riverpod's family-provider argument-value caching)
 2. generated typed APIs and query builders, including canonical query params such as `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, `where`, and legacy `or`
-3. a byte-oriented bridge-facing runtime abstraction plus Riverpod adapter code at the composition boundary
+3. a `dio`-backed adapter (default preset) or one `@riverpod` provider per operation (`--preset riverpod`) at the composition boundary — plus a separate native gRPC client generator for `transport grpc` schemas
 4. repo-managed MiniJinja templates that callers can override through a template directory
 5. generated field/include constant groups so callers can assemble safer `fields` and `include` selections without stringly-typed literals everywhere
 
-It should not become the owner of transport, codec, framing, or envelope behavior.
+It should not become the owner of transport, codec, framing, or envelope behavior *for the FFI-bridge path* — the dio-direct presets above own their own HTTP transport by design, that's the whole point of the fork described at the top of this document.
 
 ## Local persistence
 
@@ -575,7 +584,7 @@ Deferred from the spike:
 
 ## Current implementation note
 
-The current `cratestack-client-dart` crate should be treated as an experimental runtime-oriented and bridge-facing slice. It no longer owns Dio directly, renders through repo-managed templates that callers can override, and still uses generic value graphs for typed model conversion while the Rust-owned bridge and codec story continues to mature. The generated Dart APIs now expose canonical projection query options plus selection builders and projection wrappers for projected reads. On the Rust side, `cratestack-client-rust` now exposes additive request-authorizer hooks and a generated schema-native client facade over the same runtime. `include_server_schema!` emits that facade alongside server/database code; `include_client_schema!` (renamed from `include_client_macro!` in 0.3.0) emits only client-facing Rust types, inputs, selection builders, procedure payloads, and the reqwest-backed facade for callers that only need to talk to another CrateStack HTTP service. Selection-aware response typing is still intentionally incomplete overall, so callers should treat these projections as a contract-aligned safety improvement rather than assuming every narrowed selection is perfectly type-level exact. Runtime state persistence is provided through the base in-memory and JSON-file stores, plus opt-in SQLite and Redis store crates.
+The `cratestack-client-dart` crate's default and `--preset riverpod` output own `dio` directly (see "Two Dart generation paths" at the top of this document) — this is a stable, mature path, not an experiment. It renders through repo-managed templates that callers can override, and still uses generic value graphs for typed model conversion. The generated Dart APIs now expose canonical projection query options plus selection builders and projection wrappers for projected reads. On the Rust side, `cratestack-client-rust` now exposes additive request-authorizer hooks and a generated schema-native client facade over the same runtime. `include_server_schema!` emits that facade alongside server/database code; `include_client_schema!` (renamed from `include_client_macro!` in 0.3.0) emits only client-facing Rust types, inputs, selection builders, procedure payloads, and the reqwest-backed facade for callers that only need to talk to another CrateStack HTTP service. Selection-aware response typing is still intentionally incomplete overall, so callers should treat these projections as a contract-aligned safety improvement rather than assuming every narrowed selection is perfectly type-level exact. Runtime state persistence is provided through the base in-memory and JSON-file stores, plus opt-in SQLite and Redis store crates.
 
 ## Examples
 
