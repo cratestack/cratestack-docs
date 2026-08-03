@@ -77,7 +77,7 @@ Every callable in a `transport rpc` schema gets a stable dotted id. The id is th
 
 The op id appearing in the URL (not the body) is deliberate — it lets nginx, CDNs, and HTTP tracing tools route and instrument per-op without parsing payloads.
 
-On `transport rpc` the op id is also the **canonical request identity** used for signature verification and tracing — not the REST shape. A signed RPC request must sign over the op id (`model.Widget.update`, `procedure.ping`), and the `cratestack_route` tracing field carries that same op id. The REST `/$procs/<name>` and `/<plural>[/<id>]` paths never appear on the RPC binding, for url, dispatch, signing, or logs. (On the REST binding the canonical stays the REST route path.)
+On `transport rpc` the **canonical signed request is the actual rpc request** — not the REST shape. It is method `POST`, path `/rpc/<op_id>` (the concrete URL, e.g. `/rpc/model.Widget.update`, `/rpc/procedure.ping`), no query, and the raw rpc frame bytes as the body. Because the frame body carries the id / patch / args, signing it binds them — `model.Widget.get` for two different ids is two different signed requests. The server feeds exactly this into signature verification (`request_context`) and the `cratestack_route` tracing field, so it matches the rpc client byte-for-byte; the REST `/$procs/<name>` and `/<plural>[/<id>]` paths never appear on the RPC binding, for url, dispatch, signing, or logs. (On the REST binding the canonical stays the REST method / path / query / body.)
 
 ## Unary
 
