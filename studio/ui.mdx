@@ -11,16 +11,17 @@ served by Trunk. It's a thin CSR app that consumes the
 maps one-to-one to a JSON endpoint.
 
 <Note>
-Phase 1b ships the UI as a sibling crate at
-`crates/cratestack-studio/ui/` in the framework repo. The two
-development paths below run it through a Trunk dev server alongside
-`cratestack studio run`.
+The UI ships as a sibling crate at `crates/cratestack-studio-ui/` in
+the framework repo. It is deliberately excluded from the Cargo
+workspace (it targets `wasm32-unknown-unknown`), so it has its own
+`Cargo.toml` and `Cargo.lock`. The two development paths below run it
+through a Trunk dev server alongside `cratestack studio run`.
 
-Phase 2 adds two ways to take the UI with you when you're done
-iterating: the [`embed-ui` cargo feature](./eject#bundle-the-ui-into-the-binary)
-bundles the SPA into the Studio binary so you can hand `cratestack` to
-a colleague, and [`cratestack studio eject`](./eject#eject-the-ui-sources)
-writes the sources to a writable directory you can fork.
+[`cratestack studio eject`](./eject) gives you a standalone Studio
+binary project with the UI already bundled in — no Trunk needed.
+Pass `--with-ui` to also unpack the Leptos+Trunk sources into a
+[writable directory you can fork](./eject#customizing-the-ui-with-ui)
+and iterate on with `trunk serve`.
 </Note>
 
 ## Running the UI locally
@@ -33,7 +34,7 @@ Trunk dev server.
 cratestack studio run        # binds 127.0.0.1:7878
 
 # Terminal 2 — UI
-cd crates/cratestack-studio/ui
+cd crates/cratestack-studio-ui
 trunk serve                  # serves the SPA on 127.0.0.1:8080
 ```
 
@@ -53,6 +54,32 @@ Trunk itself fetches `wasm-bindgen` and any other tooling on first
 build. Tailwind is pulled from a CDN in `index.html`, so there's no
 Node toolchain in the picture.
 
+### Try it with demo data
+
+You don't need a database — or even a `studio.toml` — to see the UI
+working. The framework repo ships a dev harness that boots the Studio
+API against an in-memory SQLite workspace with three targets and some
+seeded rows:
+
+```bash
+# Terminal 1 — API + demo data on :7878
+cargo run -p cratestack-studio --no-default-features --example dev_server
+
+# Terminal 2 — UI on :8080
+cd crates/cratestack-studio-ui
+trunk serve
+```
+
+`--no-default-features` skips the `embed-ui` bundle, which you don't
+want in dev — Trunk is already serving the UI, and rebuilding the
+embedded copy on every change just slows the loop down.
+
+Every screenshot on this page was taken against that harness, so you
+can reproduce all of them locally in about a minute. The demo
+workspace exposes a `catalog` target in `rw` mode (`Customer`, `Post`,
+`Product`), a read-only `analytics` target, and an API-backed
+`upstream-api` target for comparing the three source types.
+
 ## What the UI shows you
 
 The UI is one page, four panes:
@@ -63,6 +90,17 @@ The UI is one page, four panes:
 | Left sidebar     | Models in the selected target's schema, clickable.                                                    |
 | Main pane        | Records table for the selected model, with cursor-based pagination (Previous / Next).                 |
 | Right drawer     | Selected row's fields, a relation-follow input, and a "Copy Rust query" button.                       |
+
+<Frame caption="The catalog target's Post model. Sidebar lists the schema's models; the tools row and RW affordances sit above the records table.">
+  <img src="/images/studio/studio-records.png" alt="CrateStack Studio showing the Post model's records table with five rows and a pagination footer" />
+</Frame>
+
+Selecting a row opens the drawer on the right with that row's fields,
+the relation picker, and the write affordances (on `rw` targets):
+
+<Frame caption="Row p1 selected. The drawer shows every field, a relation picker, and Edit / Delete / Copy Rust query.">
+  <img src="/images/studio/studio-drawer.png" alt="Studio drawer showing the selected Post row's fields alongside Edit, Delete and Copy Rust query buttons" />
+</Frame>
 
 ### Pagination
 
@@ -148,7 +186,7 @@ Each model header shows a small badge reflecting the target's mode:
 RO targets — the badge is there to communicate intent before users
 click anything.
 
-## Typed editors (Phase 1d)
+## Typed editors
 
 The create form and the drawer's edit mode dispatch on each field's
 declared scalar instead of painting a single text box everywhere:
@@ -167,7 +205,21 @@ The model-list endpoint (`GET /api/targets/:key/models`) carries
 `is_enum` and `enum_variants` per field so the UI can render the
 dropdown without a second fetch.
 
-## Power tools (Phase 4)
+<Frame caption="Edit mode on row p1. Each field gets the control its declared scalar calls for — `views` is a number input, not a text box.">
+  <img src="/images/studio/studio-edit.png" alt="Studio drawer in edit mode with typed inputs per field and Save / Cancel buttons" />
+</Frame>
+
+The `@id` field and relation/list fields are not editable and are
+omitted from the form — the primary key identifies the row you're
+PATCHing, so it isn't part of the patch.
+
+<Note>
+Leaving an optional field's input blank sends `null` for that field,
+which is how you clear a column from the UI. A field that was already
+`NULL` stays `NULL` when you save without touching it.
+</Note>
+
+## Power tools
 
 Three additions to the records pane and two to the header — together
 they round out the read-API surface for poking around the system:
@@ -176,6 +228,8 @@ they round out the read-API surface for poking around the system:
   - An op selector + **Show SQL** button that fetches the rendered
     SQL Studio would run for `list` / `get` / `create` / `update` /
     `delete` and displays it with bound parameters.
+  - An **Explain** checkbox that additionally asks the driver to
+    *plan* that SQL (see below).
   - **Export JSON** / **Export CSV** links pointing at the export
     endpoint so the browser downloads the file.
 - **Drift dots** on each model in the sidebar. `⚠ drift` in amber
@@ -184,21 +238,56 @@ they round out the read-API surface for poking around the system:
 - **Schema search** in the header. Type a term and matching models /
   fields / enums show up in a dropdown right below the input.
 - **Audit button** in the header opens a 28rem overlay listing the
-  most recent CREATE / UPDATE / DELETE operations from the
-  in-memory ring buffer (cap 500, FIFO).
+  most recent CREATE / UPDATE / DELETE operations.
 
 See the [tools reference](./tools) for the underlying endpoints.
 
+### SQL preview and query plans
+
+**Show SQL** renders the statement without touching the database.
+Tick **Explain** first and Studio also returns the driver's query
+plan underneath it:
+
+<Frame caption="`list` on Post with Explain ticked: the rendered SQL, its bound parameters, and SQLite's `EXPLAIN QUERY PLAN` output.">
+  <img src="/images/studio/studio-explain.png" alt="Studio SQL preview panel showing rendered SQL, bound parameters, and a query plan reading SCAN posts USING INDEX" />
+</Frame>
+
+Explain is off by default on purpose: rendering SQL is pure and
+instant, while planning it is a round trip to the database, so you opt
+into that cost per click. Planning is limited to the read operations
+(`list`, `get`) — Studio has no `EXPLAIN ANALYZE` path at all, so a
+mutation is never planned or executed here. Asking to explain a
+`create` / `update` / `delete` returns the preview with a note
+instead of a plan.
+
+### Schema search
+
+<Frame caption="Searching `author` matches both the FK scalar and the relation field, each labelled with its model and type.">
+  <img src="/images/studio/studio-search.png" alt="Studio header search dropdown showing two field hits for the query author" />
+</Frame>
+
+### Audit overlay
+
+<Frame caption="The audit overlay after two edits to `catalog/Post`, newest first.">
+  <img src="/images/studio/studio-audit.png" alt="Studio audit overlay listing two UPDATE entries against catalog/Post with timestamps" />
+</Frame>
+
+The overlay lists the most recent 100 entries. By default the log
+lives in process memory and is lost on restart; set
+[`audit_file`](./tools#persisting-the-log) to persist it across
+restarts.
+
 ## What's not in the UI yet
 
-- **Persistent audit log.** Today the buffer lives in process memory
-  only — fine for local admin, not for an org-wide log.
-- **EXPLAIN / query plan beside the SQL preview.** The preview ships
-  the rendered SQL; running `EXPLAIN` against the live database is
-  out of scope.
 - **Inline diff between schema and live DB.** Drift reports
-  missing/extra columns; a column-by-column diff would be a Phase 5
-  ergonomic upgrade.
+  missing/extra columns; a column-by-column diff (comparing declared
+  types and nullability, not just column presence) is still open. The
+  honest blocker is that "changed" is dialect-dependent — enums are
+  stored as `TEXT` + `CHECK` on Postgres, so a naive type comparison
+  would report permanent false drift.
+- **Procedure execution.** Procedures show up in schema search, but
+  Studio is a data browser and does not call them. The callable path
+  is the generated RPC server/client.
 
 The UI itself is plain Leptos CSR — fork it via
 [`cratestack studio eject`](./eject) if you need to customize the visual

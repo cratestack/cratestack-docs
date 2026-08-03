@@ -1,80 +1,116 @@
 ---
 title: Studio Eject
-description: Fork the Studio UI's source tree into a writable directory, or bundle it into a single binary via the embed-ui cargo feature.
+description: Get a standalone, runnable Studio binary project with cratestack studio eject, optionally with the Leptos UI sources for customizing the front end.
 ---
 
 # Studio Eject
 
-Studio's Leptos+Trunk UI lives in the framework repo, but you don't
-have to consume it from there. Phase 2 ships two ways to take it with
-you:
+`cratestack studio eject` hands you a standalone Rust binary project
+that embeds Studio against your own `.cstack` schemas — something you
+can `cargo run`, commit to your own repo, and customize. There's a
+separate, unrelated `embed-ui` cargo feature for framework
+contributors building `cratestack-cli` itself from a source checkout;
+see [Bundle the UI into the binary](#bundle-the-ui-into-the-binary)
+below if that's what you're after.
 
-1. **`cratestack studio eject`** — copies the UI sources into a
-   writable directory you can fork.
-2. **`embed-ui` cargo feature** — bundles the Trunk release output
-   into the Studio binary, so `cratestack studio run` serves a real
-   SPA with no extra moving parts.
-
-Most users don't need either — the upstream UI is what you'll run on a
-laptop alongside `cratestack studio run`. Eject when you want fine
-control over the visual style or want to wire in actions ahead of the
-upstream's schedule. Bundle when you're shipping Studio to other
-people and don't want them juggling Trunk.
-
-## Eject the UI sources
+## Eject a starter project
 
 ```bash
-cratestack studio eject --out ./fork
-# ejected studio UI to './fork' (9 files written)
-# next steps: `cd ./fork && trunk serve` (with `cratestack studio run` in another terminal)
+cratestack studio eject --out ./my-studio --name my-studio
+# ejected starter project to './my-studio' (5 files written)
+# next steps: `cd ./my-studio && cargo run` to start the studio
 ```
 
-The output is a complete crate you can build with Trunk:
-
 ```
-fork/
-├── Cargo.toml          # standalone (the workspace = [] sentinel keeps it out of any parent workspace)
-├── README.md           # eject-flavored: build prerequisites, dev flow, upgrade strategy
-├── Trunk.toml          # proxies /api/* to the Studio backend on 127.0.0.1:7878
-├── index.html
-├── .gitignore
+my-studio/
+├── Cargo.toml           # depends on cratestack-studio from crates.io
+├── README.md            # run / customize instructions
+├── studio.toml          # workspace + one example target (SQLite, mode = "rw")
+├── schemas/
+│   └── example.cstack   # example .cstack — replace with your own
 └── src/
-    ├── api.rs          # fetch wrappers over the Studio read API
-    ├── app.rs          # Leptos components: header, sidebar, table, drawer
-    ├── lib.rs          # entry point
-    └── types.rs        # wire types matching the read API
+    └── main.rs           # axum entry point; cratestack_studio::run(...)
 ```
 
-Generated artifacts (`dist/`, `target/`, `Cargo.lock`) are skipped, so
-the eject output is a clean checkout you can drop into a new git
-repository.
+`cargo run` boots a fully working Studio instance — **the Leptos UI
+is already bundled in**, with no Trunk or wasm toolchain needed. That
+works because `cratestack-studio`'s crates.io release ships with its
+own Trunk build baked in (`embed-ui` is a default-on cargo feature),
+so a project that depends on the published crate gets the UI for
+free. Verified by ejecting into a scratch directory and running a
+genuinely clean `cargo build` against the real crates.io dependency
+graph — no local framework checkout involved.
+
+`main.rs` is intentionally small — compose your own routes,
+middleware, or auth on top of `cratestack_studio::build_router`.
+
+### Customizing the UI (`--with-ui`)
+
+```bash
+cratestack studio eject --out ./my-studio --with-ui
+# ejected starter project to './my-studio' (32 files written)
+# next steps: `cd ./my-studio && cargo run` to start the studio,
+#             and `(cd ui && trunk serve)` to iterate on the UI
+```
+
+This additionally unpacks the full Leptos+Trunk UI source tree into
+`my-studio/ui/` — the same source layout as
+`crates/cratestack-studio-ui` in the framework repo (`app/`,
+`editors/`, `tools/`, `api/` submodules), plus its own `Cargo.toml`
+(a standalone `[workspace]` sentinel table keeps it out of any parent
+workspace) and a `Trunk.toml` that proxies `/api/*` back to
+`127.0.0.1:7878`.
+
+This gives you the exact same local-dev loop the framework repo uses
+for itself: run the backend with `cargo run` in one terminal, then
+`cd ui && trunk serve` in another to iterate on the UI at
+`127.0.0.1:8080` against live data. It's a **fork for active
+iteration**, not a way to bake your customized UI back into the
+single `cargo run` binary — see the caveat under
+[When to bundle vs. when not to](#when-to-bundle-vs-when-not-to).
 
 ### Flags
 
-- `--out <DIR>` (required) — where to write
-- `--force` — overwrite existing files inside `--out`. Without
-  `--force`, eject refuses to clobber a non-empty directory.
-- `--config <PATH>` — currently unused by eject; reserved for future
-  per-workspace eject customizations.
+- `--out <DIR>` (required) — where to write.
+- `--name <NAME>` — project name written into `Cargo.toml` /
+  `README.md`. Defaults to `--out`'s directory basename.
+- `--force` — overwrite files inside `--out` if the directory already
+  exists and has contents. Without `--force`, eject refuses to write
+  into a non-empty directory.
+- `--with-ui` — also unpack the Leptos+Trunk UI sources into
+  `<out>/ui/`.
 
 ### Upgrading after an eject
 
 The eject output is a **point-in-time snapshot**. There's no
-automated re-eject path back to upstream — a forked UI is a fork.
-When a new framework version ships meaningful UI changes, you'll
-want to merge them manually or re-eject into a fresh directory and
-diff your customizations across.
+automated re-eject path back to upstream — an ejected project is a
+fork the moment you customize it. When a new framework version ships
+meaningful changes, you'll want to merge them manually or re-eject
+into a fresh directory and diff your customizations across.
 
 If your changes are upstream-friendly, please open a PR to
 `cratestack/cratestack` instead.
 
 ## Bundle the UI into the binary
 
-Phase 1b's local-dev story (`cratestack studio run` + `trunk serve`)
-is fine for a single developer on a laptop, but it's awkward to hand
-to a colleague. The `embed-ui` cargo feature solves this: build the
-SPA into the same Rust binary that serves the API, then ship that
-binary.
+<Note>
+This section is about building **`cratestack-cli` itself** from a
+`cratestack/cratestack` git checkout — relevant to framework
+contributors, or anyone who wants a locally-modified UI baked into
+their own `cratestack-cli` build. If you just want to run your own
+Studio instance, `cratestack studio eject` already gives you one with
+the UI bundled — see above. That works with zero Trunk/wasm setup
+because the *published* `cratestack-studio` crate ships with its
+Trunk build already baked in; a fresh git checkout doesn't have that
+build yet, which is what this section produces.
+</Note>
+
+The framework repo's own local-dev story
+(`cratestack studio run` + `trunk serve` in two terminals) is fine
+for hacking on Studio itself, but a plain `cargo build -p
+cratestack-cli` from a clean checkout has no Trunk build to embed yet
+and falls back to a placeholder page. Building the UI first, then
+building `cratestack-cli` with `embed-ui`, gets a real single binary.
 
 ### Build prerequisites
 
@@ -86,14 +122,14 @@ rustup target add wasm32-unknown-unknown
 ### Build
 
 ```bash
-cd crates/cratestack-studio/ui
+cd crates/cratestack-studio-ui
 trunk build --release
-cd ../../..
+cd ../..
 cargo build -p cratestack-cli --bin cratestack \
   --features cratestack-studio/embed-ui --release
 ```
 
-The first step writes `crates/cratestack-studio/ui/dist/`, which
+The first step writes `crates/cratestack-studio-ui/dist/`, which
 `rust-embed` reads at compile time during the second step. Skip step
 one and Cargo will fail at the embed step with rust-embed's standard
 "folder does not exist" error, naming the missing path.
@@ -113,22 +149,31 @@ cratestack studio run
 
 ### When to bundle vs. when not to
 
-| You want…                                                              | Use                                                                       |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Quick iteration on the UI while hacking on the framework               | Phase 1b's `trunk serve` (no `embed-ui` needed)                           |
-| A single binary to give to a colleague who isn't running Trunk         | `--features cratestack-studio/embed-ui`                                    |
-| Total control over the UI (custom theme, internal actions, etc.)        | `cratestack studio eject --out ./fork`, then run `trunk serve` in `./fork` |
-| Single binary, *and* a custom UI                                        | Eject, customize, `trunk build --release` in the fork, then point the bundled-UI path at the fork's `dist/` (Phase 2.5 — not in this release)        |
+| You want…                                                                | Use                                                                              |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Your own running Studio instance, no customization                        | `cratestack studio eject --out X && cd X && cargo run` — UI already included      |
+| Quick iteration on Studio's UI while hacking on the framework itself       | `trunk serve` in the framework repo (no `embed-ui` build needed)                  |
+| Your own `cratestack-cli` build, from a fresh checkout, with a real UI     | Build the UI with Trunk first, then `--features cratestack-studio/embed-ui` (this section) |
+| Total control over the UI (custom theme, internal actions, etc.)          | `cratestack studio eject --out ./fork --with-ui`, then `trunk serve` in `./fork/ui` |
+| Single binary, *and* a custom UI                                          | Not supported out of the box (see below)                                          |
 
-The last row isn't supported out of the box yet — the `embed-ui`
-feature reads from a fixed `crates/cratestack-studio/ui/dist/`
-path. A future small change will let `embed-ui` point at an arbitrary
-`dist/` directory via an env var so an ejected fork can produce a
-single-binary distribution.
+The last row isn't supported out of the box yet — `embed-ui` reads
+from a fixed `<crate-dir>/../cratestack-studio-ui/dist/` path
+(resolved at compile time relative to `cratestack-studio`'s own
+manifest, not the consuming project), with no environment-variable or
+config override. A future small change would let `embed-ui` point at
+an arbitrary `dist/` directory so an ejected `--with-ui` fork could
+produce a single-binary distribution of its own customized UI.
 
 ## Defaults stay light
 
-The Studio binary's **default** build doesn't need Trunk or the wasm
-toolchain. `embed-ui` is opt-in, and `eject` is on-demand. If you're
-just running `cargo build -p cratestack-cli` for the schema-validation
-or migration-diff CLI surfaces, none of this section applies.
+`embed-ui` is a **default-on** cargo feature of `cratestack-studio` —
+you don't need to pass any flag to get it — but it degrades
+gracefully rather than forcing a Trunk/wasm toolchain on every build:
+with nothing to embed, it falls back to a placeholder page instead of
+failing the build. That's why a plain `cargo build -p cratestack-cli`
+in a fresh framework-repo checkout works fine (schema-validation and
+migration-diff CLI surfaces are entirely unaffected), and why the
+[eject](#eject-a-starter-project) output — which depends on the
+*published* crate, already containing a real Trunk build — serves a
+working UI without you installing Trunk at all.

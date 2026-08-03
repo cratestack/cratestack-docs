@@ -9,8 +9,9 @@ This reference covers every supported field-level attribute. Model-level
 (`@@`) attributes live in their dedicated guides — see
 [audit log](../guides/audit-log) for `@@audit`,
 [soft delete](../guides/soft-delete) for `@@soft_delete`,
-[pagination](../guides/pagination) for `@@paged`, and
-[auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`.
+[pagination](../guides/pagination) for `@@paged`,
+[auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`, and
+[composite keys](./composite-keys) for `@@id([...])` / `@@unique([...])`.
 
 ## Identity & Defaults
 
@@ -25,6 +26,35 @@ This reference covers every supported field-level attribute. Model-level
 Auth-defaulted columns are limited to `String`/`Cuid`, `Int`, and
 `Boolean` and act as **fallbacks**: they fill the field only when the
 create input omits it. They are not enforcement.
+
+## Relations
+
+| Attribute                                    | Behaviour                                                                                        |
+|-----------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `@relation(fields:[...], references:[...])`  | Declares a relation. Required on **both** sides — the owning (single-model) side and the `Model[]` inverse side. |
+| `@relation(..., onDelete: <Action>)`         | Referential action on delete. Optional; defaults to `NoAction`.                                   |
+| `@relation(..., onUpdate: <Action>)`         | Referential action on update. Optional; defaults to `NoAction`.                                   |
+
+`<Action>` is one of `Cascade`, `Restrict`, `SetNull`, `SetDefault`, `NoAction` — bareword identifiers, not string literals.
+
+```cstack
+model Tenant {
+  id String @id
+}
+
+model Application {
+  id       String @id
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+```
+
+Only the **owning side** (the field typed as a single model, not
+`Model[]`) produces a real foreign-key constraint. See [ADR 0004](../internals/schema-diff-adr)
+for the generated DDL, the SQLite limitation, and the full
+`onDelete`/`onUpdate` validation rules — in short, an action can only
+be declared on the owning side, `SetNull` requires the local field to
+be optional, and `SetDefault` requires it to declare `@default(...)`.
 
 ## Exposure controls
 

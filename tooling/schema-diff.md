@@ -108,8 +108,10 @@ Each change lands in one of three buckets:
 ### Internal-only
 
 * Model-level attributes other than `@@paged` — `@@soft_delete`, `@@audit`, `@@retain(...)`,
-  `@@emit(...)`. These affect server-side behavior (e.g. which rows a query returns) but not the shape
-  of the response the client sees.
+  `@@emit(...)`, [composite `@@id([...])` / `@@unique([...])`](../reference/composite-keys). These
+  affect server-side behavior or database constraints, not the shape of the response the client sees.
+  Each declared `@@unique([...])` is tracked as its own constraint — a model carrying several reports
+  each add/remove separately rather than collapsing them into one entry.
 
 ## Known gaps
 
