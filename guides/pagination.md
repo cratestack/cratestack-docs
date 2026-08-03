@@ -144,6 +144,84 @@ today — only `list(...)` returning `Page<Model>`. See
 [Client Runtime](/architecture/client-runtime) for the full
 Rust/Dart selection/projection API this composes with.
 
+## Procedure Arguments: PageInput
+
+`@@paged` only affects a model's generated `list` route. A custom
+**procedure** that wants the same `limit`/`offset` capability declares a
+`PageInput` argument instead:
+
+```cstack
+procedure listFeed(page: PageInput): FeedReply
+```
+
+`PageInput` is `{ limit: Int?, offset: Int? }` — field names and
+optionality match `PageInfo`'s own `limit`/`offset` exactly, so a
+generated `list` route and a hand-written `PageInput`-accepting
+procedure decode the same wire shape:
+
+```jsonc
+// POST /$procs/listFeed
+{ "page": { "limit": 20, "offset": 40 } }
+```
+
+Resolve it into concrete, safe values with `.resolve(max_limit)` —
+`limit` defaults to `max_limit` when unset and is clamped to `[0,
+max_limit]`; `offset` defaults to `0` and is clamped to `>= 0`. This is
+the same clamp rule generated `list` routes already apply to their own
+`limit`/`offset`, so a `PageInput`-accepting procedure gets the
+identical resource-exhaustion guard without reimplementing it:
+
+```rust
+impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
+    async fn list_feed(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::list_feed::Args,
+    ) -> Result<cratestack_schema::procedures::list_feed::Output, CoolError> {
+        let (limit, offset) = args.page.resolve(50);
+        // ... use limit/offset to build your own response
+        Ok(cratestack_schema::FeedReply { limit, offset })
+    }
+}
+```
+
+`PageInput` doesn't return a `Page<T>` by itself — the procedure's
+return type is whatever it's declared as. Pair `page: PageInput` with a
+`Page<Model>` return type to give the procedure the exact same envelope
+a `@@paged` list route returns:
+
+```cstack
+procedure searchPosts(query: FindMany<Post>, page: PageInput): Page<Post>
+```
+
+See [Search with Filters](./find-many) for the full worked example —
+`FindMany<Model>`'s own headline use case composes with `PageInput`
+exactly this way.
+
+Generated clients mirror `PageInput` the same way they mirror
+`PageInfo`/`Page<T>` — a hardcoded, per-language struct/interface/class,
+not derived per schema:
+
+```rust
+// Rust
+cratestack_schema::procedures::list_feed::Args {
+    page: cratestack::PageInput { limit: Some(20), offset: Some(40) },
+}
+```
+
+```ts
+// TypeScript
+await client.procedures.listFeed({ page: { limit: 20, offset: 40 } });
+```
+
+```dart
+// Dart
+await client.procedures.listFeed(
+  const ListFeedArgs(page: PageInput(limit: 20, offset: 40)),
+);
+```
+
 ## What this is not
 
 1. **not cursor-based** — no opaque cursor token, no keyset pagination.
