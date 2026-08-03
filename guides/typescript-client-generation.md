@@ -1,13 +1,13 @@
 ---
 title: TypeScript client generation
-description: Generate a typed TypeScript package — REST or RPC, fetch client plus TanStack Query hooks — from a `.cstack` schema with `cratestack generate-typescript`, and compare the same call across TypeScript, Dart, and Rust clients.
+description: Generate a typed TypeScript package — REST or RPC, two output layouts, fetch client plus TanStack Query or SWR hooks — from a `.cstack` schema with `cratestack generate-typescript`, and compare the same call across TypeScript, Dart, and Rust clients.
 ---
 
 # TypeScript client generation
 
-`cratestack generate-typescript` renders a complete, publishable TypeScript package from a parsed `.cstack` schema: typed models, a fetch-based client, and TanStack Query hooks. It's implemented by `cratestack-client-typescript` and uses the same schema-first approach as the Rust and Dart client generators — there is no OpenAPI/Swagger document in the middle, the `.cstack` file is the only source of truth.
+`cratestack generate-typescript` renders a complete, publishable TypeScript package from a parsed `.cstack` schema: typed models, a fetch-based client, and data-fetching hooks. It's implemented by `cratestack-client-typescript` and uses the same schema-first approach as the Rust and Dart client generators — there is no OpenAPI/Swagger document in the middle, the `.cstack` file is the only source of truth.
 
-This guide covers generating the package, what it contains, how to use it against both transport styles, and how the same call looks across TypeScript, Dart, and Rust.
+This guide covers generating the package, its two output layouts (`default` and `swr`), what each contains, how to use them against both transport styles, the optional `@cratestack/*` package family for RPC clients, and how the same call looks across TypeScript, Dart, and Rust.
 
 ## Generate the package
 
@@ -30,7 +30,9 @@ cargo run -p cratestack-cli -- generate-typescript \
 | `--package-name` | no | `cratestack-client` | written into the generated `package.json`; also derives the client class name (see below) |
 | `--base-path` | no | `/api` | default API base path baked into the runtime |
 | `--template-dir` | no | none | override individual `.j2` templates; anything not overridden falls back to the bundled default |
+| `--check` | no | off | drift-detection mode: generate in memory and diff against `--out` instead of writing; exits non-zero and lists the files that differ |
 | `--full-selection` | no | off | emit fully-required model interfaces instead of the projection-driven optional-everywhere default — see [Full selection: fully-required model types](#full-selection-fully-required-model-types) |
+| `--preset` | no | `default` | output layout: `default` (today's monolithic `src/models.ts` + `src/client.ts` + ...) or `swr` (file-per-model, framework-free functions plus sibling SWR hooks) — see [Output layout: `default` vs `swr`](#output-layout-default-vs-swr) |
 
 The client class name is derived from `--package-name`: non-alphanumeric characters become spaces, the result is PascalCased, and `Client` is appended. `@example/blog-client` becomes `ExampleBlogClientClient`. Pick a package name with that in mind if the resulting class name matters to you.
 
@@ -39,14 +41,14 @@ The client class name is derived from `--package-name`: non-alphanumeric charact
 Call the generator directly when you're wiring codegen into your own build script, a CI step, or Studio-adjacent tooling, instead of shelling out to the CLI:
 
 ```rust
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
 
 let schema = cratestack_parser::parse_schema_file("schema.cstack")?;
 let package = generate_package(&schema, &TypeScriptGeneratorConfig {
     package_name: "@example/blog-client".to_owned(),
     base_path: "/cstack".to_owned(),
-    template_dir: None,
-    full_selection: false,
+    preset: TypeScriptPreset::Default,
+    ..Default::default()
 })?;
 
 for file in package.files {
@@ -55,6 +57,8 @@ for file in package.files {
     std::fs::write(path, &file.contents)?;
 }
 ```
+
+`TypeScriptGeneratorConfig` implements `Default`, so the struct-update syntax above only needs to name the fields you're overriding — `full_selection`, `pb_lock` (`transport grpc` schemas only), and `schema_sha256` all take sane defaults otherwise.
 
 `generate_package` is pure — it takes a parsed `Schema` and a config, and returns an in-memory file list. Writing those files to disk is the caller's job, exactly like `handle_generate_typescript` does inside the CLI.
 
@@ -103,21 +107,13 @@ cargo run -p cratestack-cli -- generate-typescript \
 
 The generated package is build output, not hand-edited source — treat it the same way you'd treat a `dist/` folder. Whenever the `.cstack` schema changes (or the generator/templates change), re-run the same `generate-typescript` command against the same `--out` directory. There's no incremental/merge step; the generator overwrites the package's `src/` files wholesale.
 
-## Build the generated package
+## Output layout: `default` vs `swr`
 
-The generator emits an npm package skeleton, not compiled JS — build it before consuming it:
+`--preset` picks the shape of the generated package. Both presets work from the same schema, cover the same transports (REST or RPC, whichever `transport` the schema declares), and stay in sync with each other — `swr` just organizes the files differently and adds a hooks layer. `default` is the original layout and is guaranteed to stay byte-identical forever; `swr` is the newer file-per-model layout.
 
-```bash
-cd packages/blog-client
-npm install
-npm run build   # runs `tsc -p tsconfig.json`, emits dist/
-```
+### The `default` layout
 
-`@tanstack/react-query` is listed as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks.
-
-## Package layout
-
-Every generated package ships `package.json`, `tsconfig.json`, `README.md`, and a `src/index.ts` barrel that re-exports everything. What's under `src/` beyond that depends on the schema's transport:
+Every `default`-preset package ships `package.json`, `tsconfig.json`, `README.md`, and a `src/index.ts` barrel that re-exports everything. What's under `src/` beyond that depends on the schema's transport:
 
 | File | REST | RPC | Contains |
 |---|---|---|---|
@@ -128,6 +124,82 @@ Every generated package ships `package.json`, `tsconfig.json`, `README.md`, and 
 | `src/react-query.ts` | ✓ | ✓ | `useXListQuery`, `useCreateXMutation`, etc. — TanStack Query hooks over the client |
 
 The per-model classes in `client.ts` aren't hardcoded fetch calls duplicated per endpoint — each method is a few lines that delegates into the single shared runtime class, so the actual request/serialization/error-handling logic exists once regardless of how many models the schema declares.
+
+### The `swr` layout
+
+```bash
+cargo run -p cratestack-cli -- generate-typescript \
+  --schema examples/react-vite-swr/schema.cstack \
+  --out packages/board-client \
+  --package-name @example/board-client \
+  --base-path /api \
+  --preset swr
+```
+
+Instead of one `client.ts` class fronting every model, `swr` emits one module per model plus a sibling hooks module:
+
+| File | REST | RPC | Contains |
+|---|---|---|---|
+| `src/runtime.ts` | ✓ | ✓ | `CratestackRuntime` (REST) or `CratestackRpcRuntime` (RPC) — same runtime classes as the `default` preset |
+| `src/queries.ts` | ✓ | — | `CratestackQueryRequestConfig`/`toSearchQuery` — REST-only |
+| `src/links.ts` | — | ✓ | `RpcLink`/`RpcStreamLink` and the rest of the composable-chain types — RPC-only, see [Composable links](#composable-links-cratestack) below |
+| `src/cbor-seq.ts` | — | ✓ | the CBOR-sequence boundary scanner backing `runtime.stream(...)` — RPC-only |
+| `src/models/shared.ts` | ✓ | ✓ | types referenced by 2+ models, or by no model at all — see "Type ownership" below |
+| `src/models/<model>.ts` | that model's own types plus a plain `async` function per CRUD verb (`listWidgets`, `getWidget`, `createWidget`, `updateWidget`, `deleteWidget`) — no client class, no framework import |
+| `src/models/<model>.hooks.ts` | a **sibling** file: one `useSWR`/`useSWRMutation` hook per verb (`useWidgets`, `useWidget`, `useCreateWidget`, ...), each a thin wrapper that calls the plain function from `<model>.ts` |
+| `src/procedures.ts` | one `<Name>Args` type and one plain `async` function per procedure |
+| `src/procedures.hooks.ts` | one SWR hook per procedure — `useXQuery` for a `query` procedure, `useXMutation` for a `mutation` procedure |
+| `src/swr-keys.ts` | `swrKeys` — the single shared cache-key factory every hook builds its key through |
+| `src/index.ts` | re-exports the runtime, queries helper, `swrKeys`, every model's plain module, and `procedures.ts` — **not** the `.hooks` modules (see below) |
+
+Given a `Widget` model, `listWidgets`/`getWidget`/`createWidget`/`updateWidget`/`deleteWidget` land in `src/models/widget.ts`:
+
+```ts
+import { CratestackRuntime, listWidgets, createWidget } from "@example/board-client";
+
+const runtime = new CratestackRuntime("https://api.example.com", { basePath: "/api" });
+
+const widgets = await listWidgets(runtime, { query: { limit: 20, sort: ["-id"] } });
+const created = await createWidget(runtime, { id: 3, name: "New Widget" });
+```
+
+The hooks live in the sibling `widget.hooks.ts` and are imported from that subpath explicitly, never from the package root:
+
+```tsx
+import { useWidgets, useCreateWidget } from "@example/board-client/models/widget.hooks";
+
+function WidgetList({ runtime }: { runtime: CratestackRuntime }) {
+  const { data: widgets } = useWidgets(runtime);
+  const { trigger: createWidget } = useCreateWidget(runtime);
+  // ...
+}
+```
+
+**Why hooks are a separate file, not exports at the bottom of `widget.ts`.** ES modules resolve every top-level static `import` eagerly, the moment the module loads — regardless of which export the importer actually asked for. If `useWidgets` lived in `widget.ts` alongside `listWidgets`, importing `listWidgets` alone from a script, a server action, or a test would still pull in `import useSWR from "swr"` (and transitively React) at module-load time, even though nothing in that code path touches React. Splitting the hooks into `widget.hooks.ts` — and leaving that file out of `src/index.ts`'s barrel export — means a consumer who wants only the plain functions never resolves `swr`/`react` at all. Install `swr` and `react` as peer dependencies only if you import a `.hooks` module.
+
+**Cache keys and invalidation.** Every hook builds its key exclusively through `swrKeys` (`src/swr-keys.ts`) — never a hand-written literal — nested under each model's/procedure's own schema-unique route, so two differently-named operations can never collide on a key. Mutation hooks invalidate on a fixed rule, applied identically for every model:
+
+- **create** invalidates the model's list — every cached list, regardless of `query` filter/pagination.
+- **update** invalidates the list **and** the mutated entity's own detail (both refetch on next read).
+- **delete** invalidates the list **and** drops the deleted entity's detail from the cache outright (`revalidate: false` — nothing left to refetch).
+
+This rule isn't configurable per call. If you need different invalidation, call `mutate`/`swrKeys` directly instead of the generated hook. Procedure hooks never invalidate anything — invalidation is model CRUD's job.
+
+**Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
+
+**Known gaps.** As of this writing, `swr` doesn't support `transport grpc` schemas, and doesn't yet special-case `@@paged` models (it never imports `Page`/`PageInfo` for one) — both are tracked as generator follow-ups, not permanent limitations.
+
+## Build the generated package
+
+The generator emits an npm package skeleton, not compiled JS — build it before consuming it:
+
+```bash
+cd packages/blog-client
+npm install
+npm run build   # runs `tsc -p tsconfig.json`, emits dist/
+```
+
+The `default` preset lists `@tanstack/react-query` as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks. The `swr` preset instead lists `swr` and `react` as peer dependencies, needed only if you import a `.hooks` module — importing a model's plain functions or `procedures.ts` needs neither.
 
 ## Full selection: fully-required model types
 
@@ -169,6 +241,8 @@ This is a per-invocation choice, not a schema-level one — deliberately. Whethe
 **Only use `--full-selection` for a consumer that truly never sends partial `fields`/`include` selection.** If that consumer's runtime later starts using projection, the generated types will silently no longer match what the server can actually omit from the response — there's no runtime check tying the flag to actual call sites.
 
 ## Using the REST client
+
+The examples in this section and the next use the `default` preset's client-class API. For the `swr` preset's per-model function/hook API, see [The `swr` layout](#the-swr-layout) above.
 
 Examples below use the `blog.cstack` fixture (`crates/cratestack-pg/tests/fixtures/blog.cstack`): a `Post` model with full CRUD, a `Session` model with `@@paged`, a query procedure `getFeed`, and a mutation procedure `publishPost`.
 
@@ -295,9 +369,60 @@ Idempotency keys are a first-class call option on RPC unary calls (propagated as
 await client.widgets.create(input, { idempotencyKey: crypto.randomUUID() });
 ```
 
-Sequence-returning ops can be consumed as an async iterable via `runtime.stream(...)`. Today this only decodes JSON-array responses — the default runtime doesn't yet ship a CBOR-sequence decoder, so a server that picks `application/cbor-seq` for a streaming call will surface `CratestackRpcTransportError` until a decoder is wired in.
+Sequence-returning ops can be consumed as an async iterable via `runtime.stream(...)`:
+
+```ts
+for await (const ping of client.runtime.stream<Ping>("procedure.manyPings", {})) {
+  render(ping);
+}
+```
+
+When the server picks the negotiated codec (`application/cbor` by default), the body is a single array decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, the runtime's own CBOR-sequence boundary scanner decodes and yields each item as it arrives on the wire — never after buffering the whole body first. A response that ends in the mid-stream error sentinel throws `CratestackRpcStreamError` instead of yielding a final item. See the [RPC transport guide's "Consuming streams" section](/guides/rpc-transport#consuming-streams) for the wire-level details and how this compares to the Rust/Flutter/dio client paths.
 
 TanStack Query hooks are generated for RPC schemas too, with the same naming as REST (`useWidgetListQuery`, `useEchoNameQuery`/`useEchoNameMutation` depending on whether the procedure is declared `query` or `mutation`).
+
+### Composable links: `@cratestack/*`
+
+`CratestackRpcRuntime` accepts a `links` array (unary/batch calls) and a separate `streamLinks` array (`stream()` calls) — interceptor chains where each link wraps the next, terminating in the real network call. Passing neither is a true no-op: requests are byte-identical to not having the option at all. Both types (`RpcLink`, `RpcStreamLink`, `RpcLinkRequest`, ...) are generated directly into `src/links.ts`, so a link doesn't need to import anything from the generated package to be assignable there — TypeScript's structural typing means any object shaped like `RpcLink` fits.
+
+That structural fit is what the `@cratestack/*` npm family builds on: nine small packages (plus a backward-compatible umbrella) that ship ready-made links, alternate transports, and framework adapters for **RPC-transport** generated clients, published and installable independently of the generated package itself:
+
+| Package | What it is |
+|---|---|
+| [`@cratestack/ts-types`](https://www.npmjs.com/package/@cratestack/ts-types) | Shared `RpcLink`/wire-frame interfaces, pinned copies of the generated types. Types only. |
+| [`@cratestack/link-batch`](https://www.npmjs.com/package/@cratestack/link-batch) | `createBatchLink()` — a [batshit](https://github.com/yornaath/batshit)-style scheduler that collapses unary calls issued in the same tick into one `POST /rpc/batch` request. |
+| [`@cratestack/link-logger`](https://www.npmjs.com/package/@cratestack/link-logger) | `createLoggerLink()` — reference link that logs each call's kind, op id, outcome, and duration. |
+| [`@cratestack/runtime-fetch`](https://www.npmjs.com/package/@cratestack/runtime-fetch) | `createFetchRuntime({ timeoutMs })` — a `typeof fetch`-compatible transport, byte-identical to the global `fetch` with no options. |
+| [`@cratestack/runtime-axios`](https://www.npmjs.com/package/@cratestack/runtime-axios) | `createAxiosRuntime({ instance })` — the same transport contract, backed by axios. |
+| [`@cratestack/validator-zod`](https://www.npmjs.com/package/@cratestack/validator-zod) | `createZodValidatorLink({ "model.Order.create": schema, ... })` — validates `input` against a per-op zod schema before the call reaches the network. |
+| [`@cratestack/validator-yup`](https://www.npmjs.com/package/@cratestack/validator-yup) | Same idea, yup schemas. |
+| [`@cratestack/adapter-tanstack-query`](https://www.npmjs.com/package/@cratestack/adapter-tanstack-query) | `rpcQueryOptions`/`rpcMutationOptions` — generic TanStack Query option builders for hand-written hooks the generated `react-query.ts` doesn't cover. |
+| [`@cratestack/adapter-rtk`](https://www.npmjs.com/package/@cratestack/adapter-rtk) | `createRpcBaseQuery(...)` — an RTK Query `BaseQueryFn` that dispatches through the same runtime and link chain. |
+
+```ts
+import { createBatchLink, createLoggerLink } from "@cratestack/api";
+import { ExampleWidgetClientClient } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", {
+  links: [createLoggerLink(), createBatchLink()],
+});
+
+// Issued inside the same tick — collapses into a single POST /rpc/batch:
+const [a, b, c] = await Promise.all([
+  client.widgets.get(1),
+  client.widgets.get(2),
+  client.widgets.get(3),
+]);
+```
+
+`@cratestack/api` is a backward-compatible re-export shim over the split, not a tenth independent package — its root import stays exactly `ts-types` + `link-batch` + `link-logger` (unchanged from before the split), and everything else added since is a named subpath that pulls in only its own peer dependency:
+
+```ts
+import { createZodValidatorLink } from "@cratestack/api/validator-zod";
+import { rpcQueryOptions } from "@cratestack/api/adapter-tanstack-query";
+```
+
+New projects can install the individual packages directly instead — smaller install, no unused peer dependencies pulled in through the umbrella. Every package in the family is scoped to RPC-transport generated clients; none of it applies to `transport rest` schemas, since the REST client has no `links`/`streamLinks` chain to plug into.
 
 ## Side-by-side: TypeScript, Dart, and Rust
 
@@ -447,13 +572,15 @@ The pattern holds across languages: model accessors are named after the pluraliz
 
 ## Caveats
 
-- **Bundle size on large schemas.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call.
+- **Bundle size on large schemas, `default` preset only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `swr` preset's file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error contract across the generated clients today.
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
+- **`swr` preset gaps.** No `transport grpc` support yet, and no special-cased `Page`/`PageInfo` handling for `@@paged` models — both tracked as generator follow-ups.
 
 ## See also
 
 - [`cratestack-client-typescript`](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-client-typescript) — crate README, source of the CLI/Rust invocation examples above
+- [`@cratestack/api`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-api) — the compat umbrella over the split link/runtime/validator/adapter package family
 - [Client Runtime](/architecture/client-runtime) — the Dart/Flutter integration path this guide's Rust and Dart examples are drawn from
-- [RPC transport](/guides/rpc-transport) — full design for `transport rpc`
+- [RPC transport](/guides/rpc-transport) — full design for `transport rpc`, including the "Consuming streams" section this guide's `runtime.stream(...)` example links back to
 - [Transport Architecture](/architecture/transport-architecture)
