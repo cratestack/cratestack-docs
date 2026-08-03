@@ -161,7 +161,7 @@ impl cratestack_schema::CoolProcedures for AppProcedures {
 async fn main() -> anyhow::Result<()> {
     let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
 
-    let cool = cratestack_schema::CrateStack::builder(pool).build();
+    let cool = cratestack_schema::Cratestack::builder(pool).build();
 
     let app = axum::Router::new()
         .nest(

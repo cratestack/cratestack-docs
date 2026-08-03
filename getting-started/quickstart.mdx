@@ -49,7 +49,7 @@ Embedded (mobile / desktop / browser-via-OPFS) and HTTP-client crates use differ
 
 ```rust
 let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
-let cool = cratestack_schema::CrateStack::builder(pool).build();
+let cool = cratestack_schema::Cratestack::builder(pool).build();
 ```
 
 ## 3. Use Delegates Directly
