@@ -86,6 +86,7 @@
             "pages": [
               "tooling/cli-install",
               "tooling/schema-diff",
+              "tooling/migrate-baseline",
               "tooling/editor-tooling"
             ]
           },
