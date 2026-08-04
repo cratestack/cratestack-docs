@@ -138,4 +138,6 @@ Source of truth: [issue #134](https://github.com/cratestack/cratestack/issues/13
 
 1. [Migrations](../guides/migrations) — the DB-facing counterpart: `cratestack migrate diff` diffs
    `.cstack` against a committed snapshot to generate SQL, using the same by-name matching philosophy.
-2. [Installing the CLI](./cli-install) — get `cratestack` on your machine.
+2. [Adopting an Existing Database](./migrate-baseline) — `cratestack migrate baseline`, for the case
+   where the committed snapshot doesn't exist yet because the database predates `cratestack`.
+3. [Installing the CLI](./cli-install) — get `cratestack` on your machine.

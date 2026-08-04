@@ -141,16 +141,16 @@ All three statements land atomically. A failure in the `INSERT` rolls the
 
 The runner consumes SQL migrations identically whether they are hand-written or generated. CrateStack ships a separate **schema diff generator** that produces those migrations from `.cstack` against a committed schema snapshot — see [ADR 0004](../internals/schema-diff-adr) for the full design.
 
-Today, exactly one subcommand is shipped:
+Today, two subcommands are shipped:
 
 * `cratestack migrate diff` — offline. Diffs the current `.cstack` against `migrations/<backend>/schema.snapshot.json` and writes a new migration directory.
+* `cratestack migrate baseline` — adopts a database that already has tables and no prior `cratestack` migration history, by introspecting it directly instead of assuming an empty starting point. See [Adopting an Existing Database](../tooling/migrate-baseline) for a full walkthrough against a real database.
 
-Two more are planned but **not yet implemented** — `MigrateAction` has
-only the `Diff` variant today, and both remain un-started per the
+Two more are planned but **not yet implemented**, per the
 ["shipping order"](../internals/schema-diff-adr) list:
 
 * `cratestack migrate verify` — deferred. Intended as a CI gate that replays the full migration history against an ephemeral DB and checks the result matches the snapshot; blocked on ephemeral-DB spawning support.
-* `cratestack migrate drift` — deferred. Intended as an ops tool reporting differences between the snapshot and a live database, read-only.
+* `cratestack migrate drift` — deferred. Intended as a read-only ops tool reporting differences between the committed snapshot and a live database, without writing anything. Distinct from `migrate baseline` above, which introspects a live database too but only for the one-time act of adoption — it writes a new snapshot and a `cratestack_migrations` row, where `migrate drift` would only report.
 
 Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@rename` annotation.
 
@@ -220,9 +220,10 @@ idempotently by `ensure_migrations_table`.
 
 ## Read Next
 
-1. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr) — how `.cstack` changes turn into the SQL this runner applies
-2. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
-3. [Composite keys](../reference/composite-keys) — `@@id([...])` / `@@unique([...])`, the multi-column constraints this generator emits
-4. [Field attributes](../reference/field-attributes) — full `@relation`/`onDelete`/`onUpdate`/`@@unique` syntax reference
-5. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
-6. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
+1. [Adopting an Existing Database](../tooling/migrate-baseline) — `cratestack migrate baseline`, a full walkthrough of pointing this migration runner at a real, already-populated database for the first time
+2. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr) — how `.cstack` changes turn into the SQL this runner applies
+3. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
+4. [Composite keys](../reference/composite-keys) — `@@id([...])` / `@@unique([...])`, the multi-column constraints this generator emits
+5. [Field attributes](../reference/field-attributes) — full `@relation`/`onDelete`/`onUpdate`/`@@unique` syntax reference
+6. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
+7. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
