@@ -66,6 +66,7 @@
               "guides/batches",
               "guides/optimistic-locking",
               "guides/audit-log",
+              "guides/trusted-proxy",
               "guides/transaction-isolation",
               "guides/rate-limiting",
               "guides/soft-delete",
