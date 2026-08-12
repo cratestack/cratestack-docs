@@ -32,13 +32,6 @@ Tracking [ADR 0004](../internals/schema-diff-adr).
 - **Why deferred:** Needs live-DB schema introspection — `pg_catalog` queries for Postgres, `sqlite_master` + `PRAGMA table_info` for SQLite. That means pulling sqlx / rusqlite into the `cratestack-migrate` crate or splitting the introspection layer into per-backend feature-gated modules.
 - **Unblocks on:** Crate boundary decision — does `cratestack-migrate` take on driver deps, or does a sibling `cratestack-migrate-introspect-{pg,sqlite}` ship the connectivity?
 
-### View IR ops in the diff engine
-
-- **Status:** Designed
-- **What:** `CreateView` / `ReplaceView` / `DropView` / `CreateMaterializedView` / `DropMaterializedView` operations in the migration IR, with Postgres / SQLite emitters that order view DDL after the source-model DDL the view depends on.
-- **Why deferred:** The `view` block itself ([ADR 0003](../internals/views-adr)) needs parser, AST, validator, and macro work before the diff engine has anything to lower into IR. See "View block" below.
-- **Unblocks on:** View block landing (parser → AST → validator → macros → delegates).
-
 ### `DropEnumVariant`
 
 - **Status:** Designed
@@ -48,21 +41,7 @@ Tracking [ADR 0004](../internals/schema-diff-adr).
 
 ## Views and materialized views
 
-Tracking [ADR 0003](../internals/views-adr).
-
-### View block (parser → AST → macros → delegates)
-
-- **Status:** Designed
-- **What:** `view <Name> from <Model>, <Model>, …` block with `@from(M.f)` source bindings, per-backend `@@server_sql` / `@@embedded_sql` (and a `@@sql` shorthand), `@@allow("read", …)` only. Generates a read-only `ViewDelegate` via a shared `ReadSource` trait. See [Views reference](../reference/views) for the full surface.
-- **Why deferred:** Substantial surface area — parser changes in `cratestack-parser`, AST extension in `cratestack-core` (`Schema.views`), validator rules, macro emission in `cratestack-macros`, `ReadSource` trait split in `cratestack-sql`, `ViewDelegate` in both `cratestack-sqlx` and `cratestack-rusqlite`. ~1500–2500 LOC across 6 crates. Deserves its own focused PR.
-- **Unblocks on:** Nothing external — it's straightforward incremental work, just not bundled with anything else.
-
-### Materialized views (`@@materialized`)
-
-- **Status:** Designed (server-only by design)
-- **What:** Postgres-backed materialized view with a manually-invoked `refresh()` method on the delegate. Embedded build fails with a hard compile error referencing ADR 0003.
-- **Why deferred:** Layered on top of the view block; nothing to materialize until views exist.
-- **Unblocks on:** View block landing.
+Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialized`, and the migration IR ops (`CreateView`/`ReplaceView`/`DropView`/`CreateMaterializedView`/`DropMaterializedView`) have all shipped; see [Current State](./current-state) and the [Views reference](../reference/views) for the current surface. The one genuinely deferred item in this area:
 
 ### Time-based and event-driven materialized-view refresh
 
