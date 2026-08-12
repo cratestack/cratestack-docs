@@ -89,17 +89,25 @@ identical list path, so the envelope below is transport-independent.
 Canonical shape: `cratestack_core::page::{Page, PageInfo}`.
 
 - `totalCount` — total rows matching the read policy and any `where`
-  filter, ignoring `limit`/`offset`. Computed with a second query (a
-  `COUNT` over the same filtered predicate) run alongside the list
-  query — a paged list costs two round trips to the database, not one.
+  filter, ignoring `limit`/`offset`. Computed by re-running the same
+  filtered `FindMany` query with no `limit`/`offset` and taking the
+  length of the resulting row set — **not** a lightweight SQL
+  `COUNT(*)`. The second query fetches and deserializes every matching
+  row, so a paged list costs two round trips to the database and the
+  second one scales with the total match count, not one cheap count
+  plus one page.
 - `pageInfo.limit` — the limit actually applied, including the
   `MAX_LIST_LIMIT` default when the request omitted it (never `null`)
 - `pageInfo.offset` — echoes exactly what the request supplied
 - `pageInfo.hasNextPage` — `offset + limit < totalCount`
 - `pageInfo.hasPreviousPage` — `offset > 0`
 
-A non-`@@paged` model's list route is unaffected — it keeps returning a
-bare array, and `limit`/`offset` have no special handling for it.
+A non-`@@paged` model's list route is unaffected under REST and RPC — it
+keeps returning a bare array, and `limit`/`offset` have no special
+handling for it. **`transport grpc` schemas are the exception:** every
+model's `list` op returns `Page<Model>` under gRPC regardless of
+whether `@@paged` is declared — `@@paged` there only gates REST/RPC
+envelope shape, not a semantic switch a gRPC schema can opt out of.
 
 ## Generated clients
 
@@ -143,6 +151,109 @@ The generated TypeScript client doesn't have a projection-view API
 today — only `list(...)` returning `Page<Model>`. See
 [Client Runtime](/architecture/client-runtime) for the full
 Rust/Dart selection/projection API this composes with.
+
+## Procedure Arguments: PageInput
+
+`@@paged` only affects a model's generated `list` route. A custom
+**procedure** that wants the same `limit`/`offset` capability declares a
+`PageInput` argument instead:
+
+```cstack
+procedure listFeed(page: PageInput): FeedReply
+```
+
+`PageInput` is `{ limit: Int?, offset: Int? }` — field names and
+optionality match `PageInfo`'s own `limit`/`offset` exactly, so a
+generated `list` route and a hand-written `PageInput`-accepting
+procedure decode the same wire shape:
+
+```jsonc
+// POST /$procs/listFeed
+{ "page": { "limit": 20, "offset": 40 } }
+```
+
+Resolve it into concrete, safe values with `.resolve(max_limit)` —
+`limit` defaults to `max_limit` when unset and is clamped to `[0,
+max_limit]`; `offset` defaults to `0` and is clamped to `>= 0`. This is
+the same clamp rule generated `list` routes already apply to their own
+`limit`/`offset`, so a `PageInput`-accepting procedure gets the
+identical resource-exhaustion guard without reimplementing it:
+
+```rust
+impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
+    async fn list_feed(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CoolContext,
+        args: cratestack_schema::procedures::list_feed::Args,
+    ) -> Result<cratestack_schema::procedures::list_feed::Output, CoolError> {
+        let (limit, offset) = args.page.resolve(50);
+        // ... use limit/offset to build your own response
+        Ok(cratestack_schema::FeedReply { limit, offset })
+    }
+}
+```
+
+`PageInput` doesn't return a `Page<T>` by itself — the procedure's
+return type is whatever it's declared as. Pair `page: PageInput` with a
+`Page<Model>` return type to give the procedure the exact same envelope
+a `@@paged` list route returns:
+
+```cstack
+procedure searchPosts(query: FindMany<Post>, page: PageInput): Page<Post>
+```
+
+See [Search with Filters](./find-many) for the full worked example —
+`FindMany<Model>`'s own headline use case composes with `PageInput`
+exactly this way.
+
+Generated clients mirror `PageInput` the same way they mirror
+`PageInfo`/`Page<T>` — a hardcoded, per-language struct/interface/class,
+not derived per schema:
+
+```rust
+// Rust
+cratestack_schema::procedures::list_feed::Args {
+    page: cratestack::PageInput { limit: Some(20), offset: Some(40) },
+}
+```
+
+```ts
+// TypeScript
+await client.procedures.listFeed({ page: { limit: 20, offset: 40 } });
+```
+
+```dart
+// Dart
+await client.procedures.listFeed(
+  const ListFeedArgs(page: PageInput(limit: 20, offset: 40)),
+);
+```
+
+## Embedded (on-device) pagination
+
+Everything above describes the REST/RPC/gRPC server surface, but pagination
+isn't limited to it. Every embedded (`cratestack-rusqlite`) model **and
+view** delegate exposes `.find_many(...).paginate(page: PageInput) ->
+Page<M>` unconditionally — `@@paged` is neither rejected nor required on
+an embedded schema; the method is just always there.
+
+```rust
+let page = delegate
+    .find_many()
+    .paginate(PageInput { limit: Some(20), offset: Some(40) })?;
+println!("{} of {}", page.items.len(), page.total_count.unwrap_or(0));
+```
+
+This isn't a cheap approximation: it runs a real `COUNT(*)` over the same
+filters followed by the paginated `SELECT`, both inside one connection
+borrow so a concurrent write can't split what the count describes from
+the page it's paired with — the same `Page<M>` / `PageInfo` shape the
+server-side envelope uses, assembled locally instead of over the wire.
+Unlike the server path, there's no separate wire contract to fix per
+model here, so there's nothing for `@@paged` to gate: the caller is the
+same binary that defines the schema, choosing per call site whether it
+wants `Page<M>` (`.paginate(...)`) or a bare `Vec<M>` (`.run()`).
 
 ## What this is not
 

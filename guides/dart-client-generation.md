@@ -181,6 +181,8 @@ That's fixed now, unconditionally, for every generated class in this preset. A r
 
 Relation fields get the same treatment for free: a `Task.board` field (typed `Board?`) recurses into `Board`'s own generated `==` rather than falling back to identity, and list-valued relations get element-wise comparison rather than `List.==`.
 
+A `FindMany<Model>` procedure argument is the same story one level deeper: `PostFindMany`'s own `where`/`orderBy` fields are typed `PostWhere?`/`List<PostOrderByClause>?`, and `PostWhere`'s own fields are typed `StringFilter?`/`NumberFilter?`/etc. — every one of those, including the six shared filter classes, is `@MappableClass()`-annotated too, so a freshly-built `PostFindMany` passed to a `@riverpod` family provider gets the identical deep-equality treatment described above, all the way down. See [Search with Filters](./find-many) for the full `FindMany<Model>` contract, and [Pagination](./pagination#procedure-arguments-pageinput) for `PageInput` (a plain, hardcoded procedure-argument class like `Page`/`PageInfo`, generated the same way regardless of preset).
+
 ## The `--run-build-runner` flag
 
 `riverpod`-preset output isn't directly runnable Dart — the `@riverpod` and `@MappableClass()` annotations are inert until `build_runner` expands them into `.g.dart`/`.mapper.dart` part files. Without that step the package doesn't compile, let alone `flutter analyze` clean.
@@ -350,7 +352,7 @@ Everything else — `widget(id)`, `WidgetCreateController.create(...)`, `WidgetU
 
 ## Caveats
 
-- **`@@paged` models aren't supported by the `riverpod` preset yet.** The generator doesn't emit `Page<T>`-returning list providers for a paged model under this preset — the same gap the TypeScript `swr` preset has for its own list hooks.
+- **`@@paged` models are supported by the `riverpod` preset.** A paged model's list provider returns `Page<Model>`, same as the REST/RPC cases elsewhere in this guide — the generator only skips the `IList<Model>` substitution (used for unpaged list results) for a paged model's return type.
 - **Update/delete controllers are single, global controllers per model, not keyed by id.** `<Model>UpdateController`/`<Model>DeleteController`'s `save`/`delete` methods take the target `id` as an argument, rather than the provider itself being a family keyed by id. Fine at small-to-medium screen scale; a screen with many concurrent in-flight updates per row might want a per-row wrapper of its own.
 - **List/get providers forwarding `query`/`input` needs a live server that understands it.** The provider parameter is forwarded as-is to the underlying REST or RPC call — there's no client-side filtering fallback if the server doesn't support a given filter.
 - **RPC transport has no typed query-builder class.** Unlike REST's `CratestackListQuery`, an RPC list provider's optional argument stays a raw `IMap<String, Object?>` — see [Using the riverpod preset over RPC](#using-the-riverpod-preset-over-rpc) above.

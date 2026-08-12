@@ -28,7 +28,11 @@ model Customer {
 Constraints enforced at parse time:
 
 1. `@@soft_delete` takes no arguments
-2. one model can declare it at most once
+
+Unlike `@@paged`, `@@emit`, and `@@id` — which do reject a duplicate
+declaration at parse time — `@@soft_delete` has no such check today. A
+second `@@soft_delete` on the same model is silently ignored (a no-op),
+not rejected.
 
 The runtime currently uses a fixed column name of `deleted_at`. The model
 must declare a nullable `DateTime?` field that maps to this column.

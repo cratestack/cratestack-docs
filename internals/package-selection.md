@@ -1,5 +1,7 @@
 # CrateStack Package Selection and Dependency Decision Log
 
+> **Staleness notice:** this document's crate/package inventory was last substantially updated around v0.3.0 (2026-05-12) and is now significantly behind current source (v0.7.1) — roughly 3 months and ~40 point-releases. Entire crates and packages shipped since then (the `cratestack-pg` / `cratestack-api` / `cratestack-sqlite` facade split, `cratestack-grpc` / `cratestack-proto`, `cratestack-sql`, the client codegen and Studio crates, and most of the `packages/*` TypeScript split) are not reflected below. For the current, authoritative package list, run `ls crates/` and `ls packages/` in the source repo, or consult a live reference doc rather than this historical log.
+
 ## Status
 
 Accepted for the initial workspace bootstrap. **Updated 0.3.0** — `cratestack-sqlx` now depends on `sqlx-core` + `sqlx-postgres` directly instead of the umbrella `sqlx` crate (the umbrella's `sqlx-sqlite` optional dep was leaking into the resolve graph and conflicting with `rusqlite 0.39`'s `libsqlite3-sys 0.37`). `cratestack-lsp` migrated from the unmaintained `tower-lsp 0.20` to the active community fork `tower-lsp-server 0.23`. `cratestack-sqlite-wasm` was deleted — `rusqlite 0.39` transparently targets `wasm32-unknown-unknown` via `sqlite-wasm-rs`, so `cratestack-rusqlite` now serves all three deployment targets (mobile native, desktop, browser via OPFS) from one source.
@@ -80,43 +82,18 @@ cratestack/
     cratestack-vscode/
 ```
 
-Real current workspace (0.4.0+, per root `Cargo.toml`'s `[workspace.members]`) — the umbrella `cratestack` crate is now doc-only (a vitrine pointing at the three facades below), `cratestack-cose` was never built (COSE stays a reserved runtime seam, not a dedicated crate), and a number of crates were added that this document's 0.1.0-era tree didn't anticipate:
-
-```text
-cratestack/
-  crates/
-    cratestack/                    # doc-only vitrine; pick a facade below instead
-    cratestack-pg/                 # facade: Postgres + Axum + Rust client runtime
-    cratestack-sqlite/             # facade: rusqlite, native + wasm
-    cratestack-api/                # facade: db = None, no sqlx in the dep graph at all
-    cratestack-core/
-    cratestack-parser/
-    cratestack-policy/
-    cratestack-sql/                # dialect-agnostic SQL primitives shared by both DB backends
-    cratestack-macros/
-    cratestack-sqlx/
-    cratestack-rusqlite/
-    cratestack-axum/
-    cratestack-grpc/                # transport grpc server runtime
-    cratestack-proto/               # .proto generation / field-number lockfile
-    cratestack-migrate/             # cratestack migrate diff
-    cratestack-redis/                # RedisIdempotencyStore, RedisRateLimitStore
-    cratestack-codec-cbor/
-    cratestack-codec-json/
-    cratestack-client-rust/
-    cratestack-client-dart/
-    cratestack-client-typescript/
-    cratestack-client-flutter/      # FFI bridge runtime, a separate path from the dio-direct Dart presets
-    cratestack-client-store-redis/
-    cratestack-client-store-sqlite/
-    cratestack-cbor-napi/            # @cratestack/cbor-node native addon
-    cratestack-cbor-wasm/            # @cratestack/cbor-web wasm build
-    cratestack-cli/
-    cratestack-lsp/
-    cratestack-studio/
-    cratestack-studio-generator/
-  packages/                          # npm: @cratestack/* (ts-types, link-*, runtime-*, validator-*, adapter-*, cbor*, vscode, cli)
-```
+> **This tree is stale** (see the staleness notice at the top of this document). It reflects roughly the v0.3.0 workspace and omits crates and packages added since, including at least:
+>
+> * `cratestack-pg` — the real successor to the old umbrella `cratestack` crate: Postgres/sqlx backend + Axum HTTP bindings + generated Rust client runtime; consumed via `cratestack = { package = "cratestack-pg" }`. The bare `cratestack` crate above is now an empty, documentation-only landing page with zero dependencies.
+> * `cratestack-api` — sibling facade for procedures-only, no-database services (`db = None`); structurally never depends on `cratestack-sqlx`.
+> * `cratestack-sqlite` — third facade, embedded SQLite runtime (native + wasm32), consumed via `cratestack = { package = "cratestack-sqlite" }`.
+> * `cratestack-grpc` — gRPC server runtime (tonic/prost) for `transport grpc` schemas.
+> * `cratestack-sql` — shared SQL value/type abstraction layer used by both sqlx and rusqlite backends.
+> * `cratestack-proto` — owns the `.proto` field-number lockfile/stable-numbering algorithm for `transport grpc` schemas.
+> * `cratestack-studio` / `cratestack-studio-generator` / `cratestack-studio-ui` — admin/testing web app for `.cstack` schemas (`cratestack studio run`), a Leptos+Trunk WASM UI embeddable into the server binary.
+> * A 9-package TypeScript npm split under `packages/` — `ts-types`, `link-batch`, `link-logger`, `runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`, `adapter-tanstack-query`, `adapter-rtk` — replacing the single `cratestack-vscode` entry shown above (which itself still exists as an editor package).
+>
+> Run `ls crates/` and `ls packages/` in the source repo for the full, current list.
 
 Dependency boundary rules:
 

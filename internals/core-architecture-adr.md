@@ -516,6 +516,10 @@ cratestack/
       // optional COSE envelope support
 ```
 
+> **This list is stale and incomplete.** It reflects the crate count at ADR-0001's original writing; current source (v0.7.1) has roughly 29 crates, including the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC/protobuf transport (`cratestack-grpc` / `cratestack-proto`), a shared SQL layer (`cratestack-sql`), client codegen crates, and the Studio admin product. See `internals/package-selection.md` or run `ls crates/` in the source repo for the current list.
+>
+> The `cratestack-cose` entry above was never built as a standalone crate. COSE support, where it exists at all, is an unimplemented `CoseSign1` enum variant inside `cratestack-client-rust` / `cratestack-client-flutter` that returns "COSE envelope support is not implemented yet" — not a dedicated crate as this section originally planned.
+
 ## Consequences
 
 ## Positive Consequences
@@ -688,6 +692,10 @@ Potential future ADRs:
 8. ADR 0009: Privileged Operations and Possible `as_system` Alternative.
 9. ADR 0010: Multi-Framework Support Beyond Axum.
 
+> **This list is a stale, largely-inaccurate prediction** made early in the project and mostly does not match what was actually written under those numbers. For example, the real ADR 0005 (`internals/rpc-transport-adr.md`) is about RPC Binding, not "CBOR Codec Implementation" as predicted here — see the "RPC binding addendum" near the top of this document, which correctly references the real ADR 0005. For what ADRs actually exist and what they cover, see the `internals/` directory listing or the docs navigation (`docs.json`) rather than this list.
+
 ## Final Decision Statement
 
 CrateStack v0 will be a macro-first, schema-first Rust framework layer that generates a SQLx-backed ORM, policy-protected REST CRUD routes, and REST procedure endpoints from `.cstack` files. It will delegate authentication to the host application, enforce default-deny permissions, avoid system-level policy bypasses, and abstract HTTP body handling through codec and envelope traits so CBOR and COSE can be first-class without sacrificing general developer experience.
+
+> **Note:** this statement reflects the project's understanding at ADR-0001's original writing. It has since been superseded in scope by the multi-backend facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), the RPC and gRPC transport bindings (see the addenda above and `internals/rpc-transport-adr.md`), and the Studio admin product — none of which this original statement anticipated. It is preserved here as a historical record rather than rewritten.

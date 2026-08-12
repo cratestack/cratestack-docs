@@ -16,10 +16,22 @@ Current implementation is narrower than this design:
 
 Since this document was first written, CrateStack also ships a **second binding style** for `.cstack` schemas — see `./../internals/rpc-transport-adr.md` for the canonical ADR. The codec / framing / envelope layering below is unchanged and applies to both bindings; the addition is at the *routing* layer:
 
-1. A `.cstack` schema picks **one** generation style with the top-level `transport rest|rpc` directive. Default is `rest` (back-compat with everything written before the directive existed).
+1. A `.cstack` schema picks **one** generation style with the top-level `transport rest|rpc|grpc` directive. Default is `rest` (back-compat with everything written before the directive existed).
 2. `transport rpc` schemas mount `POST /rpc/{op_id}` (unary) and `POST /rpc/batch` instead of REST-shaped per-model routes. Streaming for `Sequence`-kind ops works on the same unary route via `Accept: application/cbor-seq` — same negotiated framing as below.
 3. Errors on the RPC binding go on the wire as `RpcErrorBody { code, message, details? }` with gRPC-style lowercase codes (`not_found`, `invalid_argument`, `permission_denied`, …) rather than the REST `CoolErrorResponse` shape.
-4. WebSocket binding + subscriptions remain pending — the next cool upgrade for this transport surface, but gated on a concrete subscription use case. See "Next cool upgrade" below.
+4. `transport grpc` schemas pick a third generation style: `cratestack-proto` emits `.proto` message and enum definitions for the schema's types, backed by a field-number lockfile (`<schema>.pb.lock`) so wire numbers stay stable across schema edits, and `cratestack-grpc` mounts a hand-rolled `tonic` service (macro-generated protobuf mirror structs, mountable into an `axum::Router` via `cratestack_schema::grpc::into_router`) covering model CRUD. `transport grpc` *procedures* are not yet wired into the generated gRPC service — tracked as issue #171. See "gRPC binding" below for the full picture.
+5. WebSocket binding + subscriptions remain pending — the next cool upgrade for this transport surface, but gated on a concrete subscription use case. See "Next cool upgrade" below.
+
+## gRPC binding
+
+`transport grpc` is a third, already-shipped peer to `transport rest` and `transport rpc` — not an HTTP-JSON/CBOR binding but a protobuf-over-`tonic` one. It shipped in v0.4.14 ("Protobuf + gRPC support"), with a native Dart gRPC client generator following in v0.4.17.
+
+What it generates:
+
+1. **`.proto` definitions** — `cratestack-proto` owns the field-number lockfile and stable-numbering algorithm; it emits `.proto` message and enum definitions for the schema's types and does not itself contain a gRPC runtime.
+2. **Server-side gRPC service** — `cratestack-grpc` is the server-integration runtime, the gRPC sibling of `cratestack-axum`. It holds `CoolError` → `tonic::Status` mapping, `tonic::metadata::MetadataMap` ↔ `http::HeaderMap` conversion so the existing header-driven `AuthProvider` ports unchanged, and unframed-body envelope canonicalization for request signing. Behind a Cargo `grpc` feature, it macro-generates protobuf mirror structs plus a hand-rolled `tonic` service covering model CRUD, mountable into an `axum::Router`. Procedures (unary and server-streaming) are not yet wired into the generated service — see issue #171.
+3. **Native Rust gRPC client** — `cratestack-client-rust`'s `grpc` Cargo feature (off by default; it pulls in `tonic`, `prost`, `h2`, `tower`) generates `cratestack_schema::grpc::Client<T = tonic::transport::Channel>` on top of `CratestackGrpcClient<T>`, mirroring `tonic-build`'s own generated client shape. Errors surface as `GrpcClientError`, wrapping `tonic::Status` directly. See `./client-runtime.md` for the client-side crate split.
+4. **Dart gRPC client** — `generate-dart` gained a native gRPC client generator for `transport grpc` schemas in v0.4.17, with channel-shutdown and per-call option exposure on the generated client.
 
 ## Purpose
 
@@ -310,7 +322,7 @@ Recommended order:
 
 ## Next cool upgrade — WebSocket binding + subscriptions
 
-The HTTP surface of the transport architecture is now feature-complete for both REST and RPC bindings. The single remaining direction is a **WebSocket binding** for the RPC generation style, which would unlock:
+The HTTP surface of the transport architecture is now feature-complete for both REST and RPC bindings. gRPC is a third, already-shipped binding (see "gRPC binding" above), but it is not part of this HTTP surface — it rides `tonic` over HTTP/2 rather than the codec/framing/envelope stack described in this document. The single remaining direction for the HTTP-bound RPC style is a **WebSocket binding**, which would unlock:
 
 1. **Subscriptions** — `model.<X>.subscribe` ops that stream a sequence of `ModelEvent<X>` frames over a long-lived channel, terminated by client cancellation or disconnect. The design is captured in `./../internals/rpc-transport-adr.md` §3.4 (WS frame loop) and §2.1 (`OpKind::Subscription`).
 2. **Bidirectional streams** — for any future call shape that needs request frames on the same channel rather than per-request HTTP roundtrips.

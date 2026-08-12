@@ -44,7 +44,7 @@ Conventions banks adopt:
 
 1. `id` is sortable — `YYYYMMDDHHMMSS_<slug>` is canonical
 2. `description` is short and human-readable
-3. `up` is the SQL applied forward; multiple statements are split on `;` and run in one transaction
+3. `up` is the SQL applied forward, sent as a single batch to Postgres and run inside one transaction
 4. `down` is recorded but **never executed** by the runner — irreversible-by-default is the safe banking posture
 
 ## Running
@@ -61,9 +61,11 @@ The runner:
 1. compares each input migration against `cratestack_migrations`
 2. skips already-applied rows whose checksum matches
 3. aborts with `CoolError::Internal` if an applied row's checksum has drifted
-4. for each pending row: opens a transaction, executes every statement in `up`, inserts the record into `cratestack_migrations`, commits
+4. for each pending row: opens a transaction, sends the entire `up` script in
+   one batch via `sqlx::raw_sql(&migration.up)`, inserts the record into
+   `cratestack_migrations`, commits
 
-A failure in any statement rolls the whole migration back. A multi-
+A failure anywhere in the batch rolls the whole migration back. A multi-
 statement script with a broken second statement leaves zero artefacts —
 the first `CREATE TABLE` rolls back with the failed `CREATE INDEX`, and
 `cratestack_migrations` does **not** record the partial attempt.
@@ -106,9 +108,14 @@ the next deploy attempt.
 
 ## Multi-statement scripts
 
-Postgres prepared statements accept exactly one command per round-trip,
-so the runner splits `up` on `;` and executes each non-empty statement
-sequentially inside the same transaction. Common patterns this enables:
+An earlier version of the runner split `up` on `;` client-side before
+executing each statement. That approach broke on dollar-quoted PL/pgSQL
+bodies, which routinely contain their own semicolons ([issue #270](https://github.com/cratestack/cratestack/issues/270)), so as of v0.6.0
+the runner no longer parses or splits `up` at all: the entire script is
+sent to Postgres in a single batch via `sqlx::raw_sql(&migration.up)`,
+which uses the simple-query protocol and lets Postgres itself handle
+statement boundaries — dollar-quoting included. Common patterns this
+enables:
 
 ```sql
 CREATE TABLE transfers (
@@ -134,15 +141,80 @@ All three statements land atomically. A failure in the `INSERT` rolls the
 
 The runner consumes SQL migrations identically whether they are hand-written or generated. CrateStack ships a separate **schema diff generator** that produces those migrations from `.cstack` against a committed schema snapshot — see [ADR 0004](../internals/schema-diff-adr) for the full design.
 
-Three commands cover the lifecycle:
+Today, two subcommands are shipped:
 
 * `cratestack migrate diff` — offline. Diffs the current `.cstack` against `migrations/<backend>/schema.snapshot.json` and writes a new migration directory.
-* `cratestack migrate verify` — CI gate. Replays the full migration history against an ephemeral DB and checks the result matches the snapshot.
-* `cratestack migrate drift` — ops tool. Reports differences between the snapshot and a live database. Read-only.
+* `cratestack migrate baseline` — adopts a database that already has tables and no prior `cratestack` migration history, by introspecting it directly instead of assuming an empty starting point. See [Adopting an Existing Database](../tooling/migrate-baseline) for a full walkthrough against a real database.
 
-Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@rename` annotation.
+Two more are planned but **not yet implemented**, per the
+["shipping order"](../internals/schema-diff-adr) list:
+
+* `cratestack migrate verify` — deferred. Intended as a CI gate that replays the full migration history against an ephemeral DB and checks the result matches the snapshot; blocked on ephemeral-DB spawning support.
+* `cratestack migrate drift` — deferred. Intended as a read-only ops tool reporting differences between the committed snapshot and a live database, without writing anything. Distinct from `migrate baseline` above, which introspects a live database too but only for the one-time act of adoption — it writes a new snapshot and a `cratestack_migrations` row, where `migrate drift` would only report.
+
+Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@@rename` (table) / `@rename` (column) annotation.
 
 Hand-written migration steps coexist with generated ones via optional `up.pre.sql` / `up.post.sql` files inside the migration directory; the generator never overwrites them. Use these for backfills, lookup-table seeds, materialized-view refreshes, and any transform the diff engine cannot infer.
+
+## Table naming, pluralization, and `@@rename`
+
+`cratestack migrate diff` matches tables **by name only** — it never
+infers that two tables are "the same one, renamed." A table that
+disappears from one side and a differently-named table that appears on
+the other look, to the diff engine, exactly like an unrelated table
+being dropped and a new one being created. The only way to tell it
+otherwise is `@@rename(from = "<old_table_name>")`, declared on the
+model **before** running `migrate diff`:
+
+```cstack
+model Category {
+  id    Int    @id
+  label String
+
+  @@rename(from = "categorys")
+}
+```
+
+```sql
+ALTER TABLE categorys RENAME TO categories;
+```
+
+Without the marker, the same situation produces `DROP TABLE categorys`
+followed by `CREATE TABLE categories` — a migration that, if applied
+against a real deployment, **destroys the table's data**.
+
+### Why this matters right now: the `y -> ies` pluralization fix
+
+A model's table name is derived by pluralizing its snake_cased name.
+Through v0.7.x that pluralizer only ever appended a bare `s` to a name
+ending in `y`, so `model Category` derived table `categorys`. As of
+[cratestack#509](https://github.com/cratestack/cratestack/pull/509)
+the pluralizer correctly turns a **consonant + `y`** ending into `ies`
+— `Category` now derives `categories`, matching normal English
+pluralization.
+
+This is exactly the "table disappeared, differently-named table
+appeared" case above, and it applies with **no `.cstack` change on
+your part** — upgrading the framework version alone changes what table
+name your existing model derives. Any deployment with a model whose
+name ends in a consonant + `y` needs to add `@@rename(from =
+"<old_pluralization>")` before running `migrate diff` against the
+upgraded framework, or the generated migration will drop and recreate
+the table.
+
+**Affected:** any model name ending in consonant + `y` — `Category`
+(`categorys` -> `categories`), `Delivery` (`deliverys` ->
+`deliveries`), `Entry` (`entrys` -> `entries`), `Query` (`querys` ->
+`queries`).
+
+**Not affected:** a model name ending in vowel + `y` — `Key` (`keys`),
+`Day` (`days`) — the pluralization rule for those was already a bare
+`s` and hasn't changed.
+
+If you're unsure whether a model is affected, compare the table name
+your currently-deployed schema uses against what `cratestack check`
+(or a fresh `migrate diff` against an empty snapshot) derives for the
+same model post-upgrade — a mismatch means `@@rename` is needed.
 
 ## Foreign keys, referential actions, and composite uniqueness
 
@@ -208,9 +280,10 @@ idempotently by `ensure_migrations_table`.
 
 ## Read Next
 
-1. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr) — how `.cstack` changes turn into the SQL this runner applies
-2. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
-3. [Composite keys](../reference/composite-keys) — `@@id([...])` / `@@unique([...])`, the multi-column constraints this generator emits
-4. [Field attributes](../reference/field-attributes) — full `@relation`/`onDelete`/`onUpdate`/`@@unique` syntax reference
-5. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
-6. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models
+1. [Adopting an Existing Database](../tooling/migrate-baseline) — `cratestack migrate baseline`, a full walkthrough of pointing this migration runner at a real, already-populated database for the first time
+2. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr) — how `.cstack` changes turn into the SQL this runner applies
+3. [Schema diff (CLI)](../tooling/schema-diff) — `cratestack diff` checks the same two `.cstack` versions for wire-contract breaking changes, independent of the DB migration this page describes
+4. [Composite keys](../reference/composite-keys) — `@@id([...])` / `@@unique([...])`, the multi-column constraints this generator emits
+5. [Field attributes](../reference/field-attributes) — full `@relation`/`onDelete`/`onUpdate`/`@@unique` syntax reference
+6. [Audit log](./audit-log) — banks frequently land `@@audit` retroactively via a migration
+7. [Soft delete](./soft-delete) — `deleted_at` columns are typically added by a follow-up migration on existing models

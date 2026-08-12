@@ -33,6 +33,7 @@ Two notes on the shipped implementation that differ from the original proposal:
 
 - **Body changes emit `Drop + Create`, not `CREATE OR REPLACE VIEW`.** Codex flagged that a `ReplaceView` op at the tail of the migration would leave the old view alive when the same migration also dropped a column the old body referenced (Postgres rejects the column drop in that case). The diff engine now models body changes as two ops — drop in the pre-column-drops bucket, create in the post-column-adds bucket — losing the atomicity of Postgres `CREATE OR REPLACE VIEW` but gaining ordering correctness when column ops overlap with view body changes. Within a Postgres migration transaction other connections never observe the transient missing-view state, so the atomicity loss has no externally visible effect. The `ReplaceView` IR variant is preserved for hand-constructed callers.
 - **`@@no_unique` produces a separate `ViewDelegateNoUnique<V>` type** rather than just omitting `find_unique` from a single `ViewDelegate<V, PK>`. This enforces the gate at the type level — `runtime.views().<v>().find_unique(())` on a no-unique view is a compile error rather than a runtime "WHERE  = $1" footgun.
+- **`refresh()` is an unconditional method on every view delegate**, not a method that is conditionally code-generated only for `@@materialized` views as this ADR's Decision section implies. In `crates/cratestack-sqlx/src/delegate/view.rs`, every `ViewDelegate` exposes `refresh()`; calling it on a non-materialized view is gated at **runtime** instead, returning `CoolError::Forbidden` rather than failing to compile.
 
 ## Context
 
@@ -122,17 +123,17 @@ Both `Model` and `View` descriptors implement `ReadSource`. Only `Model` descrip
 
 ### Materialized views
 
-`@@materialized` is **server-only**. Building a schema that contains a `@@materialized` view with the embedded backend enabled is a **hard compile error** that points at the attribute span and references this ADR:
+`@@materialized` is **server-only**. Building a schema that contains a `@@materialized` view with the embedded backend enabled is a **hard compile error**. The error span is emitted by `crates/cratestack-macros/src/include/embedded.rs` on the `schema_path` string-literal argument at the Rust `include_embedded_schema!(...)` call site — rustc points at the caller's source file (e.g. `src/main.rs`), never at a location inside the `.cstack` file itself:
 
 ```
-error: `@@materialized` is not supported on the embedded backend (SQLite has no
-       materialized views). Either gate this view with a feature flag, or split
-       it into a server-only schema.
-       See ADR 0003 (/internals/views-adr) for the rationale.
-       --> schema.cstack:42:3
-        |
-     42 |   @@materialized
-        |   ^^^^^^^^^^^^^^
+error: view `AccountBalance` is `@@materialized` which is not supported on the
+       embedded backend (SQLite has no materialized views). Either gate this
+       view with a feature flag or split it into a server-only schema.
+       See ADR-0003 (cratestack-docs `internals/views-adr.md`) for the rationale.
+      --> src/main.rs:12:5
+       |
+    12 |     include_embedded_schema!("schema.cstack");
+       |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
 No silent fallback to a regular view. The read latency and consistency contracts of a materialized view differ enough from a regular view that degrading behavior on one backend would be a footgun, especially for banking workloads.

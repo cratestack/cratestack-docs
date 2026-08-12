@@ -60,6 +60,7 @@ Responsibilities:
 6. request journaling and client-local persistence hooks
 7. an FFI-ready Rust bridge for Dart and Flutter wrappers
 8. additive selected `get/list` helpers that keep projecting through the canonical HTTP query contract
+9. an off-by-default `grpc` Cargo feature that generates `CratestackGrpcClient<T>` — a native `tonic`-based gRPC client, exposed to schema consumers as `cratestack_schema::grpc::Client<T = tonic::transport::Channel>`, mirroring `tonic-build`'s own generated client shape — for schemas declaring `transport grpc`. The feature is off by default because it pulls in `tonic` (and transitively `prost`, `h2`, `tower`); a REST/RPC-only consumer never pays for it. `CratestackGrpcClient::with_request_authorizer` attaches the same `RequestAuthorizer` convention the REST/RPC clients use, and errors surface as `GrpcClientError`, wrapping `tonic::Status` directly rather than decoding a body
 
 ### `cratestack-client-flutter`
 

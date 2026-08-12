@@ -18,10 +18,10 @@ All responses are JSON. All error responses use the same envelope:
 
 Stable codes: `UNKNOWN_TARGET`, `UNKNOWN_MODEL`, `UNKNOWN_FIELD`,
 `NOT_A_RELATION`, `NO_PRIMARY_KEY`, `INVALID_PRIMARY_KEY`, `UNSUPPORTED`,
-`FORBIDDEN`, `VALIDATION_ERROR`, `DATABASE_ERROR`, `UPSTREAM_ERROR`,
-`INTERNAL_ERROR`. Writes add two more codes (`FORBIDDEN`,
-`VALIDATION_ERROR`); see the [write API](./write-api) page for the
-mutation surface.
+`FORBIDDEN`, `VALIDATION_ERROR`, `UNSAFE_DB_WRITE`, `DATABASE_ERROR`,
+`UPSTREAM_ERROR`, `INTERNAL_ERROR`. `FORBIDDEN`, `VALIDATION_ERROR`,
+and `UNSAFE_DB_WRITE` are only ever returned for writes; see the
+[write API](./write-api) page for the mutation surface.
 
 <Note>
 Studio supports Postgres and SQLite (via `rusqlite`) natively, plus
@@ -31,6 +31,31 @@ targets return `UNSUPPORTED` for follow, and many-to-many through a
 junction table returns `UNSUPPORTED` on every driver — see
 [What's not here yet](#whats-not-here-yet).
 </Note>
+
+## `[target.db]` is a direct database connection
+
+Studio is an **admin tool**. A `[target.db]` target opens a direct SQL
+connection with database-level access by design — it is not a proxy
+in front of your deployed service's generated API, and it does not
+replay that service's request-time behavior. Two things follow from
+that, and both are intended, not bugs:
+
+- **`@@allow` policies are never evaluated**, on reads or writes,
+  against a `[target.db]` target. A `@sensitive` or role-gated field
+  is readable through Studio's HTTP API by anyone who can reach it —
+  unauthenticated, regardless of what the schema's policies declare.
+- Writes additionally bypass `@version` bumping and `@@emit(...)`
+  event-outbox rows; see [the unsafe-write
+  guard](./write-api#the-unsafe-write-guard) on the write API page.
+
+`[target.api]` targets don't have this gap: they proxy through the
+deployed service's own generated routes, which apply `@@allow` (and
+`@version`/`@@emit`) exactly as declared in the schema. Prefer
+`[target.api]` for a schema whose policies you need enforced, and
+scope which network can reach a `[target.db]`-backed Studio instance
+accordingly — Studio binds `127.0.0.1:7878` by default, which keeps it
+off the network unless you deliberately rebind it or put it behind a
+proxy.
 
 ## Endpoints
 
@@ -104,7 +129,7 @@ Studio binds and casts in SQL.
 
 ### `GET /api/targets/:key/models/:model/records/:pk`
 
-Single row by primary-key value. 404 with `INVALID_PRIMARY_KEY` if no
+Single row by primary-key value. 400 with `INVALID_PRIMARY_KEY` if no
 row matches.
 
 ```json

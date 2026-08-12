@@ -20,6 +20,9 @@ representation.
 | `Boolean`  | `bool`                           | `BOOLEAN`         |                                                        |
 | `DateTime` | `chrono::DateTime<chrono::Utc>`  | `TIMESTAMPTZ`     |                                                        |
 | `Decimal`  | `cratestack::Decimal`            | `NUMERIC`         | See backend selection below.                           |
+| `Json`     | `cratestack::Json<cratestack::Value>` | `JSONB`      |                                                        |
+| `Bytes`    | `Vec<u8>`                        | `BYTEA`           |                                                        |
+| `Uuid`     | `cratestack::uuid::Uuid`         | `UUID`            |                                                        |
 
 Type modifiers `?` (optional) and `[]` (list) apply on top of any scalar
 where the underlying SQL type supports it.
@@ -32,27 +35,37 @@ any value the chosen backend supports.
 
 ### Backend selection
 
-The workspace ships two backends, gated by feature flag:
+The workspace has two backend feature flags, but only one of them
+actually works today:
 
-| Feature                  | Backend             | Type alias                     |
-|--------------------------|---------------------|--------------------------------|
-| `decimal-rust-decimal`   | `rust_decimal`      | `pub type Decimal = rust_decimal::Decimal;` |
-| `decimal-bigdecimal`     | `bigdecimal`        | `pub type Decimal = bigdecimal::BigDecimal;` |
+| Feature                  | Backend             | Type alias                     | Status |
+|--------------------------|---------------------|---------------------------------|--------|
+| `decimal-rust-decimal`   | `rust_decimal`      | `pub type Decimal = rust_decimal::Decimal;` | Default; works today. |
+| `decimal-bigdecimal`     | `bigdecimal`        | `pub type Decimal = bigdecimal::BigDecimal;` | Reserved, **not implemented** — hard `compile_error!` if enabled. |
 
 Default: `decimal-rust-decimal`.
 
-Banks pick:
+`decimal-bigdecimal` exists only as a reserved feature name for future
+work. Enabling it fails to compile with:
 
-1. **rust_decimal** for fixed 128-bit precision, faster arithmetic, and a
-   smaller binary. 28–29 significant digits is enough for retail banking,
-   FX rates, and consumer-facing pricing.
-2. **bigdecimal** for arbitrary precision when calculations involve
-   cumulative compounding, very long-duration interest, or settlement
-   workflows where the precision budget grows over time.
+```text
+cratestack: the decimal-bigdecimal backend is reserved but not yet
+implemented; use decimal-rust-decimal for now
+```
 
-Exactly one backend must be enabled. The umbrella `cratestack` crate
-threads the feature through the workspace so downstream code references
-`cratestack::Decimal` regardless of backend.
+So today, `rust_decimal` is not a preference banks weigh against
+`bigdecimal` — it's the only backend that compiles. Its properties: fixed
+128-bit precision, faster arithmetic, and a smaller binary. 28–29
+significant digits is enough for retail banking, FX rates, and
+consumer-facing pricing. Arbitrary-precision support (for cumulative
+compounding, very long-duration interest, or settlement workflows where
+the precision budget grows over time) would land under
+`decimal-bigdecimal` once it's implemented, but there is no working
+alternative to `decimal-rust-decimal` right now.
+
+Exactly one backend feature must be enabled. The umbrella `cratestack`
+crate threads the feature through the workspace so downstream code
+references `cratestack::Decimal` regardless of backend.
 
 ### Serialization
 

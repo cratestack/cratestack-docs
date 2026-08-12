@@ -87,6 +87,8 @@ The non-obvious case is `model.<X>.update`: the patch is decoded as the concrete
 
 This is the cleanest part of the design. The framework already had content-negotiated sequence encoding for the REST binding; the RPC dispatcher just inherited it.
 
+**Update, post-`@stream` directive.** At the time this ADR was written, `@stream` annotations were future work. They have since shipped: only procedures explicitly marked `@stream` get a genuinely incremental response (an `async_stream`-driven body, flushed as items are produced). A plain `Sequence`-kind op (an ordinary list-return procedure without `@stream`) still negotiates `Accept: application/cbor-seq` over this same route, but the server fully buffers the response before writing it — content negotiation alone does not imply incremental delivery. See the [RPC transport guide](../guides/rpc-transport#streaming-accept-application-cbor-seq) for the current, `@stream`-scoped behavior.
+
 ### Strict batch, no in-batch dependencies
 
 `POST /rpc/batch` decodes a sequence of `RpcRequest { id, op, input, idem? }` frames and emits a sequence of `RpcResponseFrame { id, output?, error? }` in **request order** (so order-only clients can zip without `id` lookup). Three deliberate non-features:
