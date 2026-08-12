@@ -38,9 +38,9 @@ The bare `cratestack` crate on crates.io is a documentation-only landing page wi
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.7.1", features = ["decimal-rust-decimal"] }
-cratestack-macros = "0.7.1"
-cratestack-rusqlite = "0.7.1"
+cratestack = { package = "cratestack-sqlite", version = "0.7.10", features = ["decimal-rust-decimal"] }
+cratestack-macros = "0.7.10"
+cratestack-rusqlite = "0.7.10"
 ```
 
 `cratestack-macros` and `cratestack-rusqlite` are the crates you import from directly (schema macro and runtime/delegate types, respectively); the `cratestack = { package = "cratestack-sqlite", ... }` line exists purely so the macro-generated `::cratestack::*` paths resolve — it isn't optional, even though you won't `use cratestack::...` anywhere in your own code.
