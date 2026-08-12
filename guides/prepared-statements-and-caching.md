@@ -34,10 +34,11 @@ connection, keyed by SQL text. You get this for free — there's no
 ### The pool is yours to tune
 
 `SqlxRuntime::new(pool: sqlx::PgPool)` (`crates/cratestack-sqlx/src/descriptor.rs`)
-takes a pool the consumer constructs. CrateStack doesn't build one for you
-and doesn't override connect options, so everything sqlx exposes on the
-pool and connection — `statement_cache_capacity`, `max_connections`,
-TLS mode, and so on — is entirely yours to set:
+takes a pool the consumer constructs. The `cratestack-sqlx` runtime itself
+doesn't build one for you and doesn't override connect options, so
+everything sqlx exposes on the pool and connection —
+`statement_cache_capacity`, `max_connections`, TLS mode, and so on — is
+yours to set:
 
 ```rust
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -52,6 +53,19 @@ let pool = PgPoolOptions::new()
 The default statement-cache capacity is 100 distinct statements per
 connection, LRU-evicted — that's sqlx's default, not something CrateStack
 changes.
+
+**Exception:** if you're using `cratestack-service` (the env-driven
+service-bootstrap facade), it builds the pool for you —
+`ServiceConfig::state()` (`crates/cratestack-service/src/config.rs:130-139`)
+opens a lazily-connecting pool via `PgPoolOptions::new().max_connections(5).connect_lazy_with(options)`,
+and `run_migrations()` (`crates/cratestack-service/src/migrations.rs:66-73`)
+opens a separate one-off, single-connection pool
+(`PgPoolOptions::new().max_connections(1).connect(database_url)`) purely to
+apply migrations at startup. Neither call site sets
+`statement_cache_capacity`, so both get sqlx's default of 100 — if you're
+on this facade and need to change it (e.g. the PgBouncer case below),
+that's the place to do it; there's no config knob exposed through
+`ServiceConfig` itself today.
 
 ### SQLite uses the same binding discipline, without the same cache
 
@@ -83,16 +97,22 @@ a retried request — see
 never touches the query layer and does nothing for a request that doesn't
 send `Idempotency-Key`.
 
-**Principal fingerprinting currently falls back to a shared bucket, not a
-refusal.** If you're evaluating idempotency defaults: as of the current
-release, a caller with no `Authorization` header and no `ConnectInfo` peer
-(i.e. the server isn't wired through
-`into_make_service_with_connect_info::<SocketAddr>()`) collapses onto a
-single shared `"anonymous"` fingerprint rather than being refused. Two
-such callers sharing an idempotency key would collide. Wire
-`into_make_service_with_connect_info` (or supply
-`with_principal_fingerprint`) if that matters for your deployment — see
-[Idempotency § Principal scoping](./idempotency#principal-scoping).
+**Principal fingerprinting fails closed, not into a shared bucket.** If
+you're evaluating idempotency defaults: the default principal fingerprint
+(`crates/cratestack-axum/src/idempotency/layer.rs`) tries the
+`Authorization` header first, then the verified `ConnectInfo<SocketAddr>`
+peer (requires serving through
+`into_make_service_with_connect_info::<SocketAddr>()`). If **neither** is
+available, it refuses the request with `412 Precondition Failed`
+(`CoolError::PreconditionFailed`) rather than collapsing every such caller
+onto a shared `"anonymous"` namespace — an earlier version of the default
+did exactly that, and the doc comments in that file narrate the old
+behavior for context, which reads confusingly out of context: the
+fail-closed refusal is what actually runs. The rate-limit layer's
+`default_key_fn` (`crates/cratestack-axum/src/ratelimit/layer.rs`) mirrors
+this. Wire `into_make_service_with_connect_info`, or supply
+`with_principal_fingerprint`/`with_key_fn` explicitly, to avoid the 412 —
+see [Idempotency § Principal scoping](./idempotency#principal-scoping).
 
 **Client-side caching is real, but it's a different layer.** The
 TypeScript client's `swr` preset gives you genuine
