@@ -17,7 +17,7 @@ This reference covers every supported field-level attribute. Model-level
 
 | Attribute            | Behaviour                                                                                                  |
 |----------------------|------------------------------------------------------------------------------------------------------------|
-| `@id`                | Marks the primary-key field. Required; exactly one per model.                                              |
+| `@id`                | Marks the primary-key field. At least one required per model (or a model-level `@@id([...])`).             |
 | `@default(value)`    | Server-side default applied when the create input omits the field.                                         |
 | `@default(auth().x)` | Pulls a value from the auth context. Supports nested paths (`auth().organization.id`).                     |
 | `@default(dbgenerated())` | Defers to the database default — the column must declare `DEFAULT` in SQL. This is how `Cuid` primary keys are generated in practice, e.g. `id Cuid @id @default(dbgenerated())`. |
@@ -25,6 +25,20 @@ This reference covers every supported field-level attribute. Model-level
 Auth-defaulted columns are limited to `String`/`Cuid`, `Int`, and
 `Boolean` and act as **fallbacks**: they fill the field only when the
 create input omits it. They are not enforcement.
+
+**"Exactly one `@id`" is not actually enforced for field-level `@id`.**
+The parser only checks that a model has *at least one* — nothing rejects
+two (or more) fields each carrying a bare `@id`. That's a different gap
+from `@@id([...])`, which the parser and `cratestack-macros` do reject
+outright (see [composite keys](./composite-keys)): two field-level `@id`
+attributes silently bypass that guard, because it only looks for the
+`@@id(` model-level attribute, not a duplicate field-level one.
+`cratestack-migrate` then marks every `@id`-tagged column
+`primary_key = true` and joins all of them into one multi-column
+`PRIMARY KEY` constraint — an accidental composite key with none of the
+authoring safeguards `@@id([...])` gets. Stick to exactly one `@id`
+field per model; don't rely on the parser to catch a second one for you.
+Tracked as [issue #536](https://github.com/cratestack/cratestack/issues/536).
 
 ## Relations
 
