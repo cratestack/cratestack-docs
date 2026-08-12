@@ -164,9 +164,18 @@ Prepared statements assume the same server-side connection persists
 across your session — true of a normal `PgPool` connection, **not** true
 of PgBouncer in transaction-pooling mode, which can hand a client's next
 statement to a different backend connection than the one that prepared
-it. If you deploy CrateStack behind PgBouncer in transaction-pooling
-mode, disable sqlx's client-side statement cache on your own connect
-options:
+it. This paragraph is external PgBouncer behavior, not something
+verified against CrateStack's own code — confirmed instead against
+PgBouncer's own [changelog](https://www.pgbouncer.org/changelog.html)
+and [`max_prepared_statements` config docs](https://www.pgbouncer.org/config.html).
+PgBouncer ≥ 1.21.0 (October 2023) can track and re-prepare statements
+per client across transaction-pooling connections when
+`max_prepared_statements` is non-zero — and as of PgBouncer 1.24.0
+(January 2025) that's the out-of-the-box default (200), so a current
+PgBouncer needs no extra config for prepared statements to keep
+working. Only if you're on PgBouncer < 1.21.0, or have
+`max_prepared_statements` explicitly set to `0`, do you need to disable
+sqlx's client-side statement cache on your own connect options instead:
 
 ```rust
 use sqlx::postgres::PgConnectOptions;
