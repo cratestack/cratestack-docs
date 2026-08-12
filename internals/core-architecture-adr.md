@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (initial). **Updated in 0.3.0** — see "0.3.0 macro-split update" below. **Further updated post-0.3.2** — see "RPC binding addendum" below.
+Accepted, amended twice. Originally proposed 2026-04-26; the core architecture described here (the three role-specific macros, generated delegates/routes/policy) has been in production across multiple releases since — "Proposed" undersold that by the time of either amendment below. **Updated in 0.3.0** — see "0.3.0 macro-split update" below. **Further updated post-0.3.2** — see "RPC binding addendum" below.
 
 ## Date
 
