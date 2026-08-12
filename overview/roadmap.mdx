@@ -27,10 +27,11 @@ Tracking [ADR 0004](../internals/schema-diff-adr).
 
 ### `cratestack migrate drift`
 
-- **Status:** Designed
+- **Status:** Partial — the crate-boundary question is resolved and Postgres live-DB introspection now exists, but the standalone, repeatable, strictly-read-only operator command described below is still unbuilt.
 - **What:** Operator-facing command that introspects a live database and reports differences from the committed snapshot. Strictly read-only; never generates a migration from live state. For "did someone hotfix production?"
-- **Why deferred:** Needs live-DB schema introspection — `pg_catalog` queries for Postgres, `sqlite_master` + `PRAGMA table_info` for SQLite. That means pulling sqlx / rusqlite into the `cratestack-migrate` crate or splitting the introspection layer into per-backend feature-gated modules.
-- **Unblocks on:** Crate boundary decision — does `cratestack-migrate` take on driver deps, or does a sibling `cratestack-migrate-introspect-{pg,sqlite}` ship the connectivity?
+- **What actually shipped:** `cratestack-migrate` gained a `postgres-introspect`-gated `introspect::postgres` module (issue #204) that reads a live `sqlx_postgres::PgPool` into the same `Projections` IR the diff engine already compares — no more crate-boundary question, and no `cratestack-migrate-introspect-{pg,sqlite}` split was needed. It powers `cratestack migrate baseline` (issue #205), a related-but-distinct command: a one-time, Postgres-only *adoption* step that introspects a live DB, prints a drift report grouped by table, writes the initial snapshot, and seeds a synthetic `cratestack_migrations` row — see the [migrations guide](../guides/migrations) and `crates/cratestack-migrate/README.md` in the source repo. `baseline` is not the repeatable, snapshot-already-exists "did someone hotfix production?" tool this entry originally described.
+- **Why deferred:** A standalone `cratestack migrate drift` subcommand — read-only, runs repeatedly against an already-baselined database, never writes a snapshot or a migrations-table row — hasn't been built. SQLite/embedded introspection also remains out of scope (no long-lived "existing production database" story exists for embedded targets today, per `docs/design/migrate-baseline.md` §6 in the source repo).
+- **Unblocks on:** Deciding whether `migrate baseline --strict` (already Postgres-only, already produces a drift report) is extended into a genuinely repeatable read-only mode, or whether `drift` ships as its own thin command reusing the same `introspect::postgres` + `diff_projections` pipeline.
 
 ### `DropEnumVariant`
 
@@ -117,15 +118,6 @@ Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialize
 - **What:** Broader exposure controls beyond the current policy subset, plus some field-level policy features still deferred.
 - **Why deferred:** The shipped policy subset is what banks need today; remaining features depend on use cases that haven't surfaced yet.
 - **Unblocks on:** Concrete asks from production users.
-
-## Rate limiting
-
-### Distributed rate-limit stores
-
-- **Status:** Designed (trait is pluggable; only in-memory shipped)
-- **What:** Redis or other multi-replica `RateLimitStore` implementations.
-- **Why deferred:** The trait is in place; the single-replica in-memory store covers the most common deployments and the API for plugging in a multi-replica store doesn't need changing.
-- **Unblocks on:** A multi-replica deployment that actually needs it.
 
 ## How this list is maintained
 

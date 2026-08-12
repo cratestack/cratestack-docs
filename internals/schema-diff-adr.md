@@ -52,6 +52,8 @@ This is offline and deterministic. No database connection is required to generat
 
 These are deliberately separate. `diff` is what the developer runs locally. `verify` is the CI gate — it replays the full migration history against an ephemeral Postgres/SQLite container and checks the resulting schema matches the snapshot byte-for-byte, catching hand-edited snapshots and hand-edited applied migrations. `drift` is the ops tool for "did someone hotfix production?" — it never writes anything and never generates a migration from live state, because conflating live drift with intended schema change is how silent corruption happens.
 
+**Update, post-shipping.** This table predates `cratestack migrate baseline` (issue #205, shipped), a fourth command not originally planned here: a one-time, Postgres-only *adoption* step for an already-existing database, reusing the same live-DB introspection this ADR's `drift` row anticipated (`cratestack-migrate`'s `postgres-introspect`-gated `introspect::postgres` module) to print a drift report, then — unlike the read-only `drift` described above — writing the initial snapshot and a synthetic `cratestack_migrations` row. `verify` and a standalone, repeatable `drift` command remain unimplemented; see the [Roadmap](../overview/roadmap#cratestack-migrate-drift) and `crates/cratestack-migrate/README.md`'s "Not yet implemented" section in the source repo.
+
 ### Per-backend layout
 
 ```

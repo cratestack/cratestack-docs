@@ -18,23 +18,22 @@ The current banking-grade slice covers:
 2. optimistic concurrency via `@version` + `If-Match` / `ETag` round-tripping
 3. transactional audit log via `@@audit` + `cratestack_audit` + pluggable `AuditSink`
 4. explicit transaction isolation via `run_in_isolated_tx` + `@isolation`
-5. per-principal rate limiting via `RateLimitLayer` + `InMemoryRateLimitStore`
+5. per-principal rate limiting via `RateLimitLayer` + `InMemoryRateLimitStore` (single-replica) or `RedisRateLimitStore` (multi-replica, via `cratestack-redis`)
 6. soft-delete via `@@soft_delete`
 7. forward-only migrations via `Migration` + `apply_pending` with checksum drift detection
 8. runtime validators (`@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217`) with PII-safe error messages
 9. Decimal scalar backed by `rust_decimal` today (`bigdecimal` is a reserved-but-unimplemented feature flag)
-10. FIPS-validated TLS provider via the `crypto-aws-lc-rs` workspace feature
 
 ## What's Not
 
 The track stops short of:
 
 1. zero-downtime migration generation from schema diffs
-2. cluster-wide rate limiting (the shipped store is in-memory; the trait is pluggable)
-3. cluster-wide idempotency replication (the chosen store — Postgres primary or Redis primary — is the single source of truth; multi-region active-active needs a coordinated store plugged into the trait)
-4. signed audit chains / immutable WORM storage
-5. field-level read masking or write blocking — model-level only
-6. an HSM-backed signing or key-management abstraction
+2. cluster-wide idempotency replication (the chosen store — Postgres primary or Redis primary — is the single source of truth; multi-region active-active needs a coordinated store plugged into the trait)
+3. signed audit chains / immutable WORM storage
+4. field-level read masking or write blocking — model-level only
+5. an HSM-backed signing or key-management abstraction
+6. a working FIPS-validated crypto provider — `cratestack-pg`'s `crypto-aws-lc-rs` Cargo feature is reserved but **not implemented**: enabling it is a hard `compile_error!`, not a working FIPS mode, pending the TLS backend becoming a genuine per-crate choice across `cratestack-sqlx`/`cratestack-client-rust` (both currently hard-select the non-FIPS `ring` backend); see [issue #334](https://github.com/cratestack/cratestack/issues/334)
 
 ## Adoption Order
 
@@ -46,9 +45,8 @@ Banks typically adopt these in the order risk dictates. A realistic path:
 4. switch transfer/settlement procedures to `@isolation("serializable")` — closes the read-write skew window
 5. add `RateLimitLayer` per principal — caps abuse without code changes per route
 6. switch hard delete to `@@soft_delete` where retention rules require it
-7. enable the FIPS provider when production keys move into a validated module
 
-Each step is independent and can be reviewed in isolation.
+Each step is independent and can be reviewed in isolation. A FIPS-validated crypto provider would be a natural seventh step once production keys move into a validated module, but `cratestack-pg`'s `crypto-aws-lc-rs` feature isn't a working FIPS mode yet — see "What's Not" above.
 
 ## Read Next
 
