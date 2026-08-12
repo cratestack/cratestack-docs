@@ -19,9 +19,8 @@ This reference covers every supported field-level attribute. Model-level
 |----------------------|------------------------------------------------------------------------------------------------------------|
 | `@id`                | Marks the primary-key field. Required; exactly one per model.                                              |
 | `@default(value)`    | Server-side default applied when the create input omits the field.                                         |
-| `@default(cuid())`   | Macro-emitted CUID on create.                                                                              |
 | `@default(auth().x)` | Pulls a value from the auth context. Supports nested paths (`auth().organization.id`).                     |
-| `@default(dbgenerated())` | Defers to the database default — the column must declare `DEFAULT` in SQL.                            |
+| `@default(dbgenerated())` | Defers to the database default — the column must declare `DEFAULT` in SQL. This is how `Cuid` primary keys are generated in practice, e.g. `id Cuid @id @default(dbgenerated())`. |
 
 Auth-defaulted columns are limited to `String`/`Cuid`, `Int`, and
 `Boolean` and act as **fallbacks**: they fill the field only when the
@@ -31,7 +30,7 @@ create input omits it. They are not enforcement.
 
 | Attribute                                    | Behaviour                                                                                        |
 |-----------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `@relation(fields:[...], references:[...])`  | Declares a relation. Required on **both** sides — the owning (single-model) side and the `Model[]` inverse side. |
+| `@relation(fields:[...], references:[...])`  | Declares a relation. Required on **both** sides — the owning (single-model) side and the `Model[]` inverse side. Only the owning side emits a real `FOREIGN KEY` constraint in generated migrations. |
 | `@relation(..., onDelete: <Action>)`         | Referential action on delete. Optional; defaults to `NoAction`.                                   |
 | `@relation(..., onUpdate: <Action>)`         | Referential action on update. Optional; defaults to `NoAction`.                                   |
 
@@ -45,16 +44,20 @@ model Tenant {
 model Application {
   id       String @id
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
 }
 ```
 
-Only the **owning side** (the field typed as a single model, not
-`Model[]`) produces a real foreign-key constraint. See [ADR 0004](../internals/schema-diff-adr)
-for the generated DDL, the SQLite limitation, and the full
-`onDelete`/`onUpdate` validation rules — in short, an action can only
-be declared on the owning side, `SetNull` requires the local field to
-be optional, and `SetDefault` requires it to declare `@default(...)`.
+`onDelete`/`onUpdate` can only be declared on the relation's **owning
+side** (the field typed as a single model, not `Model[]`) — the has-many
+(`List`-typed) side has no physical column to attach a constraint to, and
+`cratestack check` rejects the attempt. `SetNull` additionally requires
+the local field to be optional (`tenantId String?`); `SetDefault`
+requires it to declare `@default(...)`.
+
+See [ADR 0004](../internals/schema-diff-adr) for the generated DDL and
+the SQLite limitation, and [Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness)
+for the generated DDL and naming convention.
 
 ## Exposure controls
 
@@ -62,8 +65,8 @@ be optional, and `SetDefault` requires it to declare `@default(...)`.
 |-----------------|------------------------|------------------------------------|--------------------------------|
 | `@readonly`     | Excluded from Create + Update inputs | Visible in responses | Visible in `before`/`after`    |
 | `@server_only`  | Excluded from Create + Update inputs | Stripped from responses | Omitted entirely from snapshots |
-| `@pii`          | No effect              | No effect                          | Redacted as `"<redacted: pii>"` |
-| `@sensitive`    | No effect              | No effect                          | Redacted as `"<redacted: sensitive>"` |
+| `@pii`          | No effect              | No effect                          | Redacted as `"[redacted-pii]"` |
+| `@sensitive`    | No effect              | No effect                          | Redacted as `"[redacted-sensitive]"` |
 
 Use `@readonly` for columns the server writes but clients may read (audit
 timestamps, computed totals). Use `@server_only` for columns clients
@@ -83,24 +86,6 @@ contract.
 The macro excludes `@version` from both Create and Update inputs. The
 runtime seeds it to `0` on create and bumps it in the same statement as
 every update or soft-delete.
-
-## Relations
-
-| Attribute                          | Behaviour                                                                                          |
-|-------------------------------------|-----------------------------------------------------------------------------------------------------|
-| `@relation(fields:[...], references:[...])` | Declares the owning side of a relation. Emits a `FOREIGN KEY` constraint in generated migrations. |
-| `onDelete: <action>`                | Referential action on delete. One of `Cascade`, `Restrict`, `SetNull`, `SetDefault`, `NoAction`. Optional inside `@relation(...)`; defaults to `NoAction`. |
-| `onUpdate: <action>`                | Referential action on update. Same vocabulary and default as `onDelete`.                            |
-
-```cstack
-model Application {
-  id       String @id
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
-}
-```
-
-`onDelete`/`onUpdate` can only be declared on the relation's owning side — the has-many (`List`-typed) side has no physical column to attach a constraint to, and `cratestack check` rejects the attempt. `SetNull` additionally requires the local field to be optional (`tenantId String?`); `SetDefault` requires it to declare `@default(...)`. See [Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness) for the generated DDL and naming convention.
 
 ## Model-level uniqueness
 
@@ -125,7 +110,7 @@ Field-level `@unique` (a single-column shorthand) is unaffected by this — `@@u
 
 | Attribute              | Applies to        | Behaviour                                                  |
 |------------------------|-------------------|------------------------------------------------------------|
-| `@length(min, max)`    | `String`, `Cuid`  | Inclusive length check.                                    |
+| `@length(min, max)`    | `String`, `Bytes` | Inclusive length check.                                    |
 | `@range(min, max)`     | `Int`, `Decimal`  | Inclusive numeric range. Integer bounds promote to Decimal. |
 | `@email`               | `String`          | Pragmatic email shape check.                               |
 | `@regex(pattern)`      | `String`          | Pattern compiled at macro time.                            |

@@ -157,13 +157,17 @@ cratestack studio run
 | Total control over the UI (custom theme, internal actions, etc.)          | `cratestack studio eject --out ./fork --with-ui`, then `trunk serve` in `./fork/ui` |
 | Single binary, *and* a custom UI                                          | Not supported out of the box (see below)                                          |
 
-The last row isn't supported out of the box yet — `embed-ui` reads
-from a fixed `<crate-dir>/../cratestack-studio-ui/dist/` path
-(resolved at compile time relative to `cratestack-studio`'s own
-manifest, not the consuming project), with no environment-variable or
-config override. A future small change would let `embed-ui` point at
-an arbitrary `dist/` directory so an ejected `--with-ui` fork could
-produce a single-binary distribution of its own customized UI.
+The last row isn't supported out of the box yet — `embed-ui`'s
+mechanism is one step more indirect than "read straight from a fixed
+path": `cratestack-studio`'s `build.rs` copies either the sibling
+`cratestack-studio-ui/dist/` (in a dev checkout) or a bundled
+`embedded-ui-dist.tar.gz` (in a published crate) into `$OUT_DIR/ui-dist`
+at build time, and `rust-embed` then embeds that `$OUT_DIR` path at
+compile time — not the sibling `dist/` directory directly. There's no
+environment-variable or config override for any of this. A future
+small change would let `build.rs` point at an arbitrary `dist/`
+directory so an ejected `--with-ui` fork could produce a single-binary
+distribution of its own customized UI.
 
 ## Defaults stay light
 

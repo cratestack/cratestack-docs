@@ -14,7 +14,7 @@ every Create or Update input.
 
 | Attribute   | Applies to         | Behaviour                                                  |
 |-------------|--------------------|------------------------------------------------------------|
-| `@length`   | `String`, `Cuid`   | Rejects shorter than `min` or longer than `max`            |
+| `@length`   | `String`, `Bytes`  | Rejects shorter than `min` or longer than `max`            |
 | `@range`    | `Int`, `Decimal`   | Rejects below `min` or above `max` (inclusive)             |
 | `@email`    | `String`           | Pragmatic shape check — single `@`, non-empty local/domain |
 | `@regex`    | `String`           | Pattern compiled once, matched on every input              |
@@ -96,7 +96,7 @@ allowed currencies via a separate allow-list or a policy check.
 
 Validators are app-level by default — they run in the framework-generated `validate(&self)` and the database has no record of them. That is the right default for `@email`, `@uri`, and complex `@regex` patterns: those rely on host-language parsers, and expressing them in SQL means a regex approximation that drifts from the Rust behavior.
 
-For validators whose semantics translate cleanly to SQL, opt into database-level CHECK constraints with `@db_enforce`:
+For validators whose semantics translate cleanly to SQL, opt into database-level CHECK constraints with `@db_enforce`. It's a field-level attribute — it goes inline on the field, next to the other field attributes like `@range`/`@iso4217`, not on its own line at the model level:
 
 ```cstack
 model Member {
@@ -106,7 +106,7 @@ model Member {
 }
 ```
 
-Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@db_enforce` to a non-eligible validator is silently skipped today rather than rejected — a parser-level check that promotes this to a parse-time error is tracked as a follow-up, not yet built.
+Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@db_enforce` to a non-eligible validator is currently silently skipped by the migration converter, not a parse-time error (a stricter parser-level check that promotes this to a build-time error may come later).
 
 When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion-db_enforce)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. Subsequent validator changes flow through the diff engine:
 
