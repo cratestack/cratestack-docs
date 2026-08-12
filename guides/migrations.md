@@ -152,9 +152,69 @@ Two more are planned but **not yet implemented**, per the
 * `cratestack migrate verify` — deferred. Intended as a CI gate that replays the full migration history against an ephemeral DB and checks the result matches the snapshot; blocked on ephemeral-DB spawning support.
 * `cratestack migrate drift` — deferred. Intended as a read-only ops tool reporting differences between the committed snapshot and a live database, without writing anything. Distinct from `migrate baseline` above, which introspects a live database too but only for the one-time act of adoption — it writes a new snapshot and a `cratestack_migrations` row, where `migrate drift` would only report.
 
-Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@rename` annotation.
+Generated migrations remain reviewable SQL diffs — that property is preserved. The generator just removes the hand-translation step from `.cstack` to SQL. Destructive operations (column drop, lossy type change) still require explicit opt-in, and renames still require an explicit `@@rename` (table) / `@rename` (column) annotation.
 
 Hand-written migration steps coexist with generated ones via optional `up.pre.sql` / `up.post.sql` files inside the migration directory; the generator never overwrites them. Use these for backfills, lookup-table seeds, materialized-view refreshes, and any transform the diff engine cannot infer.
+
+## Table naming, pluralization, and `@@rename`
+
+`cratestack migrate diff` matches tables **by name only** — it never
+infers that two tables are "the same one, renamed." A table that
+disappears from one side and a differently-named table that appears on
+the other look, to the diff engine, exactly like an unrelated table
+being dropped and a new one being created. The only way to tell it
+otherwise is `@@rename(from = "<old_table_name>")`, declared on the
+model **before** running `migrate diff`:
+
+```cstack
+model Category {
+  id    Int    @id
+  label String
+
+  @@rename(from = "categorys")
+}
+```
+
+```sql
+ALTER TABLE categorys RENAME TO categories;
+```
+
+Without the marker, the same situation produces `DROP TABLE categorys`
+followed by `CREATE TABLE categories` — a migration that, if applied
+against a real deployment, **destroys the table's data**.
+
+### Why this matters right now: the `y -> ies` pluralization fix
+
+A model's table name is derived by pluralizing its snake_cased name.
+Through v0.7.x that pluralizer only ever appended a bare `s` to a name
+ending in `y`, so `model Category` derived table `categorys`. As of
+[cratestack#509](https://github.com/cratestack/cratestack/pull/509)
+the pluralizer correctly turns a **consonant + `y`** ending into `ies`
+— `Category` now derives `categories`, matching normal English
+pluralization.
+
+This is exactly the "table disappeared, differently-named table
+appeared" case above, and it applies with **no `.cstack` change on
+your part** — upgrading the framework version alone changes what table
+name your existing model derives. Any deployment with a model whose
+name ends in a consonant + `y` needs to add `@@rename(from =
+"<old_pluralization>")` before running `migrate diff` against the
+upgraded framework, or the generated migration will drop and recreate
+the table.
+
+**Affected:** any model name ending in consonant + `y` — `Category`
+(`categorys` -> `categories`), `Delivery` (`deliverys` ->
+`deliveries`), `Entry` (`entrys` -> `entries`), `Query` (`querys` ->
+`queries`).
+
+**Not affected:** a model name ending in vowel + `y` — `Key` (`keys`),
+`Day` (`days`) — the pluralization rule for those was already a bare
+`s` and hasn't changed.
+
+If you're unsure whether a model is affected, compare the table name
+your currently-deployed schema uses against what `cratestack check`
+(or a fresh `migrate diff` against an empty snapshot) derives for the
+same model post-upgrade — a mismatch means `@@rename` is needed.
 
 ## Foreign keys, referential actions, and composite uniqueness
 

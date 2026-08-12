@@ -38,10 +38,20 @@ Every successful update emits `version = version + 1` in the same SQL
 statement that writes the new state. The generated REST router:
 
 1. returns `ETag: "<version>"` on `GET /resource/<id>` and on the response of any successful mutation
-2. requires `If-Match: "<version>"` on `PATCH /resource/<id>` and on `DELETE` for soft-delete models
-3. responds `412 Precondition Failed` when `If-Match` is missing
-4. responds `412 Precondition Failed` when the supplied version is stale
+2. requires `If-Match: "<version>"` on `PATCH /resource/<id>`
+3. responds `412 Precondition Failed` on `PATCH` when `If-Match` is missing
+4. responds `412 Precondition Failed` on `PATCH` when the supplied version is stale
 5. distinguishes "stale version" from "row not found" by probing the read policy after the update fails
+
+`DELETE /resource/<id>` does **not** check `If-Match` today — the generated
+delete handler never parses or requires the header, and sending one has no
+effect. A concurrent delete can remove a row out from under a caller who
+holds a stale version. This is scheduled to change: [issue #519](https://github.com/cratestack/cratestack/issues/519)
+tracks making `DELETE` enforce `If-Match` and return `412` on a stale or
+missing version for `@version` models, but that work has not shipped as of
+this writing. Until it lands, do not rely on `If-Match` for delete
+protection — layer your own check (e.g. a read immediately before delete
+inside your own transaction) if a concurrent delete would be unsafe.
 
 ```http
 PATCH /ledgers/3 HTTP/1.1

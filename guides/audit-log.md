@@ -49,6 +49,8 @@ For every `create`, `update`, and `delete` the runtime writes a row to
 3. `operation` — `create`, `update`, or `delete`
 4. `primary_key` as JSON
 5. `actor` derived from the `CoolContext` — id, claims, optional source IP
+   (see [Trusted Proxy / Client IP](./trusted-proxy) for how that IP is
+   resolved, and the bootstrap step it's silently `None` without)
 6. `tenant` from `PrincipalContext.tenant.id` when present
 7. `before` snapshot (null on create) and `after` snapshot (null on delete)
 8. `request_id` for trace stitching
@@ -163,3 +165,4 @@ Banks needing tamper evidence sink to a WORM bucket or signed log;
 
 1. [Field attributes](../reference/field-attributes) for `@pii`, `@sensitive`, `@server_only`
 2. [Transaction isolation](./transaction-isolation) for the transactional model the audit insert participates in
+3. [Trusted Proxy / Client IP](./trusted-proxy) for how `actor.ip` gets populated behind a reverse proxy
