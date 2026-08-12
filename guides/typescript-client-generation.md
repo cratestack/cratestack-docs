@@ -467,8 +467,8 @@ const client = new ExampleBlogClientClient("https://api.example.com", {
 
 ```dart
 // Dart
-final blogClient = BlogClientCrateStackClient(
-  CrateStackRuntime(myBridge),
+final blogClient = BlogClientCratestackClient(
+  CratestackDioAdapter(dio: myDio),
   basePath: '/cstack',
 );
 ```
