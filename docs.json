@@ -47,6 +47,7 @@
               "guides/async-io-with-embedded-sqlite",
               "guides/materialized-views",
               "guides/find-many",
+              "guides/prepared-statements-and-caching",
               "guides/rpc-transport",
               "guides/no-database-procedures"
             ]
