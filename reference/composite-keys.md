@@ -86,14 +86,38 @@ ON CONFLICT (tenant_id, name, environment)
 DO UPDATE SET ...;
 ```
 
-### What it doesn't do yet
+### Upserting on a composite unique key
 
-* No query-builder helper for "look up by this tuple" — that's still a
-  hand-written `WHERE` clause.
-* [`.upsert(...)`](../guides/upsert) only targets the primary key.
-  Widening it to accept a `@@unique([...])` conflict target is a
-  separate, future addition; this attribute only gets the constraint
-  into the database, not into the generated builder.
+[`.upsert(...)`](../guides/upsert) defaults to conflict-targeting the
+primary key, but it also accepts an explicit `ConflictTarget` so it can
+target a `@@unique([...])` tuple instead — this shipped in v0.3.3
+([issue #28](https://github.com/cratestack/cratestack/issues/28)), it is
+not a future addition. Call `.on_conflict(...)` with
+`ConflictTarget::Columns(&[...])`, naming exactly the columns behind the
+unique index:
+
+```rust
+client
+    .application()
+    .upsert(input)
+    .on_conflict(ConflictTarget::Columns(&["tenant_id", "name", "environment"]))
+    .run(&ctx)
+    .await?;
+```
+
+`ConflictTarget` is a two-variant enum —
+`ConflictTarget::PrimaryKey` (the default) and
+`ConflictTarget::Columns(&'static [&'static str])` — defined in
+`cratestack-sql` and threaded through the `.on_conflict(...)` builder
+method in `cratestack-sqlx`. The named columns must form a `UNIQUE`
+constraint/index on the target table (exactly what `@@unique([...])`
+emits), or Postgres will reject the `ON CONFLICT` clause at runtime. The
+same builder method and `ConflictTarget` are available on the embedded
+(rusqlite) path too, so this isn't a Postgres-only capability.
+
+There's still no query-builder helper for "look up by this tuple" —
+finding a row by its composite unique key is a hand-written `WHERE`
+clause — but upserting on one is fully supported today.
 
 ## Read Next
 
@@ -101,4 +125,5 @@ DO UPDATE SET ...;
    turns schema changes into the SQL these constraints compile to
 2. [Field Attributes](./field-attributes) — the single-field `@id` /
    `@unique` these compose with
-3. [Upsert](../guides/upsert) — today's primary-key-only conflict target
+3. [Upsert](../guides/upsert) — `.on_conflict(...)` and composite-key
+   conflict targets

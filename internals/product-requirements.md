@@ -1,6 +1,6 @@
 # CrateStack v0 PRD
 
-> **Historical document.** This is the original v0 product requirements doc, current only as of its 0.3.0 patch note below. Multiple major capabilities have shipped since that this document doesn't mention at all: RPC transport (now an Accepted ADR — see [ADR 0005](./rpc-transport-adr)), `transport grpc`, the embedded SQLite/rusqlite backend across native + wasm, `cratestack-migrate`/`cratestack migrate diff`, SQL views (ADR 0003), Studio (the admin UI/API), the LSP + VS Code extension, the `cratestack-pg`/`cratestack-sqlite`/`cratestack-api` facade split, and the Dart/TypeScript client preset family — several of these are listed below as explicit **Non-Goals**, which is no longer accurate. For current scope, see [Current State](../overview/current-state) and [Roadmap](../overview/roadmap); treat this page as an artifact of intent (why the project started), not a description of what it is today.
+> **Staleness notice:** this PRD's "v0" framing, its Non-Goals list, and its crate layout (§9.1) predate several major additions to CrateStack — the facade-pattern crate split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), RPC and gRPC transports, and the Studio admin product. This is a historical planning document, not a live spec; it is not being fully rewritten to track current source. For what's actually true today, see `overview/current-state.mdx`.
 
 ## 0.3.0 macro-split update
 
@@ -44,6 +44,8 @@ CrateStack v0 is intentionally focused:
 * Generated Rust clients as a first-class output
 
 CrateStack v0 does not attempt to provide RPC, GraphQL, a full plugin marketplace, or built-in authentication.
+
+> **Correction:** the "no RPC" claim above no longer holds. RPC transport shipped in v0.3.3 — see internals/rpc-transport-adr.md and guides/rpc-transport.md for the current design. The rest of this sentence (no GraphQL, no plugin marketplace, no built-in auth) is still accurate.
 
 ---
 
@@ -156,23 +158,24 @@ Canonical transport design and HTTP negotiation rules are documented in:
 
 CrateStack v0 explicitly does not include:
 
-1. RPC transport.
-2. GraphQL.
-3. schema-first transport and client generation remain the core outputs.
-4. Production-stable non-Rust client generation in the initial slice.
-5. Built-in authentication.
-6. Session management.
-7. OAuth, JWT, password hashing, or login flows.
-8. Multi-database support beyond PostgreSQL.
-9. A complete migration engine.
-10. Polymorphic models.
-11. Deep nested writes.
-12. Advanced include trees.
-13. A broad plugin marketplace.
-14. `as_system` or superuser bypass APIs.
-15. Automatic policy bypass inside procedures.
-16. Prisma compatibility as a formal goal.
-17. ZenStack compatibility as a formal goal.
+1. GraphQL.
+2. schema-first transport and client generation remain the core outputs.
+3. Production-stable non-Rust client generation in the initial slice.
+4. Built-in authentication.
+5. Session management.
+6. OAuth, JWT, password hashing, or login flows.
+7. Multi-database support beyond PostgreSQL.
+8. A complete migration engine.
+9. Polymorphic models.
+10. Deep nested writes.
+11. Advanced include trees.
+12. A broad plugin marketplace.
+13. `as_system` or superuser bypass APIs.
+14. Automatic policy bypass inside procedures.
+15. Prisma compatibility as a formal goal.
+16. ZenStack compatibility as a formal goal.
+
+> **Correction:** the original list here also included "RPC transport" as a non-goal. This is no longer accurate — RPC transport (`transport rpc`, `POST /rpc/:op_id`, `POST /rpc/batch`, RpcLink middleware chain, streaming, gRPC-style error codes) shipped in v0.3.3 and has been actively iterated on through v0.6.0+. (RPC transport shipped in v0.3.3 — see internals/rpc-transport-adr.md and guides/rpc-transport.md for the current design.)
 
 ---
 
@@ -1343,6 +1346,8 @@ Framework integrations should extract or construct `CoolContext` from request ex
 
 ## 9.1 Crate Layout
 
+> **Stale:** this layout predates the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC transport, and the Studio product, among other additions. See `internals/package-selection.md` for the (also-stale-but-more-detailed) crate inventory, or `overview/current-state.mdx` for what's current — this list is not duplicated here.
+
 Recommended workspace:
 
 ```text
@@ -1951,10 +1956,11 @@ Mitigation:
 * PostgreSQL only
 * Axum only
 * no separate service-description format requirement
-* no RPC
 * no GraphQL
 * no multi-db
 * no full migration engine in v0
+
+> **Correction:** this mitigation list originally also said "no RPC." That is no longer accurate — RPC transport shipped in v0.3.3 (see internals/rpc-transport-adr.md and guides/rpc-transport.md for the current design) and has been actively iterated on since. The scope-creep risk this section describes is otherwise still real; RPC support was a deliberate, scoped addition rather than uncontrolled creep.
 
 ### 19.5 Rust Type Generation Ergonomics
 

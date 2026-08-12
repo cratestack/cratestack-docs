@@ -42,6 +42,65 @@ database.
 
 The default mode is `ro`, so writes are opt-in per target.
 
+## The unsafe-write guard
+
+A `[target.db]` target is a direct SQL connection Studio opens itself —
+**not** a proxy to your deployed service. It bypasses the descriptor
+path the generated server runs: a write through it does not bump
+`@version` columns and does not write a `cratestack_event_outbox` row
+for `@@emit(...)`-annotated models. Both omissions used to land
+silently — a `200` with no signal that optimistic concurrency or the
+event outbox didn't apply.
+
+Studio now refuses instead. On a `rw` `[target.db]` target, `POST` /
+`PATCH` / `DELETE` against any model that declares `@version` and/or
+`@@emit(...)` returns **403 UNSAFE_DB_WRITE**, naming the attribute(s)
+that triggered it:
+
+```json
+{
+  "error": {
+    "code": "UNSAFE_DB_WRITE",
+    "message": "target 'catalog' would write model 'Order' straight to SQL, bypassing @version and @@emit(...); set `allow_unsafe_writes = true` on this target's [target.db] to opt in"
+  }
+}
+```
+
+Models with neither annotation are unaffected. `[target.api]` targets
+are unaffected either way — those writes go through the deployed
+service's own generated routes, which already apply `@version`,
+`@@emit`, and `@@allow` as declared.
+
+To opt into the bypass anyway, set `allow_unsafe_writes = true` on the
+target's `[target.db]` block:
+
+```toml
+[[target]]
+key = "catalog"
+schema = "schemas/catalog.cstack"
+mode = "rw"
+
+[target.db]
+url = "env:CATALOG_DB_URL"
+driver = "postgres"
+allow_unsafe_writes = true
+```
+
+What you give up by setting it: the write still goes straight to SQL.
+`@version` still doesn't get bumped, and `@@emit(...)` still doesn't
+enqueue an outbox row — the flag doesn't make either of those things
+happen, it only lets Studio perform the write anyway instead of
+refusing it. Every bypass write is still recorded in Studio's own
+audit log with a flag distinguishing it from an ordinary write, so
+`/api/audit` and the JSONL sidecar can tell the two apart after the
+fact. Prefer `[target.api]` when the schema declares `@version` or
+`@@emit(...)` you need enforced.
+
+See also [the read API's note on `@@allow` and `@sensitive`
+enforcement](./read-api#target-db-is-a-direct-database-connection) —
+the same "`[target.db]` is not the generated API" caveat applies to
+reads, not just writes.
+
 ## Validators
 
 Studio mirrors the framework's
@@ -116,9 +175,9 @@ curl -X POST 'http://127.0.0.1:7878/api/targets/blog/models/Post/records' \
 Body shape: a JSON object with one key per writable field (anything
 that isn't a relation or a list-typed field).
 
-`@id` fields are required unless the schema declares
-`@default(dbgenerated())`. Generated defaults like `createdAt`
-populated by the database are visible in the response row.
+`@id` fields are required unless the schema declares any
+`@default(...)` attribute on the field. Generated defaults like
+`createdAt` populated by the database are visible in the response row.
 
 ## UPDATE — `PATCH …/records/:pk`
 
@@ -153,6 +212,7 @@ second DELETE against the same PK returns **400 INVALID_PRIMARY_KEY**.
 | HTTP | Code               | When                                                                                                                |
 | ---- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | 403  | `FORBIDDEN`        | Target is read-only (`mode = "ro"`) and the request was a write.                                                    |
+| 403  | `UNSAFE_DB_WRITE`  | The model declares `@version` and/or `@@emit(...)` and the `[target.db]` target hasn't set `allow_unsafe_writes = true`. See [the unsafe-write guard](#the-unsafe-write-guard). |
 | 422  | `VALIDATION_ERROR` | One or more field-level validators (or `REQUIRED` / `TYPE_MISMATCH`) rejected the payload. Per-field detail in `error.fields`. |
 
 These join the [read API](./read-api#errors)'s set: `UNKNOWN_TARGET`,

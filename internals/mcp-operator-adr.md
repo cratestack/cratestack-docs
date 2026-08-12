@@ -1,5 +1,7 @@
 # ADR 0002: Optional MCP Operator Surface
 
+> **Status: Proposed, not implemented.** No `cratestack-mcp` crate exists as of this writing; the parser currently only accepts a bare, semantically-inert `mcp { ... }` config block (parsed generically, with no MCP-specific behavior). Everything else in this document describes a design proposal, not shipped behavior.
+
 ## Status
 
 Proposed

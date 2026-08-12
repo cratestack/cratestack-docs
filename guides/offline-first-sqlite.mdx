@@ -5,7 +5,7 @@ description: Run the same .cstack schema embedded through cratestack-rusqlite �
 
 # Offline-First with Embedded SQLite
 
-CrateStack's embedded backend, `cratestack-rusqlite`, runs the same `.cstack` schemas you use on the server against a local SQLite database. As of 0.3.0 it ships from **one source** to three deployment targets:
+CrateStack's embedded backend, `cratestack-sqlite` (backed by the `cratestack-rusqlite` implementation crate), runs the same `.cstack` schemas you use on the server against a local SQLite database. Since 0.3.0 it ships from **one source** to three deployment targets:
 
 - **Native mobile** (iOS, Android via FFI / `flutter_rust_bridge`)
 - **Native desktop** (Windows, macOS, Linux)
@@ -14,12 +14,12 @@ CrateStack's embedded backend, `cratestack-rusqlite`, runs the same `.cstack` sc
 The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.39`.
 
 <Info>
-The architecture is **"Rust as real frontend, UI as UI-only"**: Rust owns state, persistence, and business logic on the device or in the browser tab; the UI (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`. The same `.cstack` schema definition compiles to both the server (Postgres via `cratestack-sqlx`) and the embedded target (SQLite via `cratestack-rusqlite`).
+The architecture is **"Rust as real frontend, UI as UI-only"**: Rust owns state, persistence, and business logic on the device or in the browser tab; the UI (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`. The same `.cstack` schema definition compiles to both the server (Postgres via `cratestack-pg`) and the embedded target (SQLite via `cratestack-sqlite`, implemented on top of `cratestack-rusqlite`).
 </Info>
 
 ## What Changes Per Target
 
-| Aspect                 | Server (`cratestack-sqlx`)         | Embedded native (`cratestack-rusqlite`)   | Embedded browser (`cratestack-rusqlite`, wasm32) |
+| Aspect                 | Server (`cratestack-pg`)           | Embedded native (`cratestack-sqlite`)     | Embedded browser (`cratestack-sqlite`, wasm32)   |
 | ---                    | ---                                | ---                                       | ---                                              |
 | API style              | `async`, tokio                     | **sync**, no tokio                        | **sync** SQL ops, with one **`async`** init step |
 | Storage handle         | `sqlx::PgPool`                     | `rusqlite::Connection` behind a `Mutex`   | `rusqlite::Connection` behind a `Mutex`          |
@@ -34,20 +34,16 @@ The shared dialect-agnostic primitives (filter AST, order AST, value types, `Mod
 
 ## Add the Dependency
 
-The umbrella `cratestack` crate already re-exports the SQLite backend types you need. For a regular native build:
+The bare `cratestack` crate on crates.io is a documentation-only landing page with no exports — it does **not** provide `RusqliteRuntime`, DDL helpers, or anything else you need. The schema macros hardcode `::cratestack::*` paths in their generated code, so embedded consumers must rename the `cratestack-sqlite` facade crate to `cratestack` via Cargo's `package =` field. Depend on all three of the following:
 
 ```toml
 [dependencies]
-cratestack = { version = "0.3", features = ["decimal-rust-decimal"] }
+cratestack = { package = "cratestack-sqlite", version = "0.7.10", features = ["decimal-rust-decimal"] }
+cratestack-macros = "0.7.10"
+cratestack-rusqlite = "0.7.10"
 ```
 
-For a binary-size-sensitive embedded build that doesn't need the server stack, depend directly on the leaf crates:
-
-```toml
-[dependencies]
-cratestack-macros = "0.3"
-cratestack-rusqlite = "0.3"
-```
+`cratestack-macros` and `cratestack-rusqlite` are the crates you import from directly (schema macro and runtime/delegate types, respectively); the `cratestack = { package = "cratestack-sqlite", ... }` line exists purely so the macro-generated `::cratestack::*` paths resolve — it isn't optional, even though you won't `use cratestack::...` anywhere in your own code.
 
 ### Browser-specific build prerequisites
 
@@ -108,9 +104,9 @@ The embedded runtime ignores `auth` blocks and `@@allow` / `@@deny` policies at 
 ## Minimal Setup — Native
 
 ```rust
-use cratestack::include_embedded_schema;
-use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
-use cratestack_rusqlite::ModelDelegate;
+use cratestack_macros::include_embedded_schema;
+use cratestack_rusqlite::ddl::create_table_sql;
+use cratestack_rusqlite::{ModelDelegate, RusqliteRuntime};
 
 include_embedded_schema!("schema.cstack");
 
@@ -151,9 +147,9 @@ fn insert_one(runtime: &RusqliteRuntime) -> Result<(), Box<dyn std::error::Error
 OPFS `SyncAccessHandle` is **only available inside a Dedicated Worker** per the W3C spec. Install the VFS once inside the worker before opening the database; subsequent `RusqliteRuntime::open(filename)` calls automatically route through it.
 
 ```rust
-use cratestack::include_embedded_schema;
-use cratestack::{RusqliteRuntime, rusqlite_backend::ddl::create_table_sql};
-use cratestack_rusqlite::{opfs, ModelDelegate};
+use cratestack_macros::include_embedded_schema;
+use cratestack_rusqlite::ddl::create_table_sql;
+use cratestack_rusqlite::{opfs, ModelDelegate, RusqliteRuntime};
 
 include_embedded_schema!("schema.cstack");
 
@@ -228,7 +224,7 @@ use cratestack_rusqlite::ffi::{
 };
 
 // In your cdylib entry point (FFI) or wasm-bindgen module (browser):
-fn ffi_call(runtime: &cratestack::RusqliteRuntime, bytes: &[u8]) -> Vec<u8> {
+fn ffi_call(runtime: &cratestack_rusqlite::RusqliteRuntime, bytes: &[u8]) -> Vec<u8> {
     let request = match json_request_from(bytes) {
         Ok(req) => req,
         Err(err) => return json_response_into(
@@ -239,11 +235,11 @@ fn ffi_call(runtime: &cratestack::RusqliteRuntime, bytes: &[u8]) -> Vec<u8> {
 }
 ```
 
-The `dispatch(...)` function lives in your app crate — it knows the specific model types and routes each `(model, kind)` pair to the right delegate call. See `cargo run --example sqlite_ffi_dispatch -p cratestack` in the framework repository for a complete template.
+The `dispatch(...)` function lives in your app crate — it knows the specific model types and routes each `(model, kind)` pair to the right delegate call. See `cargo run --example sqlite_ffi_dispatch -p cratestack-sqlite` in the framework repository for a complete template.
 
 ## Examples in the Framework Repo
 
-Cargo-native examples (run with `cargo run --example <name> -p cratestack`):
+Cargo-native examples (run with `cargo run --example <name> -p cratestack-sqlite`):
 
 1. **`sqlite_quickstart`** — smallest working program: open in-memory DB, bootstrap one table, CRUD a row.
 2. **`sqlite_offline_first`** — file-backed DB, two models, `Decimal` money preserved exactly, filtering and partial updates.
@@ -267,7 +263,7 @@ If you're embedding the SQLite path inside a tokio process (server, daemon, anyt
 
 ## Limits Today
 
-The embedded backend is intentionally focused. The following are **not** implemented in 0.3.0:
+The embedded backend is intentionally focused. The following are **not** implemented as of 0.7.1:
 
 - policy enforcement at the storage layer (by design — see above)
 - `@@audit` and `@@emit` — directive parses, codegen is no-op, follow-up release will add the local journal + event bus

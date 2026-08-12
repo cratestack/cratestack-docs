@@ -8,7 +8,7 @@ description: Build typed services from one schema — server-side Postgres, embe
 CrateStack is a schema-first Rust framework that turns one `.cstack` file into typed runtimes for three deployment shapes: a Postgres-backed server, an embedded SQLite ORM that works on mobile, desktop, **and browsers via OPFS**, and a HTTP client. One schema in, three role-specific macros out — each emits only what its target needs, no transitive sqlx in mobile builds, no rusqlite in server builds.
 
 <Info>
-Define your service once in `.cstack`, then pick a macro: `include_server_schema!` for sqlx-backed Postgres servers, `include_embedded_schema!` for offline-capable apps (native sync, browser async via OPFS), or `include_client_schema!` for thin HTTP clients. Each emits a `cratestack_schema` module shaped for that one role.
+Define your service once in `.cstack`, then pick a macro: `include_server_schema!` for sqlx-backed Postgres servers, `include_embedded_schema!` for offline-capable apps (native sync, browser async via OPFS), or `include_client_schema!` for the generated Rust client. Each emits a `cratestack_schema` module shaped for that one role — Dart, TypeScript, and gRPC clients are generated separately via CLI subcommands.
 </Info>
 
 <Columns cols={2}>
@@ -22,7 +22,7 @@ Define your service once in `.cstack`, then pick a macro: `include_server_schema
     Keep authentication host-owned while still using generated policy enforcement inside the service runtime.
   </Card>
   <Card title="Read the transport model" href="/architecture/transport-architecture">
-    Learn how CrateStack thinks about codecs, route generation, client boundaries, and future transport seams.
+    Learn how CrateStack thinks about codecs, route generation, client boundaries across REST/RPC/gRPC, and remaining transport seams.
   </Card>
   <Card title="Run the schema embedded" href="/guides/offline-first-sqlite">
     Use the same `.cstack` schema against a local SQLite database — sync on mobile/desktop, persistent OPFS in the browser via `wasm32-unknown-unknown`.
@@ -68,7 +68,7 @@ CrateStack is built for teams that want framework leverage without giving up Rus
 2. generated SQLx-backed model delegates (server) and rusqlite-backed delegates (embedded)
 3. generated Axum CRUD and procedure routes (server)
 4. generated policy enforcement for the supported subset (server only — embedded runtime is unauthenticated by design; clients are untrusted)
-5. generated Rust and Dart client surfaces
+5. generated Rust, Dart, and TypeScript client surfaces
 6. reusable schema mixins for shared field sets
 7. banking-grade primitives: idempotency, optimistic locking, transactional audit, explicit transaction isolation, soft delete, rate limiting, validators, Decimal scalar, forward-only migrations
 8. embedded SQLite backend (`cratestack-rusqlite`) — sync API, bundled SQLite, exact-precision `Decimal` round-trip; works on **native** (mobile, desktop) and **`wasm32-unknown-unknown`** (browser, OPFS-backed) from the same source

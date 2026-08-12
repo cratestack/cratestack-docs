@@ -7,7 +7,7 @@ description: State-based migration generation from .cstack vs a committed schema
 
 ## Status
 
-Partially shipped. `cratestack migrate diff` (offline schema-diff generation, the Postgres/SQLite emitters, and every IR op listed in "Emitted operations" below) is real and tested today — see [Migrations: Generating migrations from `.cstack`](../guides/migrations#generating-migrations-from-cstack) for the shipped command. `cratestack migrate verify` and `cratestack migrate drift` (the two commands this ADR also designs) remain proposed, not built — see [Roadmap](../overview/roadmap) for their status. This ADR predates a project-wide convention (used starting with ADR 0005) of a shipped-vs-designed status table per sub-feature; none exists here yet, so treat "Proposed" at the top of this document as describing the two unbuilt commands, not the diff generator itself.
+Proposed. Most of the design below has since shipped in `cratestack-migrate`: schema snapshotting, the diff engine and IR, both SQL emitters, `@@db_enforce` → `AddCheck`/`DropCheck` promotion, `@relation` → `AddForeignKey`/`DropForeignKey` promotion, enum IR ops, and view/materialized-view IR ops are all implemented and driven by the `cratestack migrate diff` CLI command today. `cratestack migrate verify` and `cratestack migrate drift` (shipping-order items 6–7 below) remain unimplemented — see `crates/cratestack-migrate/README.md`'s own "Not yet implemented" section in the source repo.
 
 ## Date
 
