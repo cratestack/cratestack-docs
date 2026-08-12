@@ -11,10 +11,22 @@ reserved and non-functional — see below before reaching for it.
 
 ## Default backend
 
-This workspace currently ships against `ring`. (Rustls 0.23's own default
-backend is actually `aws-lc-rs`; this workspace ends up on `ring` because a
-downstream dependency, `reqwest`, overrides that default via its own
-feature selection.) This is fine for:
+This workspace currently ships against `ring`. Getting there took a
+deliberate workaround, not a default: `reqwest`'s own `rustls` feature
+unconditionally selects **`aws-lc-rs`** as the TLS crypto provider
+(`reqwest`'s `Cargo.toml` defines it as `["__rustls-aws-lc-rs",
+"dep:rustls-platform-verifier", "__rustls"]`), and because
+`cratestack-pg` depends on `cratestack-client-rust` unconditionally,
+that choice would otherwise reach every workspace that depends on
+`cratestack` at all. `aws-lc-rs` needs a cross C toolchain, which broke
+`*-unknown-linux-musl`/`scratch` container builds downstream and
+tripped an uncarved `cargo-deny` ban (cratestack#440). The workspace
+opts out of that default by depending on `reqwest`'s `rustls-no-provider`
+feature instead (same `rustls`-backed stack, minus the forced provider
+selection) and explicitly installing `ring` itself via
+`rustls::crypto::ring::default_provider().install_default()` at the
+handful of call sites that construct a `reqwest::Client`. This is fine
+for:
 
 1. development and CI
 2. internal services that don't terminate TLS themselves
