@@ -36,12 +36,19 @@ model Application {
 }
 ```
 
-Column order is significant for both: it's the order columns appear in
-the emitted constraint, and for `@@unique` it's also part of the
-generated index name (`applications_tenant_id_name_environment_key`,
-following the same `<table>_<column>_key` convention as field-level
-`@unique`). Reordering the list is a real schema change — `cratestack
-migrate diff` emits a drop-and-recreate, not a no-op.
+Column order is part of the emitted constraint for both, but only
+`@@unique`'s reordering is actually tracked as a schema change today:
+reordering a `@@unique([...])` list changes the generated index name
+(`applications_tenant_id_name_environment_key`, following the same
+`<table>_<column>_key` convention as field-level `@unique`), and
+`cratestack migrate diff` — which matches indexes by name — sees that
+as a real change and emits a drop-and-recreate, not a no-op.
+`@@id([...])` has no equivalent mechanism: the diff engine represents a
+primary key as a per-column boolean flag, not an ordered column list, so
+reordering a composite `@@id([...])` changes nothing `migrate diff` can
+see and it emits no op at all for the reorder — tracked as
+[issue #536](https://github.com/cratestack/cratestack/issues/536). Don't
+rely on reordering a `@@id([...])` list to produce a migration.
 
 ## `@@id([...])` — composite primary key
 
@@ -51,14 +58,17 @@ time. Both backends are covered.
 
 ### Not usable in a running app yet
 
-`include_server_schema!` and `include_embedded_schema!` reject any
-model declaring `@@id([...])` with a compile error — query builders,
-axum/RPC routing, and all three client generators (`cratestack-client-rust`
+`include_server_schema!`, `include_embedded_schema!`, and
+`include_client_schema!` all reject any model declaring `@@id([...])`
+with a compile error — all three entry macros share the same schema
+loader (`parse_schema_literal`), which runs this rejection unconditionally
+before any macro-specific codegen — because query builders, axum/RPC
+routing, and all three client generators (`cratestack-client-rust`
 / `-dart` / `-typescript`) still assume exactly one scalar `@id` column
 throughout. A schema using `@@id([...])` today is authorable and
-migratable, but not yet loadable by a server or embedded app. Track
-[issue #136](https://github.com/cratestack/cratestack/issues/136) for
-status.
+migratable, but not yet loadable by a server, embedded app, or generated
+client. Track [issue #136](https://github.com/cratestack/cratestack/issues/136)
+for status.
 
 ## `@@unique([...])` — composite unique constraint
 

@@ -23,12 +23,12 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 12. optimistic concurrency via `@version` with `If-Match` / `ETag` round-tripping
 13. transactional audit log via `@@audit` + `cratestack_audit` + pluggable `AuditSink` (server)
 14. explicit transaction isolation via `run_in_isolated_tx` + procedure `@isolation`, with commit-time retry
-15. per-principal rate limiting via `RateLimitLayer` + pluggable `RateLimitStore`
+15. per-principal rate limiting via `RateLimitLayer` + pluggable `RateLimitStore`, backed by either `InMemoryRateLimitStore` (single-replica) or `RedisRateLimitStore` (Redis, via `cratestack-redis`, so replicas share one view of consumption)
 16. soft delete via `@@soft_delete` (server and embedded)
 17. forward-only migrations via `Migration` + `apply_pending` with checksum drift detection
 18. runtime validators (`@length`, `@range` on Int + Decimal, `@email`, `@regex`, `@uri`, `@iso4217`) with PII-safe error messages
 19. Decimal scalar backed by `rust_decimal` today; the `decimal-bigdecimal` feature flag is reserved but not yet implemented — selecting it is a compile error
-20. FIPS-validated TLS provider toggle via the `crypto-aws-lc-rs` workspace feature
+20. a `crypto-aws-lc-rs` Cargo feature on `cratestack-pg` reserved for a future FIPS-validated TLS provider — **not implemented**: enabling it is a hard `compile_error!` (not a working FIPS mode), because making it real needs the TLS backend to become a genuine choice across `cratestack-sqlx`/`cratestack-client-rust` first (both currently hard-select the non-FIPS `ring` backend); see [issue #334](https://github.com/cratestack/cratestack/issues/334)
 21. **embedded SQLite backend** via `cratestack-rusqlite`: sync API, bundled SQLite, the same `include_embedded_schema!`-driven `ModelDelegate` shape as the server, with `Decimal`, `Uuid`, `DateTime`, and `Json` round-tripping exactly through canonical TEXT storage. Compiles to **native** (mobile via FFI, desktop) AND **`wasm32-unknown-unknown`** (browser, OPFS-backed via `sqlite-wasm-rs` + `sqlite-wasm-vfs`). One source, three targets.
 22. dialect-agnostic SQL primitives crate `cratestack-sql` shared by both backends — value types, filter AST, order AST, model descriptor, and a narrow `Dialect` trait that only varies on placeholder syntax
 23. **projection-decode tolerance** (0.4.x) — generated client decoders for `?fields=…` reads tolerate the server omitting fields the projection didn't ask for, while still hard-failing on a missing *required* scalar. Optional scalars (`T?`) fall back to `None`; list-arity fields fall back to an empty `Vec`; required scalars reject. Same `MissingFieldFallback` ladder powers model `?fields=…` reads and view projections
@@ -50,13 +50,12 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 4. production-stable exact non-Rust selection typing is not complete
 5. richer exposure controls and some field-level policy features are still deferred
 6. the client runtime remains partially spiked rather than fully mature
-7. the shipped rate-limit store is in-memory (single-replica); the trait is pluggable
-8. the migration runner is forward-only — schema-diff generation and zero-downtime coordination remain out of scope
-9. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
-10. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
-11. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
-12. `transport grpc` *procedures* — the generated gRPC service currently covers model CRUD only; procedures aren't wired in yet
-13. `@@id([...])` composite primary keys are authorable and migratable but not yet loadable by a running server or embedded app — see item 30 above
+7. the migration runner is forward-only — schema-diff generation and zero-downtime coordination remain out of scope
+8. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
+9. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
+10. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
+11. `transport grpc` *procedures* — the generated gRPC service currently covers model CRUD only; procedures aren't wired in yet
+12. `@@id([...])` composite primary keys are authorable and migratable but not yet loadable by a running server or embedded app — see item 30 above
 
 ## Best Fit Right Now
 

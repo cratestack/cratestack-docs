@@ -34,7 +34,7 @@ view ActiveCustomer from Customer, Order {
 view <Name> from <Model>, <Model>, …
 ```
 
-* `<Name>` — PascalCase. Becomes the Rust struct name unchanged (`ActiveCustomer`) and the SQL view identifier as snake-cased + naively pluralized (`active_customers`). The naive pluralizer appends `s` (or `es` when the name already ends in `s`), so non-English-plural names like `Summary` produce `summarys` — your hand-written DDL or SQL body needs to use that exact identifier.
+* `<Name>` — PascalCase. Becomes the Rust struct name unchanged (`ActiveCustomer`) and the SQL view identifier as snake-cased + pluralized (`active_customers`), using the same pluralizer shared with model table names (`cratestack_core::route_naming::pluralize`): a trailing `s` gets `es` appended (`Bus` -> `buses`), a consonant + `y` becomes `ies` (`Summary` -> `summaries`, `Category` -> `categories`), and everything else gets a bare `s` (`Day` -> `days`) — your hand-written DDL or SQL body needs to use that exact identifier.
 * `from <Model>, …` — the **source-model dependency list**. Each name must resolve to an existing model; the parser rejects unknown ones. The list also orders view DDL after source-model DDL during [migration generation](../internals/schema-diff-adr).
 
 The parser does **not** inspect the SQL body — it cannot detect a body that references a model missing from `from`, nor a `from` model the body doesn't use. Both are developer responsibilities. (CI's `verify` migration replay catches body errors at the database boundary before they ship.)

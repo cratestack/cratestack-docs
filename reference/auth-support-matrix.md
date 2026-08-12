@@ -378,13 +378,15 @@ Notes:
 
 ## Not Supported Yet
 
-These should be rejected or treated as future work:
+Treat these as future work — not all of them fail the same way:
 
 ```cstack
 @@allow('read', members?[userId == auth().id])
 @@allow('read', members.some.user.role == hasRole('admin'))
 ownerId String @default(lower(auth().email))
 ```
+
+The first two are genuine parser rejections (Prisma's `?[...]` collection-predicate syntax isn't part of this grammar — use dotted `some`/`every`/`none` instead; comparing a boolean-returning term like `hasRole(...)` with `==` isn't a supported shape). The third is **not** cleanly rejected: `@default(...)` recognition only matches the exact `auth().<path>` shape, so `lower(auth().email)` isn't classified as an auth default at all — it falls through to `cratestack-migrate`'s generic function-call default handling (`ColumnDefault::Function`) and gets emitted verbatim into the DDL as `DEFAULT lower(auth().email)`. Since `auth()` isn't a real SQL function, that fails at `migrate diff`/apply time as invalid Postgres, not at schema-compile time. Don't rely on any static guarantee here — this shape reaches the database before it's caught.
 
 ## Security Notes
 

@@ -113,9 +113,47 @@ let sinks = MulticastAuditSink::new(vec![
 ```
 
 A single sink failure surfaces as `CoolError::Internal` rather than
-silently swallowing — banks treat downstream errors as alertable, not
-fire-and-forget. The default sink is `NoopAuditSink`; the table is the
-source of truth even without one.
+silently swallowing — `MulticastAuditSink` still calls every sink in the
+list even after an earlier one fails, then aggregates all the errors
+into that one `CoolError::Internal`, so one bad downstream doesn't stop
+the others from receiving the event. Banks treat downstream errors as
+alertable, not fire-and-forget. The default sink is `NoopAuditSink`; the
+table is the source of truth even without one.
+
+### Installing a sink
+
+Implementing `AuditSink` isn't enough by itself — it has to be attached to
+the runtime with `with_audit_sink`, the same builder-method shape
+`IdempotencyStore`/`RateLimitStore` use elsewhere:
+
+```rust
+let cool = cratestack_schema::Cratestack::builder(pool)
+    .with_audit_sink(Arc::new(sinks)) // the MulticastAuditSink from above
+    .build();
+```
+
+Without this call the runtime keeps its default `NoopAuditSink`, and
+`AuditSink::record` is never invoked at all — the `cratestack_audit` table
+still gets every row (that insert is unconditional on `@@audit` models),
+only the downstream fan-out is skipped.
+
+### Gap: `.run_in_tx(...)` writes don't fan out to the sink
+
+Every generated ORM write path dispatches the installed `AuditSink` itself,
+*after* its own transaction commits — `.create(...).run(ctx)`,
+`.update(...).run(ctx)`, the `batch_*` primitives, all of them. The one
+exception is the composable `.run_in_tx(&mut tx, ctx)` variant that lets a
+caller chain several model writes inside one hand-managed transaction (see
+[Transaction isolation](./transaction-isolation)): it still writes the
+`cratestack_audit` row inside `tx`, but it does **not** call the sink,
+because it hands the transaction back to the caller uncommitted and has no
+reliable way to know whether — or when — that transaction actually commits.
+This is a real, currently-unaddressed gap in the framework (not a deferred
+convenience), and there is no opt-in today for a `run_in_tx` caller to get
+sink fan-out themselves. If your compliance posture depends on the
+downstream sink firing for every audited write, don't compose that write
+through `.run_in_tx(...)` until this closes — use the plain `.run(...)`
+path per write instead.
 
 ## Schema
 

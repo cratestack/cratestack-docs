@@ -35,37 +35,45 @@ any value the chosen backend supports.
 
 ### Backend selection
 
-The workspace has two backend feature flags, but only one of them
-actually works today:
+The workspace has two backend feature flags, and both are working,
+tested backends today — the choice is a real tradeoff, not a
+placeholder-vs-real one:
 
-| Feature                  | Backend             | Type alias                     | Status |
+| Feature                  | Backend             | Type alias                     | Notes |
 |--------------------------|---------------------|---------------------------------|--------|
-| `decimal-rust-decimal`   | `rust_decimal`      | `pub type Decimal = rust_decimal::Decimal;` | Default; works today. |
-| `decimal-bigdecimal`     | `bigdecimal`        | `pub type Decimal = bigdecimal::BigDecimal;` | Reserved, **not implemented** — hard `compile_error!` if enabled. |
+| `decimal-rust-decimal`   | `rust_decimal`      | `pub type Decimal = rust_decimal::Decimal;` | Default. `Copy`, fixed 96-bit mantissa (~28–29 significant digits), faster arithmetic, smaller binary. |
+| `decimal-bigdecimal`     | `bigdecimal`        | `pub type Decimal = bigdecimal::BigDecimal;` | Not `Copy` (heap-allocates its digit buffer via `num-bigint`, so call sites need an explicit `.clone()`). Arbitrary precision — round-trips values beyond `rust_decimal`'s capacity. |
 
 Default: `decimal-rust-decimal`.
 
-`decimal-bigdecimal` exists only as a reserved feature name for future
-work. Enabling it fails to compile with:
+The two are mutually exclusive: enabling **both** at once is a hard
+`compile_error!`,
 
 ```text
-cratestack: the decimal-bigdecimal backend is reserved but not yet
-implemented; use decimal-rust-decimal for now
+cratestack: `decimal-rust-decimal` and `decimal-bigdecimal` are mutually
+exclusive — enable exactly one
 ```
 
-So today, `rust_decimal` is not a preference banks weigh against
-`bigdecimal` — it's the only backend that compiles. Its properties: fixed
-128-bit precision, faster arithmetic, and a smaller binary. 28–29
-significant digits is enough for retail banking, FX rates, and
-consumer-facing pricing. Arbitrary-precision support (for cumulative
-compounding, very long-duration interest, or settlement workflows where
-the precision budget grows over time) would land under
-`decimal-bigdecimal` once it's implemented, but there is no working
-alternative to `decimal-rust-decimal` right now.
+but enabling **neither** is not an error (cratestack#505) — it matters
+for a consumer that uses `default-features = false` to narrow its
+dependency graph and never references `Decimal` at all: the `Decimal`
+type alias simply doesn't exist in that build instead of forcing an
+unused backend choice. A consumer that *does* try to use `Decimal`
+without picking a backend gets a plain "cannot find type `Decimal`"
+from `rustc`. So the real rule is **at most one** of the two features,
+not exactly one.
 
-Exactly one backend feature must be enabled. The umbrella `cratestack`
-crate threads the feature through the workspace so downstream code
-references `cratestack::Decimal` regardless of backend.
+`rust_decimal`'s 28–29 significant digits is enough for retail banking,
+FX rates, and consumer-facing pricing, with better performance and a
+smaller binary than the alternative. `bigdecimal`'s arbitrary precision
+is for cases that can genuinely exceed that — cumulative compounding,
+very long-duration interest, or settlement workflows where the
+precision budget grows over time — at the cost of losing `Copy` and
+heap-allocating every value.
+
+The umbrella `cratestack` crate threads whichever feature is selected
+through the workspace so downstream code references
+`cratestack::Decimal` regardless of backend.
 
 ### Serialization
 

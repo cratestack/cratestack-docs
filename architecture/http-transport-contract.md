@@ -7,7 +7,7 @@ Proposed target contract. Use this document as the canonical HTTP-wire reference
 Current implementation is now partially realized:
 
 1. generated Axum routers can negotiate `application/cbor` and `application/json`
-2. list-returning procedure routes can also negotiate `application/cbor-seq`
+2. list-returning procedure routes can also negotiate `application/cbor-seq` — automatically for RPC `Sequence`-kind ops, behind an explicit `@stream` attribute for REST
 3. route capability metadata is generated publicly and drives handler validation and encoding
 4. `application/cbor-seq` is not implemented for CRUD/model routes or request bodies
 5. COSE-wrapped transport is still not implemented
@@ -83,13 +83,13 @@ Current implemented and planned transport features:
 | `application/json` request bodies | Implemented | Generated routes accept JSON where the route declares request bodies. |
 | `application/cbor` responses | Implemented | Default generated response media type today. |
 | `application/json` responses | Implemented | Negotiated through `Accept`. |
-| `application/cbor-seq` responses | Partially implemented | Only for list-returning generated procedure routes. |
+| `application/cbor-seq` responses | Partially implemented | RPC `Sequence`-kind ops negotiate it directly; REST procedures need an explicit `@stream` attribute. Not available on CRUD/model routes on either binding. |
 | `application/cbor-seq` request bodies | Not implemented | Explicitly deferred. |
-| `application/cbor-seq` on CRUD/model routes | Not implemented | Current rollout is procedure-list only. |
+| `application/cbor-seq` on CRUD/model routes | Not implemented | Current rollout is procedure-only, on both bindings. |
 | route capability metadata | Implemented | Exposed as generated per-route constants and `ROUTE_TRANSPORTS`. |
 | response decode by actual `Content-Type` in Rust client | Implemented | Includes JSON and CBOR. |
-| generated Rust client sequence decode | Implemented | Buffered decode into `Vec<T>`. |
-| streaming sequence decode API | Not implemented | Current client does not expose incremental stream consumption yet. |
+| generated Rust client sequence decode | Implemented | Buffered `Vec<T>` collection for ordinary list-returning calls. |
+| streaming sequence decode API | Implemented | `RpcClient::call_streaming` and `CratestackClient::post_list_streamed` yield a bounded `tokio::sync::mpsc::Receiver` (16 in-flight items) with item-at-a-time decode as bytes arrive — no full-body buffering. See `./client-runtime.md`'s "Streaming surfaces" section for the Flutter/dio equivalents. |
 | COSE envelope support | Not implemented | Reserved future seam only. |
 
 ## Request Contract
@@ -132,6 +132,12 @@ Illustrative future sequence request media type:
 1. `application/cbor-seq`
 
 Sequence request support should remain opt-in per route rather than automatically enabled globally.
+
+### Request body size limit
+
+The generated `router()` / `rpc_router()` entry points apply a request body ceiling via `axum::extract::DefaultBodyLimit::max(body_limit_bytes)`, exposed as an explicit `body_limit_bytes: usize` parameter on both functions — not a fixed layer a consumer is expected to re-layer on top of (a re-layered `DefaultBodyLimit` closer to the router loses to cratestack's own, regardless of which value is larger). The default is **2 MiB**, matching `axum::body::Bytes`'s own implicit ceiling, so an unconfigured deployment sees no behavior change from before this parameter existed — a deployment that needs larger bodies passes a bigger value at construction time.
+
+On the RPC binding specifically, `POST /rpc/batch` additionally caps the number of frames in one batch at `BATCH_MAX_ITEMS` (1000), independent of the byte-size limit above — a batch over the frame cap is rejected with an error naming the maximum, even if its total byte size is well under `body_limit_bytes`.
 
 ## Response Negotiation Contract
 
@@ -216,10 +222,9 @@ This table is descriptive guidance rather than a promise that every generated li
 
 1. response-only support is implemented
 2. explicit route opt-in is implemented through generated route capability metadata
-3. explicit Rust client sequence decoding is implemented for generated list-returning procedures
+3. explicit Rust client sequence decoding is implemented for generated list-returning procedures, including a genuinely incremental path (`RpcClient::call_streaming` / `CratestackClient::post_list_streamed`) that decodes items as bytes arrive rather than buffering the whole body first
 4. request-side `application/cbor-seq` is not implemented
 5. model CRUD routes do not expose `application/cbor-seq`
-6. current client behavior is buffered sequence decode, not incremental streaming
 
 ## Error Body Contract
 
