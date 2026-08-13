@@ -55,7 +55,8 @@
             "group": "Client Generation",
             "pages": [
               "guides/typescript-client-generation",
-              "guides/dart-client-generation"
+              "guides/dart-client-generation",
+              "guides/refine-integration"
             ]
           },
           {
