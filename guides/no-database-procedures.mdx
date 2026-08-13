@@ -39,7 +39,7 @@ This isn't a "not yet supported" gap — it's structural. A `provider = "none"` 
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-api", version = "0.7.1" }
+cratestack = { package = "cratestack-api", version = "0.7" }
 ```
 
 `cratestack-api` is a third facade crate, structurally parallel to `cratestack-pg` and `cratestack-sqlite`: same rename-via-`package =` pattern, same re-exported macro surface, but `sqlx` and `cratestack-sqlx` are genuinely absent from its dependency graph — not a Cargo feature you have to remember to turn off.
@@ -48,7 +48,7 @@ cratestack = { package = "cratestack-api", version = "0.7.1" }
 Already on `cratestack-pg` and just want to shed `sqlx` from a database-free build without switching facades? `cratestack-pg`'s `postgres` feature is default-on and gates `cratestack-sqlx` out when you opt into `default-features = false`:
 
 ```toml
-cratestack = { package = "cratestack-pg", version = "0.7.1", default-features = false }
+cratestack = { package = "cratestack-pg", version = "0.7", default-features = false }
 ```
 
 Both paths work and neither is being removed. `cratestack-api` is the leaner default for anyone starting a database-free service from scratch; `cratestack-pg` with `default-features = false` is there for teams that already standardized on that facade.
