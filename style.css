@@ -1,83 +1,137 @@
 /*
- * CrateStack `.cstack` syntax highlighting for Mintlify.
+ * Code-block syntax colours for Mintlify.
  *
- * Mintlify renders fenced code blocks via Shiki with the `css-variables`
- * theme (see `docs.json` → `styling.codeblocks.theme`). That theme reads
- * `--shiki-token-*` variables — the previous `--mint-token-*` names did
- * nothing. The cstack grammar in `languages/cstack.tmLanguage.json` tags
- * tokens with scopes; Shiki maps each scope to one of a small set of
- * theme slots, and the slot reads the matching `--shiki-token-*`
- * variable from CSS.
+ * HOW THIS ACTUALLY WORKS — verified in a running `mint dev`, because the
+ * previous version of this file was based on a wrong assumption and was
+ * therefore completely inert.
  *
- * The variables below tune those slots for the .cstack visual identity
- * (dark teal background, mint-accented tokens). Scopes that Shiki's
- * css-variables theme doesn't map (e.g. `entity.name.type.cstack`,
- * `support.type.cstack`, `variable.other.member.cstack`) fall back to
- * `--shiki-color-text`, which we set to a high-contrast off-white so
- * those tokens stay readable instead of vanishing.
+ * Mintlify renders fenced blocks with Shiki in dual-theme mode and inlines
+ * a `style` attribute on every token span, like:
+ *
+ *     color: var(--mint-token-keyword, #bd2864);
+ *     color: var(--mint-token-punctuation, #171717);
+ *
+ * So the variables it reads are `--mint-token-*`, and the hex values are
+ * *fallbacks* used when the variable is unset. Those fallbacks are the
+ * LIGHT palette.
+ *
+ * The previous file set `--shiki-token-*` instead, with a comment asserting
+ * that "the previous `--mint-token-*` names did nothing". That was exactly
+ * backwards: `--mint-token-*` is what Mintlify reads, `--shiki-token-*` is
+ * what it ignores. With every variable unset, the light fallbacks rendered
+ * on the dark background — `--mint-token-punctuation` at #171717 (near
+ * black) and `--mint-token-keyword` at #bd2864 (dark maroon), which between
+ * them cover ~640 tokens on a single page. That is the illegibility.
+ *
+ * It also scoped its selectors to `code[lang="cstack"]` / `pre:has(...)`.
+ * The real markup puts the language on the `pre` as a `language` attribute:
+ * `<pre class="shiki ..." language="cstack">`. So those rules never matched
+ * either, and the `.cstack` visual identity never rendered.
+ *
+ * Two consequences for anyone editing this file:
+ *   - Use `--mint-token-*`, not `--shiki-token-*`.
+ *   - Target `pre[language="…"]`, not `code[lang="…"]`.
+ *
+ * Dark mode is `html.dark` (Mintlify toggles that class; there is no
+ * `data-mode` attribute — another reason the old light-mode overrides were
+ * dead). Light mode is deliberately left alone: Mintlify's own fallbacks
+ * are a correct light palette, so overriding them adds risk for no gain.
  */
 
-code-block .shiki[lang="cstack"],
-code-block code[lang="cstack"],
-pre code[lang="cstack"],
-pre:has(code[lang="cstack"]) {
-  /* Page background + default foreground for un-themed tokens. */
-  --shiki-color-background: #08161a;
-  --shiki-color-text: #e6fffb;
-
-  /* Themed token slots. */
-  --shiki-token-keyword: #5eead4;            /* `model`, `auth`, operators */
-  --shiki-token-string: #86efac;             /* "..." literals */
-  --shiki-token-string-expression: #c4b5fd;  /* interpolation, if any */
-  --shiki-token-constant: #fbbf24;           /* numbers, true/false, enum values, type/model names */
-  --shiki-token-function: #67e8f9;           /* procedure names, support functions */
-  --shiki-token-parameter: #fde68a;          /* procedure arg names */
-  --shiki-token-comment: #7ba8a2;            /* `//` and `///` */
-  --shiki-token-punctuation: #9ed8d1;        /* braces, commas, colons */
-  --shiki-token-link: #2dd4bf;               /* URLs in comments */
+/* ------------------------------------------------------------------ *
+ * Dark mode, all languages.
+ *
+ * GitHub Dark, which is well-tested for contrast on a dark surface. A
+ * TypeScript block should look like TypeScript looks everywhere else;
+ * the brand expression belongs on `.cstack` blocks (below), which are
+ * the thing this project actually invented.
+ * ------------------------------------------------------------------ */
+html.dark {
+  --mint-token-keyword: #ff7b72;
+  --mint-token-constant: #79c0ff;
+  --mint-token-function: #d2a8ff;
+  --mint-token-parameter: #ffa657;
+  --mint-token-string: #a5d6ff;
+  --mint-token-string-expression: #a5d6ff;
+  --mint-token-punctuation: #c9d1d9;
+  --mint-token-comment: #9198a1;
+  --mint-token-link: #79c0ff;
 }
 
-/*
- * Backgrounds & chrome — the gradient hints at the data flowing through
- * the schema without overpowering the surrounding Mintlify chrome.
- */
-code-block .shiki[lang="cstack"],
-pre:has(code[lang="cstack"]) {
-  background:
-    radial-gradient(circle at top right, rgba(45, 212, 191, 0.14), transparent 34%),
-    linear-gradient(180deg, #102329 0%, #08161a 100%);
-  border: 1px solid rgba(94, 234, 212, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+/* ------------------------------------------------------------------ *
+ * Light mode, all languages.
+ *
+ * Mintlify's own fallbacks are a light palette, so this was initially
+ * left alone — but that was a guess, and light mode still read badly.
+ * Defining it explicitly rather than inheriting whatever the fallbacks
+ * happen to be: GitHub Light, which is tuned for exactly this surface
+ * (the code block has no tinted background in light mode — the
+ * `dark:bg-codeblock` class means the dark surface is dark-mode-only —
+ * so these run against the page background).
+ * ------------------------------------------------------------------ */
+:root {
+  --mint-token-keyword: #cf222e;
+  --mint-token-constant: #0550ae;
+  --mint-token-function: #8250df;
+  --mint-token-parameter: #953800;
+  --mint-token-string: #0a3069;
+  --mint-token-string-expression: #0a3069;
+  --mint-token-punctuation: #1f2328;
+  --mint-token-comment: #59636e;
+  --mint-token-link: #0550ae;
 }
 
-/*
- * Light-mode override. Mintlify exposes the active mode via the `data-mode`
- * attribute on `<html>` (and respects the user's site-level preference).
- * The dark teal palette above is unreadable on a white page background,
- * so a paler version of the same hue family takes over.
- */
-html[data-mode="light"] code-block .shiki[lang="cstack"],
-html[data-mode="light"] pre code[lang="cstack"],
-html[data-mode="light"] pre:has(code[lang="cstack"]) {
-  --shiki-color-background: #f0fbf8;
-  --shiki-color-text: #0f3a36;
-
-  --shiki-token-keyword: #0f766e;
-  --shiki-token-string: #15803d;
-  --shiki-token-string-expression: #7c3aed;
-  --shiki-token-constant: #a16207;
-  --shiki-token-function: #0e7490;
-  --shiki-token-parameter: #92400e;
-  --shiki-token-comment: #4b8782;
-  --shiki-token-punctuation: #45766f;
-  --shiki-token-link: #0d9488;
+/* ------------------------------------------------------------------ *
+ * Default (un-tokenised) code text — the actual light-mode bug.
+ *
+ * Mintlify puts `color: var(--mint-foreground)` inline on every span it
+ * does not assign a token colour to: identifiers, braces, the `@@`
+ * prefix. It resolves that to a near-white (#f3f6f6) suited to the dark
+ * code surface — but that surface is applied by `dark:bg-codeblock`, so
+ * it only exists in dark mode. In light mode the block sits on the page
+ * background and those tokens render near-white on white: measured
+ * 1.09:1, i.e. invisible. It covered 22 of ~100 tokens in a single
+ * `.cstack` block.
+ *
+ * Scoped to code blocks rather than `:root`, because `--mint-foreground`
+ * is Mintlify's own variable and is used by other chrome; overriding it
+ * globally would change more than intended.
+ * ------------------------------------------------------------------ */
+pre.shiki {
+  --mint-foreground: #1f2328;
 }
 
-html[data-mode="light"] code-block .shiki[lang="cstack"],
-html[data-mode="light"] pre:has(code[lang="cstack"]) {
-  background:
-    radial-gradient(circle at top right, rgba(20, 184, 166, 0.10), transparent 34%),
-    linear-gradient(180deg, #f0fbf8 0%, #e3f5ef 100%);
-  border: 1px solid rgba(15, 118, 110, 0.20);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+html.dark pre.shiki {
+  --mint-foreground: #e6edf3;
+}
+
+/* ------------------------------------------------------------------ *
+ * `.cstack` blocks keep the mint/teal identity, in both modes.
+ * ------------------------------------------------------------------ */
+html.dark pre[language="cstack"] {
+  --mint-token-keyword: #5eead4;            /* `model`, `auth`, operators */
+  --mint-token-string: #86efac;             /* "..." literals */
+  --mint-token-string-expression: #c4b5fd;
+  --mint-token-constant: #fbbf24;           /* numbers, enum + type names */
+  --mint-token-function: #67e8f9;           /* procedure names */
+  --mint-token-parameter: #fde68a;
+  --mint-token-comment: #7ba8a2;
+  --mint-token-punctuation: #9ed8d1;
+  --mint-token-link: #2dd4bf;
+}
+
+pre[language="cstack"] {
+  /* Deeper than the first attempt: the original muted teals measured
+     around 5:1 on white and read washed out. Punctuation especially —
+     it was #45766f, a mid teal, on the most-repeated tokens in a
+     schema (braces, parens, commas). */
+  --mint-token-keyword: #0b5c56;
+  --mint-token-string: #15803d;
+  --mint-token-string-expression: #6d28d9;
+  --mint-token-constant: #8a5206;
+  --mint-token-function: #0b5566;
+  --mint-token-parameter: #7c3a06;
+  --mint-token-comment: #3f6b66;
+  --mint-token-punctuation: #24504b;
+  --mint-token-link: #0b6b61;
 }
