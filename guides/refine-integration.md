@@ -9,12 +9,132 @@ description: Wire a refine.dev dataProvider by hand to a cratestack-generated Ty
 internal tools, built around a `DataProvider` interface: one small object
 with a fixed set of methods (`getList`, `getOne`, `create`, `update`,
 `deleteOne`, …) that every refine hook and component calls through instead
-of talking to your API directly. There's no `@cratestack/refine` package
-today — [cratestack#571](https://github.com/cratestack/cratestack/issues/571)
-tracks building one — so this guide wires refine to a plain
-`generate-typescript` REST client by hand. Every method name, type, and
-request shape below is checked against the real generated client and
-server; nothing here assumes the unbuilt package.
+of talking to your API directly.
+
+<Note>
+**Most readers want [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) instead of this guide.**
+It ships a tested `DataProvider` for both transports —
+`createCratestackDataProvider` (REST) and `createCratestackRpcDataProvider`
+(RPC) — covering everything below: pagination, the filter-operator
+mapping, non-`id` primary keys, `@version` optimistic locking, and bulk
+operations. Pair it with `generate-typescript --refine`, which emits the
+resource manifest for your schema, and you write no dataProvider code at
+all.
+
+This guide is the **hand-wired** version of the same thing. Read it when
+you need to understand what the package does under the hood, or when you
+want to adapt the approach rather than take the dependency.
+</Note>
+
+## Using the package
+
+Four variations, in the order you'd reach for them. All four assume
+`cratestack generate-typescript --schema schema.cstack --out ./generated --refine`,
+which emits `generated/src/refine.ts` alongside the client.
+
+### REST
+
+```ts
+import { Refine } from "@refinedev/core";
+import { createCratestackDataProvider } from "@cratestack/refine";
+import { ExampleApiClientClient } from "@example/api-client";
+import { cratestackRefineResources } from "@example/api-client/refine";
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  headers: async () => ({ authorization: `Bearer ${await getToken()}` }),
+});
+
+const dataProvider = createCratestackDataProvider(cratestackRefineResources(client));
+
+export const App = () => (
+  <Refine dataProvider={dataProvider} resources={[{ name: "widgets", list: "/widgets" }]} />
+);
+```
+
+### RPC
+
+Same shape — a different factory, and the generated manifest is typed
+`RpcResourceMap` instead of `ResourceMap`. Consumer code is otherwise
+identical, which is deliberate:
+
+```ts
+import { createCratestackRpcDataProvider } from "@cratestack/refine";
+import { ExampleApiClientClient } from "@example/api-client";
+import { cratestackRefineResources } from "@example/api-client/refine";
+
+const client = new ExampleApiClientClient("https://api.example.com", { basePath: "/api" });
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+### RPC with logging and batching
+
+RPC clients accept a `links` chain. `createBatchLink` collapses calls
+fired in the same tick into one `POST /rpc/batch` — which is what refine's
+`getMany` does, so a table with relation columns goes from N requests to
+one:
+
+```ts
+import { createLoggerLink } from "@cratestack/link-logger";
+import { createBatchLink } from "@cratestack/link-batch";
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  // Order matters: the logger wraps the batch link, so you see one line
+  // per aggregate HTTP request. Swap them to log each individual call
+  // before it is queued.
+  links: [createLoggerLink(), createBatchLink({ windowMs: 10 })],
+});
+
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+<Note>
+**Batching never weakens `@version` optimistic locking.** `createBatchLink`
+partitions queued calls by their full transport envelope — headers
+included — so two updates carrying different `If-Match` values can't be
+merged into one request with one header set. They go out as separate
+requests automatically. The upside is on reads: `getList`/`getMany`
+collapse; version-carrying writes correctly do not.
+</Note>
+
+### RPC over axios
+
+`createAxiosRuntime` adapts an axios instance to the `fetch` signature, so
+axios becomes the transport while the links and the generated client keep
+speaking `Request`/`Response`. Reach for it when you already have an axios
+instance carrying interceptors — auth refresh, retries, a corporate proxy
+agent:
+
+```ts
+import axios from "axios";
+import { createAxiosRuntime } from "@cratestack/runtime-axios";
+import { createBatchLink } from "@cratestack/link-batch";
+
+const api = axios.create({ timeout: 10_000 });
+api.interceptors.response.use(undefined, refreshAuthOn401);
+
+// Module scope, NOT inside a component. `createBatchLink` includes the
+// fetch function's *identity* in its partition key, so constructing a new
+// runtime per render gives every call its own partition and batching
+// silently stops happening — no error, just no batching.
+const transport = createAxiosRuntime({ instance: api });
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  fetch: transport,
+  links: [createBatchLink()],
+});
+
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+`@cratestack/runtime-fetch`'s `createFetchRuntime` is the drop-in
+equivalent when you want the default transport with explicit options —
+the two are interchangeable in the `fetch` slot.
+
+Every method name, type, and request shape below is checked against the
+real generated client and server.
 
 This guide covers REST-transport schemas only (`generate-typescript`'s
 default transport). RPC-transport clients expose an equivalent per-model
@@ -91,7 +211,8 @@ resource. The `ModelApi` interface below is hand-written to match the
 real generated shape closely enough to type-check against it; loosen or
 drop it if your `tsconfig` is stricter than this guide's example. This
 exact gap — one dataProvider per app instead of one per framework — is
-what `@cratestack/refine` (cratestack#571) is meant to close generically.
+what `@cratestack/refine` closes generically; this section is what it does
+for you.
 
 ```ts
 import type { CratestackFetchQuery, CratestackRequestConfig, Page } from "@example/api-client";
@@ -667,8 +788,9 @@ that order.)
 
 ## See also
 
-1. [TypeScript client generation](./typescript-client-generation) — the generated client surface this guide adapts
-2. [Optimistic Locking](./optimistic-locking) — the full `@version`/`If-Match`/`ETag` contract
-3. [Pagination](./pagination) — `@@paged`, `Page<T>`, `MAX_LIST_LIMIT`
-4. [Search with Filters — `FindMany<Model>`](./find-many) — the typed, procedure-only filter argument for cases the query-string convention can't express
-5. [RPC transport](./rpc-transport) — if your schema uses `transport rpc` instead of REST
+1. [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) — the packaged version of this entire guide, for both REST and RPC schemas
+2. [TypeScript client generation](./typescript-client-generation) — the generated client surface this guide adapts, including `--refine`
+3. [Optimistic Locking](./optimistic-locking) — the full `@version`/`If-Match`/`ETag` contract
+4. [Pagination](./pagination) — `@@paged`, `Page<T>`, `MAX_LIST_LIMIT`
+5. [Search with Filters — `FindMany<Model>`](./find-many) — the typed, procedure-only filter argument for cases the query-string convention can't express
+6. [RPC transport](./rpc-transport) — if your schema uses `transport rpc` instead of REST
