@@ -115,7 +115,7 @@ this. Wire `into_make_service_with_connect_info`, or supply
 see [Idempotency § Principal scoping](./idempotency#principal-scoping).
 
 **Client-side caching is real, but it's a different layer.** The
-TypeScript client's `swr` preset gives you genuine
+TypeScript client's `--swr` layout gives you genuine
 stale-while-revalidate response caching in the browser: generated hooks
 key on the query/filter arguments via `swrKeys`, and generated mutation
 hooks invalidate the affected list/detail keys automatically. That's
@@ -216,4 +216,4 @@ connection's prepared-statement cache.
 
 1. [Idempotency](./idempotency) — response replay at the request boundary, and current principal-fingerprint fallback behavior
 2. [Search with Filters — `FindMany<Model>`](./find-many) — the typed filter surface whose combinatorics drive statement-cache variety
-3. [TypeScript Client Generation](./typescript-client-generation) — the `swr` preset's browser-side response caching
+3. [TypeScript Client Generation](./typescript-client-generation) — the `--swr` layout's browser-side response caching
