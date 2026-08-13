@@ -1,6 +1,6 @@
 # CrateStack Package Selection and Dependency Decision Log
 
-> **Staleness notice:** this document's crate/package inventory was last substantially updated around v0.3.0 (2026-05-12) and is now significantly behind current source (v0.7.1) — roughly 3 months and ~40 point-releases. Entire crates and packages shipped since then (the `cratestack-pg` / `cratestack-api` / `cratestack-sqlite` facade split, `cratestack-grpc` / `cratestack-proto`, `cratestack-sql`, the client codegen and Studio crates, and most of the `packages/*` TypeScript split) are not reflected below. For the current, authoritative package list, run `ls crates/` and `ls packages/` in the source repo, or consult a live reference doc rather than this historical log.
+> **Staleness notice:** this document's crate/package inventory was last substantially updated around v0.3.0 (2026-05-12) and is now significantly behind current source (v0.7.15) — roughly 3 months and ~40 point-releases. Entire crates and packages shipped since then (the `cratestack-pg` / `cratestack-api` / `cratestack-sqlite` facade split, `cratestack-grpc` / `cratestack-proto`, `cratestack-sql`, the client codegen and Studio crates, and most of the `packages/*` TypeScript split) are not reflected below. For the current, authoritative package list, run `ls crates/` and `ls packages/` in the source repo, or consult a live reference doc rather than this historical log.
 
 ## Status
 

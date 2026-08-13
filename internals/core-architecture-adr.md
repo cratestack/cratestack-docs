@@ -516,7 +516,7 @@ cratestack/
       // optional COSE envelope support
 ```
 
-> **This list is stale and incomplete.** It reflects the crate count at ADR-0001's original writing; current source (v0.7.1) has roughly 29 crates, including the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC/protobuf transport (`cratestack-grpc` / `cratestack-proto`), a shared SQL layer (`cratestack-sql`), client codegen crates, and the Studio admin product. See `internals/package-selection.md` or run `ls crates/` in the source repo for the current list.
+> **This list is stale and incomplete.** It reflects the crate count at ADR-0001's original writing; current source (v0.7.15) has roughly 35 crates, including the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC/protobuf transport (`cratestack-grpc` / `cratestack-proto`), a shared SQL layer (`cratestack-sql`), client codegen crates, and the Studio admin product. See `internals/package-selection.md` or run `ls crates/` in the source repo for the current list.
 >
 > The `cratestack-cose` entry above was never built as a standalone crate. COSE support, where it exists at all, is an unimplemented `CoseSign1` enum variant inside `cratestack-client-rust` / `cratestack-client-flutter` that returns "COSE envelope support is not implemented yet" — not a dedicated crate as this section originally planned.
 

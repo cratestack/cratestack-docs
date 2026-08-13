@@ -38,10 +38,15 @@ The bare `cratestack` crate on crates.io is a documentation-only landing page wi
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.7.10", features = ["decimal-rust-decimal"] }
-cratestack-macros = "0.7.10"
-cratestack-rusqlite = "0.7.10"
+cratestack = { package = "cratestack-sqlite", version = "0.7", features = ["decimal-rust-decimal"] }
+cratestack-macros = "0.7"
+cratestack-rusqlite = "0.7"
 ```
+
+The `0.7` requirements float across the whole `0.7.x` line rather than pinning a patch — every
+cratestack crate is released in lockstep off one workspace version, so mixing patch levels is never
+what you want, and a pinned patch here goes stale on the next release. Pin exactly only if you have
+a specific reason to.
 
 `cratestack-macros` and `cratestack-rusqlite` are the crates you import from directly (schema macro and runtime/delegate types, respectively); the `cratestack = { package = "cratestack-sqlite", ... }` line exists purely so the macro-generated `::cratestack::*` paths resolve — it isn't optional, even though you won't `use cratestack::...` anywhere in your own code.
 
@@ -263,7 +268,7 @@ If you're embedding the SQLite path inside a tokio process (server, daemon, anyt
 
 ## Limits Today
 
-The embedded backend is intentionally focused. The following are **not** implemented as of 0.7.1:
+The embedded backend is intentionally focused. The following are **not** implemented as of 0.7.15:
 
 - policy enforcement at the storage layer (by design — see above)
 - `@@audit` and `@@emit` — directive parses, codegen is no-op, follow-up release will add the local journal + event bus
