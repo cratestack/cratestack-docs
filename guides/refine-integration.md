@@ -26,6 +26,113 @@ you need to understand what the package does under the hood, or when you
 want to adapt the approach rather than take the dependency.
 </Note>
 
+## Using the package
+
+Four variations, in the order you'd reach for them. All four assume
+`cratestack generate-typescript --schema schema.cstack --out ./generated --refine`,
+which emits `generated/src/refine.ts` alongside the client.
+
+### REST
+
+```ts
+import { Refine } from "@refinedev/core";
+import { createCratestackDataProvider } from "@cratestack/refine";
+import { ExampleApiClientClient } from "@example/api-client";
+import { cratestackRefineResources } from "@example/api-client/refine";
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  headers: async () => ({ authorization: `Bearer ${await getToken()}` }),
+});
+
+const dataProvider = createCratestackDataProvider(cratestackRefineResources(client));
+
+export const App = () => (
+  <Refine dataProvider={dataProvider} resources={[{ name: "widgets", list: "/widgets" }]} />
+);
+```
+
+### RPC
+
+Same shape — a different factory, and the generated manifest is typed
+`RpcResourceMap` instead of `ResourceMap`. Consumer code is otherwise
+identical, which is deliberate:
+
+```ts
+import { createCratestackRpcDataProvider } from "@cratestack/refine";
+import { ExampleApiClientClient } from "@example/api-client";
+import { cratestackRefineResources } from "@example/api-client/refine";
+
+const client = new ExampleApiClientClient("https://api.example.com", { basePath: "/api" });
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+### RPC with logging and batching
+
+RPC clients accept a `links` chain. `createBatchLink` collapses calls
+fired in the same tick into one `POST /rpc/batch` — which is what refine's
+`getMany` does, so a table with relation columns goes from N requests to
+one:
+
+```ts
+import { createLoggerLink } from "@cratestack/link-logger";
+import { createBatchLink } from "@cratestack/link-batch";
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  // Order matters: the logger wraps the batch link, so you see one line
+  // per aggregate HTTP request. Swap them to log each individual call
+  // before it is queued.
+  links: [createLoggerLink(), createBatchLink({ windowMs: 10 })],
+});
+
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+<Note>
+**Batching never weakens `@version` optimistic locking.** `createBatchLink`
+partitions queued calls by their full transport envelope — headers
+included — so two updates carrying different `If-Match` values can't be
+merged into one request with one header set. They go out as separate
+requests automatically. The upside is on reads: `getList`/`getMany`
+collapse; version-carrying writes correctly do not.
+</Note>
+
+### RPC over axios
+
+`createAxiosRuntime` adapts an axios instance to the `fetch` signature, so
+axios becomes the transport while the links and the generated client keep
+speaking `Request`/`Response`. Reach for it when you already have an axios
+instance carrying interceptors — auth refresh, retries, a corporate proxy
+agent:
+
+```ts
+import axios from "axios";
+import { createAxiosRuntime } from "@cratestack/runtime-axios";
+import { createBatchLink } from "@cratestack/link-batch";
+
+const api = axios.create({ timeout: 10_000 });
+api.interceptors.response.use(undefined, refreshAuthOn401);
+
+// Module scope, NOT inside a component. `createBatchLink` includes the
+// fetch function's *identity* in its partition key, so constructing a new
+// runtime per render gives every call its own partition and batching
+// silently stops happening — no error, just no batching.
+const transport = createAxiosRuntime({ instance: api });
+
+const client = new ExampleApiClientClient("https://api.example.com", {
+  basePath: "/api",
+  fetch: transport,
+  links: [createBatchLink()],
+});
+
+const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
+```
+
+`@cratestack/runtime-fetch`'s `createFetchRuntime` is the drop-in
+equivalent when you want the default transport with explicit options —
+the two are interchangeable in the `fetch` slot.
+
 Every method name, type, and request shape below is checked against the
 real generated client and server.
 
