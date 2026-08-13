@@ -166,7 +166,10 @@ Everything from the default layout is still there. In addition, under `src/swr/`
 Given a `Widget` model, `listWidgets`/`getWidget`/`createWidget`/`updateWidget`/`deleteWidget` land in `src/swr/models/widget.ts`:
 
 ```ts
-import { CratestackRuntime, listWidgets, createWidget } from "@example/board-client";
+// Note the `/swr` subpath — these are the SWR layout's plain functions,
+// and its own `CratestackRuntime`. See the warning below on why the root
+// package's runtime is not interchangeable with this one.
+import { CratestackRuntime, listWidgets, createWidget } from "@example/board-client/swr";
 
 const runtime = new CratestackRuntime("https://api.example.com", { basePath: "/api" });
 
@@ -174,10 +177,10 @@ const widgets = await listWidgets(runtime, { query: { limit: 20, sort: ["-id"] }
 const created = await createWidget(runtime, { id: 3, name: "New Widget" });
 ```
 
-The hooks live in the sibling `widget.hooks.ts` and are imported from that subpath explicitly, never from the package root:
+The hooks live in the sibling `widget.hooks.ts` and are imported from that subpath explicitly, never from `/swr`'s own barrel:
 
 ```tsx
-import { useWidgets, useCreateWidget } from "@example/board-client/models/widget.hooks";
+import { useWidgets, useCreateWidget } from "@example/board-client/swr/models/widget.hooks";
 
 function WidgetList({ runtime }: { runtime: CratestackRuntime }) {
   const { data: widgets } = useWidgets(runtime);
