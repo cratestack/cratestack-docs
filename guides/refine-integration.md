@@ -147,15 +147,20 @@ const resources: Record<string, ResourceConfig> = {
 
 ## Pagination
 
-refine's `Pagination` is `{ current?: number; pageSize?: number; mode?:
-"client" | "server" | "off" }`. cratestack's list route takes `limit`/
-`offset` and, only for a `@@paged` model, returns `totalCount` alongside
-the items (`Page<T> { items, totalCount, pageInfo }`, mirroring
+refine's `Pagination` is `{ currentPage?: number; pageSize?: number; mode?:
+"client" | "server" | "off" }` as of `@refinedev/core` v5 (what `npm
+install @refinedev/core` gives you today — verified against the
+package's own shipped `.d.ts`). **If your project is still on the v4
+major, the same field is named `current` instead** — v5 renamed
+`current` → `currentPage`; nothing else about this section changes
+between the two. cratestack's list route takes `limit`/`offset` and,
+only for a `@@paged` model, returns `totalCount` alongside the items
+(`Page<T> { items, totalCount, pageInfo }`, mirroring
 `cratestack_core::page::{Page, PageInfo}` — `crates/cratestack-client-typescript/templates/src/models.ts.j2`). The mapping:
 
 ```
 limit  = pageSize
-offset = (current - 1) * pageSize
+offset = (currentPage - 1) * pageSize
 total  = page.totalCount   // refine's GetListResponse.total
 ```
 
@@ -184,13 +189,13 @@ async function getList({ resource, pagination, sorters, filters }: GetListParams
   if (!config) throw new Error(`no cratestack resource configured for "${resource}"`);
 
   const usePaging = config.paged && pagination?.mode !== "off";
-  const current = pagination?.current ?? 1;
+  const currentPage = pagination?.currentPage ?? 1; // v4: pagination?.current
   const pageSize = pagination?.pageSize ?? 10;
 
   const query: CratestackFetchQuery = {
     sort: toSortQuery(sorters),
     filters: toQueryFilters(filters),
-    ...(usePaging ? { limit: pageSize, offset: (current - 1) * pageSize } : {}),
+    ...(usePaging ? { limit: pageSize, offset: (currentPage - 1) * pageSize } : {}),
   };
 
   const result = await config.api.list({ query });
