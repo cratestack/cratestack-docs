@@ -38,20 +38,23 @@ Every successful update emits `version = version + 1` in the same SQL
 statement that writes the new state. The generated REST router:
 
 1. returns `ETag: "<version>"` on `GET /resource/<id>` and on the response of any successful mutation
-2. requires `If-Match: "<version>"` on `PATCH /resource/<id>`
-3. responds `412 Precondition Failed` on `PATCH` when `If-Match` is missing
-4. responds `412 Precondition Failed` on `PATCH` when the supplied version is stale
-5. distinguishes "stale version" from "row not found" by probing the read policy after the update fails
+2. requires `If-Match: "<version>"` on `PATCH /resource/<id>` **and** `DELETE /resource/<id>`
+3. responds `412 Precondition Failed` on `PATCH` or `DELETE` when `If-Match` is missing
+4. responds `412 Precondition Failed` on `PATCH` or `DELETE` when the supplied version is stale
+5. distinguishes "stale version" from "row not found" by probing the read policy after the update or delete fails
 
-`DELETE /resource/<id>` does **not** check `If-Match` today — the generated
-delete handler never parses or requires the header, and sending one has no
-effect. A concurrent delete can remove a row out from under a caller who
-holds a stale version. This is scheduled to change: [issue #519](https://github.com/cratestack/cratestack/issues/519)
-tracks making `DELETE` enforce `If-Match` and return `412` on a stale or
-missing version for `@version` models, but that work has not shipped as of
-this writing. Until it lands, do not rely on `If-Match` for delete
-protection — layer your own check (e.g. a read immediately before delete
-inside your own transaction) if a concurrent delete would be unsafe.
+`DELETE /resource/<id>` enforces `If-Match` the same way `PATCH` does: the
+generated delete handler requires the header, rejects a missing or stale
+version with `412 Precondition Failed`, and leaves the row untouched on
+failure. This closed a prior asymmetry where a concurrent delete could
+remove a row out from under a caller holding a stale version — landed via
+[#538](https://github.com/cratestack/cratestack/pull/538), which added
+`delete_if_match_decl`/`delete_if_match_apply` to
+`crates/cratestack-macros/src/axum/model/prep/etag.rs`, deliberately
+mirroring `update_if_match_decl`/`update_if_match_apply`. The gate is
+purely `descriptor.version_column.is_some()`, independent of
+`@@soft_delete` — a soft-deleted row is still a real mutation and gets the
+same protection a hard delete does.
 
 ```http
 PATCH /ledgers/3 HTTP/1.1
@@ -67,6 +70,16 @@ Content-Type: application/json
 {"id": 3, "balance": 42, "version": 1}
 ```
 
+```http
+DELETE /ledgers/3 HTTP/1.1
+If-Match: "1"
+
+HTTP/1.1 204 No Content
+```
+
+Omitting `If-Match`, or sending a stale version, on either request returns
+`412 Precondition Failed` and leaves the row untouched.
+
 ## Programmatic use
 
 Internal Rust callers thread the expected version through `if_match`:
@@ -81,9 +94,21 @@ let updated = cool
     .await?;
 ```
 
+`delete` takes the same builder:
+
+```rust
+let deleted = cool
+    .ledger()
+    .delete(3)
+    .if_match(1)
+    .run(&ctx)
+    .await?;
+```
+
 Omitting `if_match` on a versioned model returns `CoolError::PreconditionFailed`
-before any SQL runs. Banks treat the version check as a contract, not a
-hint — there is no "force update" escape hatch on the generated path.
+before any SQL runs, for both `update` and `delete`. Banks treat the version
+check as a contract, not a hint — there is no "force update" or "force
+delete" escape hatch on the generated path.
 
 ## Input filtering
 
