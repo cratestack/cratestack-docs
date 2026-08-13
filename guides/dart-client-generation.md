@@ -361,6 +361,6 @@ Everything else — `widget(id)`, `WidgetCreateController.create(...)`, `WidgetU
 
 - [`cratestack-client-dart`](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-client-dart) — crate source, including the `riverpod/` template directory referenced throughout this guide
 - [`examples/flutter-riverpod`](https://github.com/cratestack/cratestack/tree/main/examples/flutter-riverpod) — the real, running app this guide's walkthrough is drawn from
-- [TypeScript client generation](/guides/typescript-client-generation) — the sibling generator, including the `default`/`swr` preset split and a cross-language side-by-side comparison
+- [TypeScript client generation](/guides/typescript-client-generation) — the sibling generator, including the additive `--swr` layout and a cross-language side-by-side comparison
 - [Client Runtime](/architecture/client-runtime) — the underlying FFI bridge and codec ordering the Dart runtime is built on
 - [RPC transport](/guides/rpc-transport) — full design for `transport rpc`

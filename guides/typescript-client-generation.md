@@ -32,7 +32,8 @@ cargo run -p cratestack-cli -- generate-typescript \
 | `--template-dir` | no | none | override individual `.j2` templates; anything not overridden falls back to the bundled default |
 | `--check` | no | off | drift-detection mode: generate in memory and diff against `--out` instead of writing; exits non-zero and lists the files that differ |
 | `--full-selection` | no | off | emit fully-required model interfaces instead of the projection-driven optional-everywhere default — see [Full selection: fully-required model types](#full-selection-fully-required-model-types) |
-| `--preset` | no | `default` | output layout: `default` (today's monolithic `src/models.ts` + `src/client.ts` + ...) or `swr` (file-per-model, framework-free functions plus sibling SWR hooks) — see [Output layout: `default` vs `swr`](#output-layout-default-vs-swr) |
+| `--swr` | no | off | *additionally* emit a file-per-model layout with SWR hooks under `src/swr/`, alongside the default layout — see [Adding the SWR layout with `--swr`](#adding-the-swr-layout-with---swr) |
+| `--refine` | no | off | *additionally* emit `src/refine.ts`, the [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) resource manifest for the schema |
 
 The client class name is derived from `--package-name`: non-alphanumeric characters become spaces, the result is PascalCased, and `Client` is appended. `@example/blog-client` becomes `ExampleBlogClientClient`. Pick a package name with that in mind if the resulting class name matters to you.
 
@@ -41,13 +42,13 @@ The client class name is derived from `--package-name`: non-alphanumeric charact
 Call the generator directly when you're wiring codegen into your own build script, a CI step, or Studio-adjacent tooling, instead of shelling out to the CLI:
 
 ```rust
-use cratestack_client_typescript::{TypeScriptGeneratorConfig, TypeScriptPreset, generate_package};
+use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 let schema = cratestack_parser::parse_schema_file("schema.cstack")?;
 let package = generate_package(&schema, &TypeScriptGeneratorConfig {
     package_name: "@example/blog-client".to_owned(),
     base_path: "/cstack".to_owned(),
-    preset: TypeScriptPreset::Default,
+    swr: true, // omit (or `false`) for the default layout only
     ..Default::default()
 })?;
 
@@ -107,13 +108,17 @@ cargo run -p cratestack-cli -- generate-typescript \
 
 The generated package is build output, not hand-edited source — treat it the same way you'd treat a `dist/` folder. Whenever the `.cstack` schema changes (or the generator/templates change), re-run the same `generate-typescript` command against the same `--out` directory. There's no incremental/merge step; the generator overwrites the package's `src/` files wholesale.
 
-## Output layout: `default` vs `swr`
+## Output layout
 
-`--preset` picks the shape of the generated package. Both presets work from the same schema, cover the same transports (REST or RPC, whichever `transport` the schema declares), and stay in sync with each other — `swr` just organizes the files differently and adds a hooks layer. `default` is the original layout and is guaranteed to stay byte-identical forever; `swr` is the newer file-per-model layout.
+Every generated package ships the layout below. `--swr` **adds** a second, file-per-model layout beside it under `src/swr/` — it does not replace anything, and the files described here are identical whether or not you pass it.
 
-### The `default` layout
+<Note>
+This replaced a `--preset <default|swr>` flag, where picking `swr` meant giving up the default layout. Teams who wanted both were running the generator twice into two directories and depending on two packages. One run now produces both. If you have `--preset swr` in a script, drop it and pass `--swr`; if you have `--preset default`, just remove it.
+</Note>
 
-Every `default`-preset package ships `package.json`, `tsconfig.json`, `README.md`, and a `src/index.ts` barrel that re-exports everything. What's under `src/` beyond that depends on the schema's transport:
+### The default layout
+
+Every generated package ships `package.json`, `tsconfig.json`, `README.md`, and a `src/index.ts` barrel that re-exports everything. What's under `src/` beyond that depends on the schema's transport:
 
 | File | REST | RPC | Contains |
 |---|---|---|---|
@@ -129,7 +134,7 @@ Every `default`-preset package ships `package.json`, `tsconfig.json`, `README.md
 
 The per-model classes in `client.ts` aren't hardcoded fetch calls duplicated per endpoint — each method is a few lines that delegates into the single shared runtime class, so the actual request/serialization/error-handling logic exists once regardless of how many models the schema declares.
 
-### The `swr` layout
+### Adding the SWR layout with `--swr`
 
 ```bash
 cargo run -p cratestack-cli -- generate-typescript \
@@ -137,28 +142,28 @@ cargo run -p cratestack-cli -- generate-typescript \
   --out packages/board-client \
   --package-name @example/board-client \
   --base-path /api \
-  --preset swr
+  --swr
 ```
 
-Instead of one `client.ts` class fronting every model, `swr` emits one module per model plus a sibling hooks module:
+Everything from the default layout is still there. In addition, under `src/swr/`, you get one module per model plus a sibling hooks module — reachable by a consumer as `@example/board-client/swr` (plus `/swr/models/*`, `/swr/procedures`, `/swr/procedures.hooks`) through `exports` subpaths the flag adds to the generated `package.json`:
 
 | File | REST | RPC | Contains |
 |---|---|---|---|
-| `src/runtime.ts` | ✓ | ✓ | `CratestackRuntime` (REST) or `CratestackRpcRuntime` (RPC) — same runtime classes as the `default` preset |
-| `src/queries.ts` | ✓ | ✓ | REST: `CratestackQueryRequestConfig`/`toSearchQuery`. RPC: `CratestackRpcListQuery`/`toRpcListInput` — same reused templates as the `default` preset |
-| `src/links.ts` | — | ✓ | `RpcLink`/`RpcStreamLink` and the rest of the composable-chain types — RPC-only, see [Composable links](#composable-links-cratestack) below |
-| `src/cbor-item.ts` | — | ✓ | the low-level single-CBOR-item structural walker (item-boundary skipping) that `cbor-seq.ts`'s stateful scanner is built on — RPC-only |
-| `src/cbor-seq.ts` | — | ✓ | the stateful `application/cbor-seq` boundary scanner backing `runtime.stream(...)` — RPC-only |
-| `src/stream-terminal.ts` | — | ✓ | the `streamLinks` chain's terminal link — performs the real network call for `runtime.stream(...)` and turns the response into the yielded `AsyncIterable` — RPC-only |
-| `src/models/shared.ts` | ✓ | ✓ | types referenced by 2+ models, or by no model at all — see "Type ownership" below |
-| `src/models/<model>.ts` | that model's own types plus a plain `async` function per CRUD verb (`listWidgets`, `getWidget`, `createWidget`, `updateWidget`, `deleteWidget`) — no client class, no framework import |
-| `src/models/<model>.hooks.ts` | a **sibling** file: one `useSWR`/`useSWRMutation` hook per verb (`useWidgets`, `useWidget`, `useCreateWidget`, ...), each a thin wrapper that calls the plain function from `<model>.ts` |
-| `src/procedures.ts` | one `<Name>Args` type and one plain `async` function per procedure |
-| `src/procedures.hooks.ts` | one SWR hook per procedure — `useXQuery` for a `query` procedure, `useXMutation` for a `mutation` procedure |
-| `src/swr-keys.ts` | `swrKeys` — the single shared cache-key factory every hook builds its key through |
-| `src/index.ts` | re-exports the runtime, queries helper, `swrKeys`, every model's plain module, and `procedures.ts` — **not** the `.hooks` modules (see below) |
+| `src/swr/runtime.ts` | ✓ | ✓ | `CratestackRuntime` (REST) or `CratestackRpcRuntime` (RPC) — the same runtime classes the default layout emits, re-rendered here so `/swr` is self-contained |
+| `src/swr/queries.ts` | ✓ | ✓ | REST: `CratestackQueryRequestConfig`/`toSearchQuery`. RPC: `CratestackRpcListQuery`/`toRpcListInput` — the same templates the default layout uses |
+| `src/swr/links.ts` | — | ✓ | `RpcLink`/`RpcStreamLink` and the rest of the composable-chain types — RPC-only, see [Composable links](#composable-links-cratestack) below |
+| `src/swr/cbor-item.ts` | — | ✓ | the low-level single-CBOR-item structural walker (item-boundary skipping) that `cbor-seq.ts`'s stateful scanner is built on — RPC-only |
+| `src/swr/cbor-seq.ts` | — | ✓ | the stateful `application/cbor-seq` boundary scanner backing `runtime.stream(...)` — RPC-only |
+| `src/swr/stream-terminal.ts` | — | ✓ | the `streamLinks` chain's terminal link — performs the real network call for `runtime.stream(...)` and turns the response into the yielded `AsyncIterable` — RPC-only |
+| `src/swr/models/shared.ts` | ✓ | ✓ | types referenced by 2+ models, or by no model at all — see "Type ownership" below |
+| `src/swr/models/<model>.ts` | that model's own types plus a plain `async` function per CRUD verb (`listWidgets`, `getWidget`, `createWidget`, `updateWidget`, `deleteWidget`) — no client class, no framework import |
+| `src/swr/models/<model>.hooks.ts` | a **sibling** file: one `useSWR`/`useSWRMutation` hook per verb (`useWidgets`, `useWidget`, `useCreateWidget`, ...), each a thin wrapper that calls the plain function from `<model>.ts` |
+| `src/swr/procedures.ts` | one `<Name>Args` type and one plain `async` function per procedure |
+| `src/swr/procedures.hooks.ts` | one SWR hook per procedure — `useXQuery` for a `query` procedure, `useXMutation` for a `mutation` procedure |
+| `src/swr/swr-keys.ts` | `swrKeys` — the single shared cache-key factory every hook builds its key through |
+| `src/swr/index.ts` | re-exports the runtime, queries helper, `swrKeys`, every model's plain module, and `procedures.ts` — **not** the `.hooks` modules (see below) |
 
-Given a `Widget` model, `listWidgets`/`getWidget`/`createWidget`/`updateWidget`/`deleteWidget` land in `src/models/widget.ts`:
+Given a `Widget` model, `listWidgets`/`getWidget`/`createWidget`/`updateWidget`/`deleteWidget` land in `src/swr/models/widget.ts`:
 
 ```ts
 import { CratestackRuntime, listWidgets, createWidget } from "@example/board-client";
@@ -183,7 +188,11 @@ function WidgetList({ runtime }: { runtime: CratestackRuntime }) {
 
 **Why hooks are a separate file, not exports at the bottom of `widget.ts`.** ES modules resolve every top-level static `import` eagerly, the moment the module loads — regardless of which export the importer actually asked for. If `useWidgets` lived in `widget.ts` alongside `listWidgets`, importing `listWidgets` alone from a script, a server action, or a test would still pull in `import useSWR from "swr"` (and transitively React) at module-load time, even though nothing in that code path touches React. Splitting the hooks into `widget.hooks.ts` — and leaving that file out of `src/index.ts`'s barrel export — means a consumer who wants only the plain functions never resolves `swr`/`react` at all. Install `swr` and `react` as peer dependencies only if you import a `.hooks` module.
 
-**Cache keys and invalidation.** Every hook builds its key exclusively through `swrKeys` (`src/swr-keys.ts`) — never a hand-written literal — nested under each model's/procedure's own schema-unique route, so two differently-named operations can never collide on a key. Mutation hooks invalidate on a fixed rule, applied identically for every model:
+<Warning>
+**Build your shared runtime from `/swr` if you use the SWR hooks.** The default layout's `CratestackRuntime` and the one under `/swr` are structurally identical but *nominally distinct* TypeScript classes (they carry private fields), so passing a root-imported runtime into a `/swr` hook is a type error. This could not happen under the old `--preset swr`, where a package only ever contained one layout — it is new with `--swr`, and it is the first thing to check if `tsc` complains about two types that look the same.
+</Warning>
+
+**Cache keys and invalidation.** Every hook builds its key exclusively through `swrKeys` (`src/swr/swr-keys.ts`) — never a hand-written literal — nested under each model's/procedure's own schema-unique route, so two differently-named operations can never collide on a key. Mutation hooks invalidate on a fixed rule, applied identically for every model:
 
 - **create** invalidates the model's list — every cached list, regardless of `query` filter/pagination.
 - **update** invalidates the list **and** the mutated entity's own detail (both refetch on next read).
@@ -191,9 +200,9 @@ function WidgetList({ runtime }: { runtime: CratestackRuntime }) {
 
 This rule isn't configurable per call. If you need different invalidation, call `mutate`/`swrKeys` directly instead of the generated hook. Procedure hooks never invalidate anything — invalidation is model CRUD's job.
 
-**Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
+**Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/swr/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
 
-**Known gaps.** As of this writing, `swr` doesn't support `transport grpc` schemas — tracked as a generator follow-up, not a permanent limitation. `@@paged` models are already handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/models/shared.ts`, same as the `default` preset.
+**Known gaps.** `--swr` doesn't support `transport grpc` schemas — tracked as a generator follow-up, not a permanent limitation. `@@paged` models are handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/swr/models/shared.ts`, same as the default layout.
 
 ## Build the generated package
 
@@ -205,7 +214,7 @@ npm install
 npm run build   # runs `tsc -p tsconfig.json`, emits dist/
 ```
 
-The `default` preset lists `@tanstack/react-query` as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks. The `swr` preset instead lists `swr` and `react` as peer dependencies, needed only if you import a `.hooks` module — importing a model's plain functions or `procedures.ts` needs neither.
+The generated `package.json` lists `@tanstack/react-query` as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks. With `--swr` the manifest additionally lists `swr` and `react`, needed only if you import a `.hooks` module — importing a model's plain functions or `src/swr/procedures.ts` needs neither.
 
 ## Full selection: fully-required model types
 
@@ -248,7 +257,7 @@ This is a per-invocation choice, not a schema-level one — deliberately. Whethe
 
 ## Using the REST client
 
-The examples in this section and the next use the `default` preset's client-class API. For the `swr` preset's per-model function/hook API, see [The `swr` layout](#the-swr-layout) above.
+The examples in this section and the next use the default layout's client-class API. For the per-model function/hook API `--swr` adds, see [Adding the SWR layout with `--swr`](#adding-the-swr-layout-with---swr) above.
 
 Examples below use the `blog.cstack` fixture (`crates/cratestack-pg/tests/fixtures/blog.cstack`): a `Post` model with full CRUD, a `Session` model with `@@paged`, a query procedure `getFeed`, and a mutation procedure `publishPost`.
 
@@ -598,10 +607,10 @@ The pattern holds across languages: model accessors are named after the pluraliz
 
 ## Caveats
 
-- **Bundle size on large schemas, `default` preset only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `swr` preset's file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
+- **Bundle size on large schemas, default layout only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `/swr` file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error contract across the generated clients today.
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
-- **`swr` preset gap.** No `transport grpc` support yet — tracked as a generator follow-up. `@@paged` models are supported: `Page`/`PageInfo` are imported into every file that needs them, same as the `default` preset.
+- **`--swr` gap.** No `transport grpc` support yet — tracked as a generator follow-up. `@@paged` models are supported: `Page`/`PageInfo` are imported into every file that needs them, same as the default layout.
 
 ## See also
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Mixed — the codec/framing/envelope architecture below is proposed-and-partially-spiked as originally written, but large parts of the client-generation surface it describes have since shipped and stabilized (the Riverpod and `swr` presets, `dart_mappable`-backed equality, gRPC clients in all three languages). Read this document for the transport/codec/framing contract and the FFI-bridge (`cratestack-client-flutter`) path specifically — for the *actual current default path* most Dart consumers use, see "Two Dart generation paths" immediately below before reading further.
+Mixed — the codec/framing/envelope architecture below is proposed-and-partially-spiked as originally written, but large parts of the client-generation surface it describes have since shipped and stabilized (Dart's Riverpod preset, TypeScript's additive `--swr` layout, `dart_mappable`-backed equality, gRPC clients in all three languages). Read this document for the transport/codec/framing contract and the FFI-bridge (`cratestack-client-flutter`) path specifically — for the *actual current default path* most Dart consumers use, see "Two Dart generation paths" immediately below before reading further.
 
 ## Two Dart generation paths — read this before the rest of the document
 
@@ -11,7 +11,7 @@ This document was written around a single narrative: Dart never talks to HTTP di
 1. **Dio-direct generated Dart** (`cratestack generate-dart`, default and `--preset riverpod`) — a `CratestackDioAdapter`/`CratestackRpcDioAdapter` wraps `dio` and talks HTTP directly; Rust is not in the runtime path. This is what most Dart/Flutter consumers use today. See `crates/cratestack-client-dart/README.md` for its real scope (both presets, plus native gRPC Dart client generation).
 2. **The Rust-FFI-bridge path** (`cratestack-client-flutter`) — for apps that specifically want Rust to own business logic, persistence, and transport, with Dart as UI only, communicating over an FFI bridge rather than issuing its own HTTP calls. This is what the rest of this document describes.
 
-Both are real and shipped; they are not sequential phases of the same effort, and a schema author doesn't choose between them via the schema — it's a choice of *which client generator/crate* to reach for. Neither the `TypeScriptPreset`/`DartPreset` preset axis (`--preset swr`/`--preset riverpod`) nor the native gRPC client generators (Rust `tonic`, TypeScript gRPC-Web, Dart) are covered anywhere else in this document — see each language's own crate README for those.
+Both are real and shipped; they are not sequential phases of the same effort, and a schema author doesn't choose between them via the schema — it's a choice of *which client generator/crate* to reach for. Neither the generated-layout options (TypeScript's additive `--swr`, Dart's `--preset riverpod`) nor the native gRPC client generators (Rust `tonic`, TypeScript gRPC-Web, Dart) are covered anywhere else in this document — see each language's own crate README for those.
 
 ## Why this change
 
