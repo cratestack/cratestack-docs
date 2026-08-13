@@ -128,22 +128,55 @@ interface ResourceConfig<TModel = any, TCreateInput = any, TUpdateInput = any> {
 
 There's no runtime introspection endpoint that hands back "which models
 are `@@paged`, which have `@version`, what's the primary key field" — the
-generated client carries no such metadata object. `ResourceConfig` above
-is filled in by hand, mirroring the schema:
+generated client carries no such metadata object. Those facts live in the
+`.cstack` schema and in the generated client's TypeScript *types*, and
+nowhere else at runtime, so `ResourceConfig` has to be written down
+somewhere.
+
+**Let the generator write it.** Pass `--refine` to
+`cratestack generate-typescript` and it emits an extra `src/refine.ts`
+alongside the client, holding exactly this map:
+
+```bash
+cratestack generate-typescript \
+  --schema schema.cstack \
+  --out packages/api-client \
+  --refine
+```
 
 ```ts
 import { ExampleApiClientClient } from "@example/api-client";
+import { cratestackRefineResources } from "@example/api-client/refine";
 
 const client = new ExampleApiClientClient("https://api.example.com", {
   basePath: "/api",
   headers: async () => ({ authorization: `Bearer ${await getToken()}` }),
 });
 
+const resources = cratestackRefineResources(client);
+```
+
+`--refine` is additive: every other generated file is byte-identical with
+and without it. It requires a REST schema and the default preset — the
+RPC and gRPC-Web clients don't share the REST client's `list(options)` /
+`CratestackFetchQuery` shape, and the `swr` preset emits free functions
+rather than a client class for a resource to bind to.
+
+Writing the map by hand stays fully supported — it is a plain object
+literal, and it's what the generated file contains:
+
+```ts
 const resources: Record<string, ResourceConfig> = {
   widgets: { api: client.widgets, primaryKey: "id", paged: false },
   ledgers: { api: client.ledgers, primaryKey: "id", paged: true, versionField: "version" },
 };
 ```
+
+The difference is drift. A model that later gains `@version`, or one
+whose `@id` isn't called `id`, updates itself on the next
+`generate-typescript` run; the hand-written copy doesn't, and gets it
+wrong silently — a stale `versionField` means writes stop sending
+`If-Match` and lose optimistic-locking, with no error anywhere.
 
 ## Pagination
 
