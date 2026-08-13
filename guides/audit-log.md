@@ -137,7 +137,7 @@ Without this call the runtime keeps its default `NoopAuditSink`, and
 still gets every row (that insert is unconditional on `@@audit` models),
 only the downstream fan-out is skipped.
 
-### Gap: `.run_in_tx(...)` writes don't fan out to the sink
+### `.run_in_tx(...)` and `db.transaction(...)` writes: fan-out is opt-in, not automatic
 
 Every generated ORM write path dispatches the installed `AuditSink` itself,
 *after* its own transaction commits — `.create(...).run(ctx)`,
@@ -145,15 +145,53 @@ Every generated ORM write path dispatches the installed `AuditSink` itself,
 exception is the composable `.run_in_tx(&mut tx, ctx)` variant that lets a
 caller chain several model writes inside one hand-managed transaction (see
 [Transaction isolation](./transaction-isolation)): it still writes the
-`cratestack_audit` row inside `tx`, but it does **not** call the sink,
-because it hands the transaction back to the caller uncommitted and has no
-reliable way to know whether — or when — that transaction actually commits.
-This is a real, currently-unaddressed gap in the framework (not a deferred
-convenience), and there is no opt-in today for a `run_in_tx` caller to get
-sink fan-out themselves. If your compliance posture depends on the
-downstream sink firing for every audited write, don't compose that write
-through `.run_in_tx(...)` until this closes — use the plain `.run(...)`
-path per write instead.
+`cratestack_audit` row inside `tx`, but it does **not** call the sink on its
+own, because it hands the transaction back to the caller uncommitted and has
+no reliable way to know whether — or when — that transaction actually
+commits. The same is true of `db.transaction(...)`, the newer combinator
+that composes several `run_in_tx` calls without naming a `sqlx` type: its
+closure body is arbitrary caller code, so the combinator has no way to
+discover which audit events that body produced, and cannot dispatch them
+either.
+
+This was a real, unaddressed gap for a while (cratestack#534) — a `run_in_tx`
+caller had no way to opt in at all, since `dispatch_audit_sink` wasn't even
+public and `run_in_tx` didn't hand back the built `AuditEvent`. **It is now
+a real, working, but still manual opt-in.** Every `run_in_tx` variant
+returns a `RunInTxOutcome<T>` carrying the `AuditEvent`(s) it built and
+already persisted (`.value` for what `.run(...)` would have returned,
+`.audit_events` for the events); collect those across every write in your
+transaction and call the generated `Cratestack::dispatch_audit_sink` once,
+after your own `tx.commit()` succeeds (or after `db.transaction(...)`
+returns `Ok`, threading the collected events out through your own closure's
+return value — the combinator can't collect them for you):
+
+```rust
+let mut tx = pool.begin().await?;
+let mut audit_events = Vec::new();
+
+let revoked = cool.account().update(id).set(patch).run_in_tx(&mut tx, &ctx).await?;
+audit_events.extend(revoked.audit_events);
+
+let created = cool.account().create(input).run_in_tx(&mut tx, &ctx).await?;
+audit_events.extend(created.audit_events);
+
+tx.commit().await?;
+// Only now — never before commit, never automatically — does the sink see anything:
+cool.dispatch_audit_sink(&audit_events).await;
+```
+
+Forgetting this call is exactly as silent as the gap used to be
+unconditionally: `cratestack_audit` still gets every row (that insert is
+unconditional on `@@audit` models), the installed sink just never hears
+about it for that transaction. If your compliance posture depends on the
+downstream sink firing for every audited write, treat this call as
+mandatory wherever you compose writes through `.run_in_tx(...)` or
+`db.transaction(...)` — there is no way for the framework to enforce that
+you remembered it. The identical opt-in exists for `@@emit` subscribers via
+the pre-existing `Cratestack::events().drain()` — it re-scans the outbox for
+undelivered rows rather than needing a specific event handed back, so it
+was already usable this way; call it the same way, after your own commit.
 
 ## Schema
 
