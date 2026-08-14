@@ -87,16 +87,16 @@ Current generated fields include:
 | `cratestack_model`         | Model name for generated model list routes                                              |
 | `cratestack_procedure`     | Procedure name for generated procedure wrappers and routes                              |
 | `cratestack_operation`     | Operation label such as `procedure`, `list`, `authorize`, `invoke`, or `invoke_with_db` |
-| `cratestack_authenticated` | Whether the resolved `CoolContext` is authenticated                                     |
-| `cratestack_error`         | `CoolError::code()` for failed operations                                               |
+| `cratestack_authenticated` | Whether the resolved `CratestackContext` is authenticated                                     |
+| `cratestack_error`         | `CratestackError::code()` for failed operations                                               |
 | `cratestack_duration_ms`   | End-to-end elapsed time recorded by the generated wrapper or route                      |
 | `cratestack_paged`         | Whether a generated model list route returned a `Page<T>` envelope                      |
 | `cratestack_limit`         | Parsed `limit` query value when present                                                 |
 | `cratestack_offset`        | Parsed `offset` query value when present                                                |
 | `cratestack_count`         | Number of items returned by the completed list response                                 |
 | `cratestack_total_count`   | Total result count recorded for paged list responses                                    |
-| `cratestack_detail`        | `CoolError::detail()` on route-level `warn` events — preflight, auth, query-parsing, and selection-validation failures |
-| `cratestack_request_id`    | Request id from `CoolContext`, recorded on procedure route completion/failure events and on model list completion/failure events |
+| `cratestack_detail`        | `CratestackError::detail()` on route-level `warn` events — preflight, auth, query-parsing, and selection-validation failures |
+| `cratestack_request_id`    | Request id from `CratestackContext`, recorded on procedure route completion/failure events and on model list completion/failure events |
 
 All current generated events use the `cratestack` tracing target.
 

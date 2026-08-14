@@ -186,7 +186,7 @@ The "copy Rust query" generator. Returns a ready-to-paste
 
 ```json
 {
-  "rust": "let row = cool.post()\n    .find_unique(\"abc-123\".to_owned())\n    .run(&ctx)\n    .await?;\n"
+  "rust": "let row = db.post()\n    .find_unique(\"abc-123\".to_owned())\n    .run(&ctx)\n    .await?;\n"
 }
 ```
 

@@ -105,7 +105,7 @@ let deleted = cool
     .await?;
 ```
 
-Omitting `if_match` on a versioned model returns `CoolError::PreconditionFailed`
+Omitting `if_match` on a versioned model returns `CratestackError::PreconditionFailed`
 before any SQL runs, for both `update` and `delete`. Banks treat the version
 check as a contract, not a hint — there is no "force update" or "force
 delete" escape hatch on the generated path.

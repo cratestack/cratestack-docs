@@ -38,7 +38,7 @@ model Member {
 
 ## Error shape
 
-Validation failures surface as `CoolError::Validation(message)`, code
+Validation failures surface as `CratestackError::Validation(message)`, code
 `VALIDATION_ERROR`, HTTP status `422 Unprocessable Entity`.
 
 The public message **never echoes the rejected value**. A bank rejecting
@@ -116,7 +116,7 @@ When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#valid
 
 Defense-in-depth — app validators still run before the request reaches the database. `@db_enforce` is the safety net for non-framework writers (direct SQL, replication tools, sibling services). For banking workloads where the storage tier must enforce invariants independently, prefer `@db_enforce` on every eligible validator.
 
-**Error path:** a CHECK violation surfaces as a constraint error from the database driver and is mapped to `CoolError::Internal` by default, not the 422 contract documented above. Validators run app-side first specifically so the 422 path remains the user-facing surface; `@db_enforce` violations are the "should be unreachable" backstop.
+**Error path:** a CHECK violation surfaces as a constraint error from the database driver and is mapped to `CratestackError::Internal` by default, not the 422 contract documented above. Validators run app-side first specifically so the 422 path remains the user-facing surface; `@db_enforce` violations are the "should be unreachable" backstop.
 
 ## Composition with policies
 

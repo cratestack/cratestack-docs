@@ -60,7 +60,7 @@ The runner:
 
 1. compares each input migration against `cratestack_migrations`
 2. skips already-applied rows whose checksum matches
-3. aborts with `CoolError::Internal` if an applied row's checksum has drifted
+3. aborts with `CratestackError::Internal` if an applied row's checksum has drifted
 4. for each pending row: opens a transaction, sends the entire `up` script in
    one batch via `sqlx::raw_sql(&migration.up)`, inserts the record into
    `cratestack_migrations`, commits

@@ -15,23 +15,25 @@ The framework boundary for that is `cratestack::AuthProvider`.
 Implement one trait per host auth strategy:
 
 ```rust
-use cratestack::{AuthProvider, CoolContext, RequestContext};
+use cratestack::{AuthProvider, CratestackContext, RequestContext};
 
 #[derive(Clone)]
 struct AppAuthProvider;
 
 impl AuthProvider for AppAuthProvider {
-    type Error = cratestack::CoolError;
+    type Error = cratestack::CratestackError;
 
     fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CoolContext, Self::Error>> + Send {
+    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
         let result = resolve_context_from_request(request);
         core::future::ready(result)
     }
 }
 ```
+
+`CratestackContext` and `RequestContext` are two distinct types, easy to conflate by name alone: `RequestContext` is the *inbound* view (`method`/`path`/`headers`/`body`) the provider reads from, while `CratestackContext` is the *outbound* auth/principal result the provider produces. `authenticate(...)` takes one and returns the other.
 
 `RequestContext` gives the provider a framework-owned request view:
 
@@ -56,7 +58,7 @@ let router = cratestack_schema::axum::router(
 );
 ```
 
-Generated CRUD and procedure routes will call `authenticate(...)` for each request and use the resulting `CoolContext` for schema policy enforcement.
+Generated CRUD and procedure routes will call `authenticate(...)` for each request and use the resulting `CratestackContext` for schema policy enforcement.
 
 ## Internal callers
 
@@ -71,7 +73,7 @@ let bound = db.bind_auth(Some(serde_json::json!({
 let posts = bound.post().find_many().run().await?;
 ```
 
-Use `bind_context(...)` when the host already has a `CoolContext`.
+Use `bind_context(...)` when the host already has a `CratestackContext`.
 
 ## Principal projection
 
@@ -88,7 +90,7 @@ struct Principal {
 }
 ```
 
-That object is normalized into a `CoolContext` principal surface with two layers:
+That object is normalized into a `CratestackContext` principal surface with two layers:
 
 * a structured principal model with `actor`, `session`, `tenant`, and free-form `claims`
 * a legacy auth projection so existing `auth().field` policies keep working
@@ -116,7 +118,7 @@ struct Principal {
 }
 ```
 
-When those top-level keys are present, `CoolContext::from_principal(...)` promotes them into the structured `principal.actor`, `principal.session`, and `principal.tenant` slots while still projecting the same data back through legacy `auth()` lookups for schema compatibility.
+When those top-level keys are present, `CratestackContext::from_principal(...)` promotes them into the structured `principal.actor`, `principal.session`, and `principal.tenant` slots while still projecting the same data back through legacy `auth()` lookups for schema compatibility.
 
 Current auth-derived create defaults are intentionally conservative:
 
@@ -141,7 +143,7 @@ The recommended direction for new integrations is:
 CrateStack still accepts the older header-only resolver closure shape:
 
 ```rust
-Fn(&HeaderMap) -> Result<CoolContext, CoolError>
+Fn(&HeaderMap) -> Result<CratestackContext, CratestackError>
 ```
 
 through a compatibility blanket implementation.

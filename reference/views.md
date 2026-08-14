@@ -136,7 +136,7 @@ view AccountBalance from Account, Transfer {
 
 When `@@materialized` is set:
 
-* Calling `refresh()` on this view's delegate succeeds, emitting `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`. `refresh()` itself is not conditionally generated — every `ViewDelegate` exposes `pub async fn refresh(&self) -> Result<(), CoolError>` unconditionally, and the check is a runtime one: it returns `CoolError::Forbidden` if the view isn't `@@materialized`. (The separate `ViewDelegateNoUnique` used by `@@no_unique` views omits `refresh()` at the type level, as noted above — but that's a distinct, unique-index-driven restriction, not how non-materialized-but-unique views are handled.)
+* Calling `refresh()` on this view's delegate succeeds, emitting `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>`. `refresh()` itself is not conditionally generated — every `ViewDelegate` exposes `pub async fn refresh(&self) -> Result<(), CratestackError>` unconditionally, and the check is a runtime one: it returns `CratestackError::Forbidden` if the view isn't `@@materialized`. (The separate `ViewDelegateNoUnique` used by `@@no_unique` views omits `refresh()` at the type level, as noted above — but that's a distinct, unique-index-driven restriction, not how non-materialized-but-unique views are handled.)
 * The migration emits `CREATE MATERIALIZED VIEW <name> …` plus `CREATE UNIQUE INDEX <name>_pkey ON <name> (<id_column>)` to back the concurrent refresh.
 * `@@no_unique` is rejected: concurrent refresh requires a unique index, and CrateStack will not silently downgrade to a non-concurrent refresh that takes `ACCESS EXCLUSIVE`.
 
@@ -168,7 +168,7 @@ let rows = cool
     .views()
     .active_customer()      // ViewDelegate<'_, ActiveCustomer, i64>
     .find_many()
-    .run(&ctx)              // CoolContext drives `@@allow` enforcement
+    .run(&ctx)              // CratestackContext drives `@@allow` enforcement
     .await?;
 
 // find_unique — single-row lookup by PK. Returns Option<ActiveCustomer>.

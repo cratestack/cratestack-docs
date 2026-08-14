@@ -46,22 +46,25 @@ placeholder-vs-real one:
 
 Default: `decimal-rust-decimal`.
 
-The two are mutually exclusive: enabling **both** at once is a hard
-`compile_error!`,
+<Info>
+**Changed in 0.8.0 (cratestack#505).** The two Cargo features used to be
+mutually exclusive — enabling both was a hard `compile_error!`. As of
+0.8.0 they are **additive**: a build can enable both, and two independent
+dependents in the same dependency graph can each pick a different backend
+without forcing the other to match. This closed a real defect — two
+well-formed crates, each choosing a different backend on its own terms,
+used to force a combined build that neither one alone controlled. See
+[Migrating to 0.8.0](../overview/migrating-to-0-8) for what changed and
+what to update.
+</Info>
 
-```text
-cratestack: `decimal-rust-decimal` and `decimal-bigdecimal` are mutually
-exclusive — enable exactly one
-```
-
-but enabling **neither** is not an error (cratestack#505) — it matters
-for a consumer that uses `default-features = false` to narrow its
-dependency graph and never references `Decimal` at all: the `Decimal`
-type alias simply doesn't exist in that build instead of forcing an
-unused backend choice. A consumer that *does* try to use `Decimal`
-without picking a backend gets a plain "cannot find type `Decimal`"
-from `rustc`. So the real rule is **at most one** of the two features,
-not exactly one.
+Enabling **neither** feature is still not an error (cratestack#421/#505)
+— it matters for a consumer that uses `default-features = false` to
+narrow its dependency graph and never references `Decimal` at all: the
+`Decimal` type alias simply doesn't exist in that build instead of
+forcing an unused backend choice. A consumer that *does* try to use
+`Decimal` without enabling either feature gets a plain "cannot find type
+`Decimal`" from `rustc`.
 
 `rust_decimal`'s 28–29 significant digits is enough for retail banking,
 FX rates, and consumer-facing pricing, with better performance and a
@@ -71,9 +74,42 @@ very long-duration interest, or settlement workflows where the
 precision budget grows over time — at the cost of losing `Copy` and
 heap-allocating every value.
 
-The umbrella `cratestack` crate threads whichever feature is selected
-through the workspace so downstream code references
-`cratestack::Decimal` regardless of backend.
+The umbrella `cratestack` crate threads whichever feature(s) are selected
+through the workspace so downstream code references `cratestack::Decimal`
+for whichever single backend *that crate* enabled — `Decimal` itself
+still names exactly one concrete type per crate, gated to whichever one
+feature that crate turned on. What's new is that a different crate in the
+same build graph can turn on the other feature and get its own concrete
+`Decimal` without the two colliding.
+
+### The `decimal = ...` macro argument
+
+Because both backends can now coexist in one build, the entry macros can
+no longer infer which one a given schema means from the ambient Cargo
+feature set — a schema-authored choice replaces that inference. **Any
+`include_server_schema!`, `include_embedded_schema!`, or
+`include_client_schema!` call on a schema that declares a `Decimal` field
+anywhere (a model, mixin, custom type, view, or procedure arg/return —
+including nested inside `Page<T>`/`FindMany<T>`) now requires a trailing
+`decimal = RustDecimal` or `decimal = BigDecimal` argument:**
+
+```rust
+include_server_schema!("schema.cstack", db = Postgres, decimal = RustDecimal);
+
+include_embedded_schema!("schema.cstack", decimal = RustDecimal);
+
+include_client_schema!("schema.cstack", decimal = BigDecimal);
+```
+
+Omitting `decimal = ...` on a schema that has a `Decimal` field somewhere
+is a compile-time macro error naming exactly what to add — it does not
+silently guess a backend. A schema with **no** `Decimal` field anywhere
+still takes no `decimal` argument at all (cratestack#521's "neither"
+case, unchanged). The value you pass must match a Cargo feature your
+crate actually enabled (`decimal = RustDecimal` needs
+`decimal-rust-decimal`, `decimal = BigDecimal` needs `decimal-bigdecimal`)
+— the macro argument selects *which* enabled backend this schema's
+`Decimal` fields use; it doesn't turn a backend on by itself.
 
 ### Serialization
 

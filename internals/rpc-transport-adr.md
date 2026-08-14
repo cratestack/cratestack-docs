@@ -114,9 +114,9 @@ The `code` field uses **gRPC-style lowercase**: `not_found`, `invalid_argument`,
 Implementation has two halves:
 
 1. Dispatcher-side errors call `encode_rpc_error(&codec, &headers, &error)` directly — emits `RpcErrorBody` from the start.
-2. Handler-emitted errors are post-processed in `rpc_dispatch_inner`: buffer the response body, decode `CoolErrorResponse` (the REST shape the handler produced), translate the code via `cool_error_code_to_rpc_code`, re-encode as `RpcErrorBody`, same HTTP status.
+2. Handler-emitted errors are post-processed in `rpc_dispatch_inner`: buffer the response body, decode `CratestackErrorResponse` (the REST shape the handler produced), translate the code via `cratestack_error_code_to_rpc_code`, re-encode as `RpcErrorBody`, same HTTP status.
 
-A unit test forces the indirect translation table (`cool_error_code_to_rpc_code`) to agree with the direct mapping (`rpc_code(&CoolError)`) variant-by-variant, so the two can't drift silently.
+A unit test forces the indirect translation table (`cratestack_error_code_to_rpc_code`) to agree with the direct mapping (`rpc_code(&CratestackError)`) variant-by-variant, so the two can't drift silently.
 
 **Rejected alternative.** Pass an error-encoder strategy into every handler so REST and RPC bindings produce different bodies natively. Cleaner but invasive across every CRUD verb and every procedure handler — and unnecessary given the post-process hop is in-memory, only on error paths, and well-localized.
 
@@ -134,7 +134,7 @@ A unit test forces the indirect translation table (`cool_error_code_to_rpc_code`
 
 1. **Two binding styles to maintain.** Bug fixes in routing, codec negotiation, or auth flow may need to land in two places — though the RPC dispatcher's delegation to existing handlers keeps that surface small.
 2. **The `update` patch round-trip costs one encode + one decode per call.** Not measured in practice; assumed negligible against the DB call cost.
-3. **Batch errors round-trip through `CoolErrorResponse` before becoming `RpcErrorBody`.** Same kind of cost, only on the error path.
+3. **Batch errors round-trip through `CratestackErrorResponse` before becoming `RpcErrorBody`.** Same kind of cost, only on the error path.
 
 ### Deferred
 
@@ -162,7 +162,7 @@ Subscriptions don't have that profile yet:
 
 1. CrateStack's audit and event-bus consumers today are **server-to-server**. They poll or consume from the audit sink directly; they don't need a WS channel.
 2. External clients (mobile apps, browser SPAs) are the natural fit, but **no concrete CrateStack consumer is asking for subscriptions right now**.
-3. Implementing them requires new schema syntax (`@@subscribe`), a WS frame loop in the macro-emitted dispatcher, and `CoolEventBus` per-subscription fan-out with bounded buffers — a real ADR's worth of design effort that should be motivated by an actual user, not by symmetry with streaming.
+3. Implementing them requires new schema syntax (`@@subscribe`), a WS frame loop in the macro-emitted dispatcher, and `CratestackEventBus` per-subscription fan-out with bounded buffers — a real ADR's worth of design effort that should be motivated by an actual user, not by symmetry with streaming.
 
 The wire design from this ADR's §3.4 (the rejected drafts of §3.4 in the local repo `docs/design/rpc-transport.md`) stays as the target; the runtime work waits. **When a concrete subscription use case appears, that becomes ADR 0006.**
 

@@ -109,7 +109,7 @@ pub trait RateLimitStore: Send + Sync + 'static {
         &self,
         key: &str,
         config: RateLimitConfig,
-    ) -> Result<RateLimitDecision, CoolError>;
+    ) -> Result<RateLimitDecision, CratestackError>;
 }
 ```
 
