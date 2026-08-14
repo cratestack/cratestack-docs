@@ -694,6 +694,33 @@ await dataProvider.custom({
 });
 ```
 
+## Running example
+
+[`examples/react-vite-refine`](https://github.com/cratestack/cratestack/tree/main/examples/react-vite-refine)
+is a real refine.dev admin app wired through `@cratestack/refine` against a generated,
+**stateful** [WireMock](../tooling/generate-wiremock) backend — no database, no hand-written server.
+The chain is schema → `generate-typescript --refine` → `generate-wiremock` →
+`createCratestackDataProvider` → a live admin UI, with a `Post` model exercising `@@paged` +
+`@version` end to end: create, list, update, delete, and a stale `If-Match` correctly rejected with
+`412`, all against a running container.
+
+It's a useful reference for the packaged path this guide points to above, not the hand-wired one —
+but the wiring pattern (generated manifest in, `createCratestackDataProvider` out) is identical either
+way. Two honest limits worth knowing before treating it as a template:
+
+* **No sorting, filtering, or pagination controls.** `cratestack-mock-wiremock`'s generated stubs
+  ignore `field__operator=value`, `sort`, `limit`, and `offset` entirely — every `list` response is
+  the complete, unfiltered collection. The example is built directly on `@refinedev/core`'s headless
+  hooks with `pagination: { mode: "off" }` on every list call specifically to avoid rendering controls
+  that would appear to work and silently do nothing. This is a limitation of the mock, not of
+  `@cratestack/refine` itself — see [Generating WireMock stubs](../tooling/generate-wiremock) for what
+  it does and doesn't implement, and `@cratestack/refine`'s own test suite for pagination/filter/sort
+  logic proven against a fake server that actually implements it.
+* **`create` never honors a client-submitted primary key** against the mock — it always fabricates its
+  own id, so a create form's submitted value is silently discarded and every follow-up call must use
+  the id the mock actually returned. This is specific to testing against `generate-wiremock`'s stubs;
+  a real `cratestack-pg` server honors a client-supplied `@id`.
+
 ## Gaps: honest limitations
 
 Three things a refine app might reach for that aren't wired today —
@@ -794,3 +821,5 @@ that order.)
 4. [Pagination](./pagination) — `@@paged`, `Page<T>`, `MAX_LIST_LIMIT`
 5. [Search with Filters — `FindMany<Model>`](./find-many) — the typed, procedure-only filter argument for cases the query-string convention can't express
 6. [RPC transport](./rpc-transport) — if your schema uses `transport rpc` instead of REST
+7. [Generating WireMock stubs](../tooling/generate-wiremock) — the mock backend
+   `examples/react-vite-refine` runs against, including what it does and doesn't cover
