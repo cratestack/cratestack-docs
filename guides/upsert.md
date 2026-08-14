@@ -116,6 +116,51 @@ for _ in 0..3 {
 // Exactly one row, with the final input's values.
 ```
 
+### `.do_nothing()`: converge without overwriting
+
+`.upsert(input).run(ctx)` above always does `ON CONFLICT DO UPDATE` — a conflicting row gets
+overwritten with the new input's values. That's wrong for the idempotent-ingestion case this guide
+opens on whenever the retry's payload is *incomplete*, not a full re-statement of the desired row: a
+cash-in claim that inserts a `PENDING` row and treats a conflict as "already in flight" must never let
+a retry's blank values overwrite a row a downstream process has since moved to `COMPLETED`.
+`.do_nothing()` (`crates/cratestack-sqlx/src/query/write/upsert.rs`, cratestack#487) switches the
+conflict branch to a real `ON CONFLICT DO NOTHING` — the existing row is returned completely
+untouched, not merged:
+
+```rust
+use cratestack::UpsertOutcome;
+
+let outcome: UpsertOutcome<CashInClaim> = cool
+    .cashInClaim()
+    .upsert(CreateCashInClaimInput { id: idempotency_key, status: Status::Pending, amount })
+    .do_nothing()
+    .run(&ctx)
+    .await?;
+
+match outcome {
+    UpsertOutcome::Inserted(claim) => {
+        // First time we've seen this key — proceed with the cash-in.
+    }
+    UpsertOutcome::Existing(claim) => {
+        // Already in flight (or already COMPLETED) — the stored row is
+        // untouched, so a retry can never blank out `claim.status`.
+    }
+}
+```
+
+`.do_nothing()` returns a distinct builder (`UpsertRecordDoNothing`), because the return type
+genuinely changes: a real `DO NOTHING` returns nothing at all for the conflicting row (Postgres only
+`RETURNING`s rows a statement actually touched), so `Result<M, CratestackError>` can't express
+"inserted vs. already there" — `Result<UpsertOutcome<M>, CratestackError>` can.
+`UpsertOutcome<M>::{Inserted(M), Existing(M)}` exposes `.was_inserted() -> bool` and
+`.into_record() -> M`/`.record() -> &M` for callers that only need the row. `.on_conflict(...)` chains
+the same way as the plain path, before or after `.do_nothing()`. This is purely additive — existing
+`.upsert(...).run(...)` call sites keep their current `Result<M, CratestackError>` signature and DO
+UPDATE behavior unchanged.
+
+**Server-only.** `.do_nothing()` exists on `cratestack-sqlx`'s builder; there is no
+`cratestack-rusqlite` (embedded) equivalent — see [Embedded semantics](#embedded-semantics) below.
+
 ## Server semantics
 
 The server (`cratestack-sqlx`) path is always transactional and follows a
@@ -176,6 +221,30 @@ you really need that conditional, the right shape is an explicit
 transaction with `find_unique` → `update.if_match(N)`. Adding `if_match`
 to the upsert builder is on the deferred list and will require a clear
 use case.
+
+### `.do_nothing()`'s policy, event, and concurrency contract
+
+`.do_nothing()` reuses the same `SELECT … FOR UPDATE` probe as the DO UPDATE path — the row lock is
+what makes "return what the probe found, untouched" safe without a second statement:
+
+1. **Create policy still gates the insert branch unconditionally**, same as `.create()` and the DO
+   UPDATE path — `.do_nothing()` still performs a real `INSERT` when no conflicting row exists.
+2. **The update policy is still evaluated against an existing row, even though it's never mutated.**
+   Skipping this check would let a caller with only create authorization use `.do_nothing()` to probe
+   for a row's existence and read its current contents — exactly the leak the DO UPDATE path's
+   "both policies must allow" rule already exists to close (see
+   [Policies: both must allow](#policies-both-must-allow) above). Denial surfaces the identical
+   `"update policy denied this upsert"` error either way.
+3. **Only the `Inserted` branch emits anything.** A `Created` event and audit entry fire exactly like
+   `.create(...)`'s. `Existing` emits neither — the row genuinely didn't change, so there's nothing to
+   record.
+4. **The insert branch races honestly, not naively.** The probe finding no row doesn't itself lock
+   anything, so a concurrent transaction can still commit a conflicting row in the gap before this
+   transaction's own `INSERT … ON CONFLICT DO NOTHING` runs. When that race is lost, the runtime
+   performs one more locked read and hands back the winning transaction's row as `Existing` — never a
+   phantom `Existing` built from stale data. In the doubly-unlikely case that *that* row is deleted
+   before the fallback read completes, the call returns `CratestackError::Conflict` rather than
+   inventing a result; retry the call.
 
 ### Soft-deleted rows are not silently revived
 

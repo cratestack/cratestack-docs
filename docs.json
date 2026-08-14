@@ -91,7 +91,8 @@
               "tooling/cli-install",
               "tooling/schema-diff",
               "tooling/migrate-baseline",
-              "tooling/editor-tooling"
+              "tooling/editor-tooling",
+              "tooling/generate-wiremock"
             ]
           },
           {
