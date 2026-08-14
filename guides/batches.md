@@ -26,7 +26,7 @@ Every batch call returns a [`BatchResponse<M>`](https://docs.rs/cratestack-core/
 
 Two layers of error reporting:
 
-1. **The outer `Result<BatchResponse<M>, CoolError>`** carries _whole-batch infrastructure_ failures only: request exceeds the 1000-item cap, duplicate keys detected in the input list, database connection lost. Outer failures stop the batch before any per-item work runs.
+1. **The outer `Result<BatchResponse<M>, CratestackError>`** carries _whole-batch infrastructure_ failures only: request exceeds the 1000-item cap, duplicate keys detected in the input list, database connection lost. Outer failures stop the batch before any per-item work runs.
 2. **`BatchItemStatus::Error`** carries _per-item_ failures: validation failed, policy denied, row not found, `if_match` was stale, primary key already existed. Per-item failures _do not_ abort the rest of the batch — the savepoint rolls back just that item.
 
 The `index` on every `BatchItemResult` is the item's position in the original request, preserved across the response. Clients can match results back to inputs by index without depending on ordering.
@@ -94,12 +94,12 @@ Savepoints solve this exactly. `ROLLBACK TO SAVEPOINT` returns the outer transac
 pub const BATCH_MAX_ITEMS: usize = 1000;
 ```
 
-Server backends reject over-sized batches at the outer guard with `CoolError::Validation`, before any SQL runs. The cap is the same for all five operations; deviating per-op would invite footguns where `batch_get` accepts a list that `batch_create` of the same length rejects.
+Server backends reject over-sized batches at the outer guard with `CratestackError::Validation`, before any SQL runs. The cap is the same for all five operations; deviating per-op would invite footguns where `batch_get` accepts a list that `batch_create` of the same length rejects.
 
 **Duplicate input keys are loud-failed**, not silently deduplicated:
 
 ```rust
-// This returns Err(CoolError::Validation("duplicate primary key in batch at positions 0 and 2")).
+// This returns Err(CratestackError::Validation("duplicate primary key in batch at positions 0 and 2")).
 cool.tag().batch_get(vec![dup, other, dup]).run(&ctx).await
 ```
 
@@ -126,7 +126,7 @@ Per-item `BatchItemError { code, message }` uses the same string codes as the fr
 | `CONFLICT` | a unique constraint was tripped (incl. duplicate client PKs) |
 | `DATABASE_ERROR` | unexpected DB failure — usually means escalate via outer error |
 
-The codes mirror `CoolError::code()` so a single mapping table covers single-route responses and batch envelope entries.
+The codes mirror `CratestackError::code()` so a single mapping table covers single-route responses and batch envelope entries.
 
 `CONFLICT` isn't specific to `batch_create` — `classify_unique_violation` is
 shared uniformly across `batch_create`, `batch_update`, and `batch_upsert`,
@@ -171,13 +171,13 @@ Auto-generated `POST /<model>/batch-*` routes are **deferred** to a follow-up re
 
 ```rust
 use axum::{extract::State, Json};
-use cratestack::{BatchRequest, BatchResponse, CoolError};
+use cratestack::{BatchRequest, BatchResponse, CratestackError};
 use cratestack_schema::{CreateAccountInput, Account};
 
 pub async fn batch_create_accounts(
     State(state): State<AppState>,
     Json(req): Json<BatchRequest<CreateAccountInput>>,
-) -> Result<Json<BatchResponse<Account>>, CoolError> {
+) -> Result<Json<BatchResponse<Account>>, CratestackError> {
     let response = state.cool
         .account()
         .batch_create(req.items)

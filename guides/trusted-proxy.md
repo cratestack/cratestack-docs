@@ -5,7 +5,7 @@ description: Configuring which reverse proxy CrateStack trusts to report the rea
 
 # Trusted Proxy / Client IP
 
-`CoolContext::client_ip()` feeds the `actor` field on [audit log](./audit-log)
+`CratestackContext::client_ip()` feeds the `actor` field on [audit log](./audit-log)
 rows and is available to policies and procedures. By default it's the
 verified TCP socket peer — the address the OS's own handshake produced,
 never a client-suppliable value.

@@ -64,7 +64,7 @@ Auth-derived defaults:
 | Procedure `@deny`                           | Supported                                      | Supported             | Deny precedence implemented                                                                                             |
 | Procedure input field checks                | Supported                                      | Supported             | Direct args and `args.<field>` paths, with input/auth/input comparisons                                                 |
 | DB-backed procedure auth                    | Supported in richer engines                    | Partial               | `@authorize(Model, action, args.path)` delegates to model detail/update/delete auth by id                               |
-| Structured principal context                | Supported in richer engines                    | Partial               | `CoolContext` now carries `principal.actor/session/tenant/claims` plus legacy `auth()` compatibility                    |
+| Structured principal context                | Supported in richer engines                    | Partial               | `CratestackContext` now carries `principal.actor/session/tenant/claims` plus legacy `auth()` compatibility                    |
 | Relation-based auth like `auth() == author` | Supported                                      | Supported             | Single-column to-one relations that reference `id`                                                                      |
 | Nested auth paths like `auth().org.id`      | Supported in richer engines                    | Supported             | Exact auth keys still win; dotted paths traverse nested auth maps                                                       |
 | Relation traversal inside policies          | Supported in richer engines                    | Partial               | Recursive to-one and quantified to-many traversal are supported across model policies                                   |
@@ -332,8 +332,8 @@ model Todo {
 
 Notes:
 
-* nested auth lookups traverse structured auth objects carried in `CoolContext`
-* `CoolContext` now carries a first-class `principal.actor/session/tenant/claims` shape internally
+* nested auth lookups traverse structured auth objects carried in `CratestackContext`
+* `CratestackContext` now carries a first-class `principal.actor/session/tenant/claims` shape internally
 * canonical policy types are shared through `cratestack-policy`; model and procedure auth now lower onto the same runtime policy surface
 * an exact auth key still wins before dotted traversal, so existing flat claims stay backward compatible
 
@@ -430,7 +430,7 @@ Current limits that still matter in practice:
   or auth-derived default expansion
 * procedure DB-backed auth is partial: `@authorize(Model, action, args.path)` delegates to model auth by referenced id,
   but there is still no general DB-querying procedure policy language
-* CoolContext now carries a first-class `principal.actor/session/tenant/claims` model, but explicit impersonation,
+* CratestackContext now carries a first-class `principal.actor/session/tenant/claims` model, but explicit impersonation,
   acting-as, and delegated-session semantics are still unsupported
 * arbitrary policy functions beyond `hasRole('...')` and `inTenant('...')` are still unsupported
 * field-level read masking and field-level write blocking are still unsupported

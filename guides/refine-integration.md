@@ -599,7 +599,7 @@ function toRefineError(error: unknown): HttpError {
 `CratestackHttpError` (`status`, `response`, `payload`) is generated
 into `runtime.ts` and re-exported from the package root
 (`crates/cratestack-client-typescript/templates/src/rest-runtime.ts.j2`).
-`412`'s response body is the standard `CoolErrorResponse { code:
+`412`'s response body is the standard `CratestackErrorResponse { code:
 "PRECONDITION_FAILED", message, details }` envelope
 (`crates/cratestack-core/src/error.rs`) — checking `error.status === 412`
 rather than pattern-matching `payload.code` is the more robust test,

@@ -6,7 +6,7 @@ Proposed target architecture. This document is the canonical transport design re
 
 Current implementation has closed most of this document's original gap, though it started narrower:
 
-1. generated Axum routers can negotiate multiple response codecs per router today via `CodecSet<Primary, Secondary>` (an `HttpTransport` impl covering exactly two codec slots) — a router is only single-codec if its owner passes a single `CoolCodec` (e.g. `CborCodec` alone) instead of a `CodecSet`. See `./http-transport-contract.md`'s "Current Repo Mapping" for a real example (`catalog-service` wiring `CodecSet::new(CborCodec, JsonCodec)`).
+1. generated Axum routers can negotiate multiple response codecs per router today via `CodecSet<Primary, Secondary>` (an `HttpTransport` impl covering exactly two codec slots) — a router is only single-codec if its owner passes a single `CratestackCodec` (e.g. `CborCodec` alone) instead of a `CodecSet`. See `./http-transport-contract.md`'s "Current Repo Mapping" for a real example (`catalog-service` wiring `CodecSet::new(CborCodec, JsonCodec)`).
 2. `cratestack-codec-cbor` and `cratestack-codec-json` are both dedicated, checked-in first-party codec crates today — JSON is no longer inline-only in `cratestack-client-rust`.
 3. COSE remains an unimplemented envelope seam.
 4. `application/cbor-seq` is implemented on both bindings for the shapes each has opted into: RPC's `Sequence`-kind ops negotiate it directly, and REST procedures explicitly marked `@stream` genuinely stream (flush-per-item, not buffered) rather than being buffered through a single-value response helper. It is not implemented for CRUD/model routes on either binding, and not implemented for request bodies on either binding.
@@ -17,7 +17,7 @@ Since this document was first written, CrateStack also ships a **second binding 
 
 1. A `.cstack` schema picks **one** generation style with the top-level `transport rest|rpc|grpc` directive. Default is `rest` (back-compat with everything written before the directive existed).
 2. `transport rpc` schemas mount `POST /rpc/{op_id}` (unary) and `POST /rpc/batch` instead of REST-shaped per-model routes. Streaming for `Sequence`-kind ops works on the same unary route via `Accept: application/cbor-seq` — same negotiated framing as below.
-3. Errors on the RPC binding go on the wire as `RpcErrorBody { code, message, details? }` with gRPC-style lowercase codes (`not_found`, `invalid_argument`, `permission_denied`, …) rather than the REST `CoolErrorResponse` shape.
+3. Errors on the RPC binding go on the wire as `RpcErrorBody { code, message, details? }` with gRPC-style lowercase codes (`not_found`, `invalid_argument`, `permission_denied`, …) rather than the REST `CratestackErrorResponse` shape.
 4. `transport grpc` schemas pick a third generation style: `cratestack-proto` emits `.proto` message and enum definitions for the schema's types, backed by a field-number lockfile (`<schema>.pb.lock`) so wire numbers stay stable across schema edits, and `cratestack-grpc` mounts a hand-rolled `tonic` service (macro-generated protobuf mirror structs, mountable into an `axum::Router` via `cratestack_schema::grpc::into_router`) covering model CRUD **and procedures** (unary + list-arity server-streaming, shipped in v0.7.2 via #208). What's still missing is on the **client** side: none of the three generated gRPC clients (Rust, Dart, TypeScript) expose procedure methods yet — tracked as issue #171. See "gRPC binding" below for the full picture.
 5. `@@subscribe` model-event subscriptions shipped in v0.7.2 (#183, #390) over **Server-Sent Events**, not WebSocket — see "Subscriptions: shipped over SSE, not WebSocket" below. A true bidirectional WebSocket binding remains pending, gated on a concrete use case that needs client-to-server frames on the same channel.
 
@@ -28,7 +28,7 @@ Since this document was first written, CrateStack also ships a **second binding 
 What it generates:
 
 1. **`.proto` definitions** — `cratestack-proto` owns the field-number lockfile and stable-numbering algorithm; it emits `.proto` message and enum definitions for the schema's types and does not itself contain a gRPC runtime.
-2. **Server-side gRPC service** — `cratestack-grpc` is the server-integration runtime, the gRPC sibling of `cratestack-axum`. It holds `CoolError` → `tonic::Status` mapping, `tonic::metadata::MetadataMap` ↔ `http::HeaderMap` conversion so the existing header-driven `AuthProvider` ports unchanged, and unframed-body envelope canonicalization for request signing. Behind a Cargo `grpc` feature, it macro-generates protobuf mirror structs plus a hand-rolled `tonic` service covering model CRUD and procedures, mountable into an `axum::Router`: unary procedures get a `tonic::server::UnaryService` impl and list-arity procedures get a `ServerStreamingService` impl, both dispatched through the same handler function — and therefore the same policy/audit pipeline — that REST and RPC already call (shipped in v0.7.2, #208).
+2. **Server-side gRPC service** — `cratestack-grpc` is the server-integration runtime, the gRPC sibling of `cratestack-axum`. It holds `CratestackError` → `tonic::Status` mapping, `tonic::metadata::MetadataMap` ↔ `http::HeaderMap` conversion so the existing header-driven `AuthProvider` ports unchanged, and unframed-body envelope canonicalization for request signing. Behind a Cargo `grpc` feature, it macro-generates protobuf mirror structs plus a hand-rolled `tonic` service covering model CRUD and procedures, mountable into an `axum::Router`: unary procedures get a `tonic::server::UnaryService` impl and list-arity procedures get a `ServerStreamingService` impl, both dispatched through the same handler function — and therefore the same policy/audit pipeline — that REST and RPC already call (shipped in v0.7.2, #208).
 3. **Native Rust gRPC client** — `cratestack-client-rust`'s `grpc` Cargo feature (off by default; it pulls in `tonic`, `prost`, `h2`, `tower`) generates `cratestack_schema::grpc::Client<T = tonic::transport::Channel>` on top of `CratestackGrpcClient<T>`, mirroring `tonic-build`'s own generated client shape. Errors surface as `GrpcClientError`, wrapping `tonic::Status` directly. Model CRUD only today: the generated client has no methods for `procedure` declarations even though the server now serves them behind the `UnaryService`/`ServerStreamingService` impls above — that client-side gap is what issue #171 tracks. See `./client-runtime.md` for the client-side crate split.
 4. **Dart gRPC client** — `generate-dart` gained a native gRPC client generator for `transport grpc` schemas in v0.4.17, with channel-shutdown and per-call option exposure on the generated client. Same scope limit as the Rust client: CRUD-only, no generated methods for `procedure` declarations (#171).
 
@@ -197,7 +197,7 @@ Questions to settle before COSE implementation:
 
 ## Recommended Runtime Shape
 
-The current `CoolCodec` and `CoolEnvelope` split is still directionally correct, but it is not sufficient on its own for content negotiation and sequence framing.
+The current `CratestackCodec` and `CratestackEnvelope` split is still directionally correct, but it is not sufficient on its own for content negotiation and sequence framing.
 
 The long-term runtime should represent three concepts:
 
@@ -207,9 +207,9 @@ The long-term runtime should represent three concepts:
 
 One acceptable shape is:
 
-1. keep `CoolCodec` for typed encoding
+1. keep `CratestackCodec` for typed encoding
 2. add a framing abstraction for single versus sequence bodies
-3. keep `CoolEnvelope` for post-framing wrapping
+3. keep `CratestackEnvelope` for post-framing wrapping
 4. add a transport selector or registry that resolves request and response behavior from HTTP headers plus route capability metadata
 
 The implementation does not need to adopt those exact trait names, but the architectural split must remain visible.
@@ -283,7 +283,7 @@ This has shipped: `cratestack-client-rust` offers a buffered list helper for ord
 
 This section previously described a state that has since been overtaken by real negotiation work — see the "Status" section at the top of this document for the current, corrected picture. What's still genuinely ahead of the checked-in implementation:
 
-1. generated Axum routes validate `Accept` and `Content-Type` against whichever codec(s) the router was actually built with — a single `CoolCodec` for a single-codec router, or both slots of a `CodecSet<Primary, Secondary>` for a negotiated one; `cratestack-codec-cbor` and `cratestack-codec-json` are both real, dedicated checked-in codec crates today
+1. generated Axum routes validate `Accept` and `Content-Type` against whichever codec(s) the router was actually built with — a single `CratestackCodec` for a single-codec router, or both slots of a `CodecSet<Primary, Secondary>` for a negotiated one; `cratestack-codec-cbor` and `cratestack-codec-json` are both real, dedicated checked-in codec crates today
 2. `cratestack-client-rust` and `cratestack-client-flutter` expose runtime codec configuration for CBOR and JSON, and decode responses by actual `Content-Type` rather than assuming the configured codec — but each client instance still sends requests through one *primary* configured codec, so multi-codec request negotiation from a single client instance is not a thing
 3. COSE envelope configuration exists as a reserved runtime option, but the runtime rejects it because implementation is missing
 
@@ -318,8 +318,8 @@ An earlier draft of this document proposed a WebSocket binding as the vehicle fo
 What actually shipped:
 
 1. **`@@subscribe` schema directive.** A bare model attribute — `@@subscribe` takes no arguments (`@@subscribe(filter: "...")` is a parse error) — valid only under `transport rpc` and only alongside `@@emit(...)` on the same model. It lowers to `OpKind::Subscription`.
-2. **`GET /rpc/subscribe/{op_id}` endpoint**, dispatched through the existing outbox-drain pipeline (`crates/cratestack-macros/src/transport/subscribe_dispatch.rs`). The client asks for it with `Accept: text/event-stream`; anything else is rejected before a `CoolEventBus` subscription is even registered.
-3. **`CoolEventBus` fan-out**, already present in `cratestack-core`, is what the subscription rides on. Backpressure is a bounded per-subscription channel that closes on overflow, surfaced to the client as a terminal `event: error` SSE frame — there is no replay and no reconnection/resume semantics.
+2. **`GET /rpc/subscribe/{op_id}` endpoint**, dispatched through the existing outbox-drain pipeline (`crates/cratestack-macros/src/transport/subscribe_dispatch.rs`). The client asks for it with `Accept: text/event-stream`; anything else is rejected before a `CratestackEventBus` subscription is even registered.
+3. **`CratestackEventBus` fan-out**, already present in `cratestack-core`, is what the subscription rides on. Backpressure is a bounded per-subscription channel that closes on overflow, surfaced to the client as a terminal `event: error` SSE frame — there is no replay and no reconnection/resume semantics.
 4. **Row-level `@@allow` policy is not replayed against streamed events.** That machinery lives in the SQL query builders and has no analogue for an in-memory outbox-sourced event — a documented scope limit for this first cut, not an oversight.
 
 A true bidirectional **WebSocket binding** — needed for request frames flowing on the same channel as responses, rather than one-way server-to-client push — remains unimplemented and unscheduled. CrateStack's audit and event-bus consumers today are server-to-server and poll or consume from the audit sink directly, so nothing in the current consumer set needs it. **When a concrete bidirectional-streaming use case appears, that becomes the next implementation lift on this transport surface.**

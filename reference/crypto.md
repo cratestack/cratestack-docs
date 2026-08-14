@@ -76,7 +76,7 @@ only exists on `cratestack-pg` — it is not part of `cratestack-api` or
 
 Without the feature flag (the unchanged, still-functional branch), the
 function returns
-`CoolError::Internal("cratestack was not compiled with \`crypto-aws-lc-rs\` feature; FIPS-validated crypto provider is unavailable")`.
+`CratestackError::Internal("cratestack was not compiled with \`crypto-aws-lc-rs\` feature; FIPS-validated crypto provider is unavailable")`.
 
 ```rust
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Calling this today — with or without the feature — never yields a working
-FIPS-validated provider: without the feature it returns the `CoolError`
+FIPS-validated provider: without the feature it returns the `CratestackError`
 above, and with the feature it fails to compile.
 
 ## What this is not

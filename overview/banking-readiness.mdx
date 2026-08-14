@@ -22,7 +22,7 @@ The current banking-grade slice covers:
 6. soft-delete via `@@soft_delete`
 7. forward-only migrations via `Migration` + `apply_pending` with checksum drift detection
 8. runtime validators (`@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217`) with PII-safe error messages
-9. Decimal scalar backed by `rust_decimal` today (`bigdecimal` is a reserved-but-unimplemented feature flag)
+9. Decimal scalar with a choice of two implemented backends — `rust_decimal` (default, fixed-precision) or `bigdecimal` (arbitrary precision) — additive as of 0.8.0, so different dependents in the same build can each pick their own; see [Scalars](../reference/scalars#backend-selection)
 
 ## What's Not
 

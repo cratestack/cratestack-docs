@@ -104,7 +104,7 @@ you're evaluating idempotency defaults: the default principal fingerprint
 peer (requires serving through
 `into_make_service_with_connect_info::<SocketAddr>()`). If **neither** is
 available, it refuses the request with `412 Precondition Failed`
-(`CoolError::PreconditionFailed`) rather than collapsing every such caller
+(`CratestackError::PreconditionFailed`) rather than collapsing every such caller
 onto a shared `"anonymous"` namespace — an earlier version of the default
 did exactly that, and the doc comments in that file narrate the old
 behavior for context, which reads confusingly out of context: the

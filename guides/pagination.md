@@ -184,9 +184,9 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     async fn list_feed(
         &self,
         _db: &cratestack_schema::Cratestack,
-        _ctx: &CoolContext,
+        _ctx: &CratestackContext,
         args: cratestack_schema::procedures::list_feed::Args,
-    ) -> Result<cratestack_schema::procedures::list_feed::Output, CoolError> {
+    ) -> Result<cratestack_schema::procedures::list_feed::Output, CratestackError> {
         let (limit, offset) = args.page.resolve(50);
         // ... use limit/offset to build your own response
         Ok(cratestack_schema::FeedReply { limit, offset })

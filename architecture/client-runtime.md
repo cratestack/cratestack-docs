@@ -660,7 +660,7 @@ Both facade crates (`cratestack-pg`, `cratestack-sqlite`) and the underlying `cr
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-pg", version = "0.7", default-features = false, features = ["decimal-rust-decimal"] }
+cratestack = { package = "cratestack-pg", version = "0.8", default-features = false, features = ["decimal-rust-decimal"] }
 ```
 
 Disabling `codec-json`:

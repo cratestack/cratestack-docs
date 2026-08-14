@@ -48,7 +48,7 @@ For every `create`, `update`, and `delete` the runtime writes a row to
 2. `schema_name` and `model` strings from the `.cstack`
 3. `operation` — `create`, `update`, or `delete`
 4. `primary_key` as JSON
-5. `actor` derived from the `CoolContext` — id, claims, optional source IP
+5. `actor` derived from the `CratestackContext` — id, claims, optional source IP
    (see [Trusted Proxy / Client IP](./trusted-proxy) for how that IP is
    resolved, and the bootstrap step it's silently `None` without)
 6. `tenant` from `PrincipalContext.tenant.id` when present
@@ -96,7 +96,7 @@ struct KafkaAuditSink { /* ... */ }
 
 #[async_trait::async_trait]
 impl AuditSink for KafkaAuditSink {
-    async fn record(&self, event: &cratestack::AuditEvent) -> Result<(), cratestack::CoolError> {
+    async fn record(&self, event: &cratestack::AuditEvent) -> Result<(), cratestack::CratestackError> {
         // publish to your topic; errors are surfaced to MulticastAuditSink
         Ok(())
     }
@@ -112,10 +112,10 @@ let sinks = MulticastAuditSink::new(vec![
 ]);
 ```
 
-A single sink failure surfaces as `CoolError::Internal` rather than
+A single sink failure surfaces as `CratestackError::Internal` rather than
 silently swallowing — `MulticastAuditSink` still calls every sink in the
 list even after an earlier one fails, then aggregates all the errors
-into that one `CoolError::Internal`, so one bad downstream doesn't stop
+into that one `CratestackError::Internal`, so one bad downstream doesn't stop
 the others from receiving the event. Banks treat downstream errors as
 alertable, not fire-and-forget. The default sink is `NoopAuditSink`; the
 table is the source of truth even without one.

@@ -68,9 +68,9 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     async fn search_posts(
         &self,
         db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         args: cratestack_schema::procedures::search_posts::Args,
-    ) -> Result<Vec<cratestack_schema::Post>, CoolError> {
+    ) -> Result<Vec<cratestack_schema::Post>, CratestackError> {
         cratestack_schema::build_post_query_from_find_many(db, &args.query)
             .run(ctx)
             .await
@@ -180,9 +180,9 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
     async fn search_posts(
         &self,
         db: &cratestack_schema::Cratestack,
-        ctx: &CoolContext,
+        ctx: &CratestackContext,
         args: cratestack_schema::procedures::search_posts::Args,
-    ) -> Result<cratestack::Page<cratestack_schema::Post>, CoolError> {
+    ) -> Result<cratestack::Page<cratestack_schema::Post>, CratestackError> {
         let (limit, offset) = args.page.resolve(50);
         let filters = args
             .query
