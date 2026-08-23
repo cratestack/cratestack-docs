@@ -33,6 +33,7 @@ Once the CLI binary is installed, drop the `cargo run -p cratestack-cli --` pref
 | `--check` | no | off | drift-detection mode: generate in memory and diff against `--out` instead of writing; exits non-zero and lists the files that differ |
 | `--preset` | no | `default` | `default` or `riverpod` — see below |
 | `--run-build-runner` | no | off | after generation, run `dart run build_runner build --delete-conflicting-outputs` in `--out` — see [The `--run-build-runner` flag](#the-run-build-runner-flag) |
+| `--native-cbor` | no | off | depend on the native `cratestack_cbor` codec instead of pure-Dart `package:cbor` — see [The `--native-cbor` flag](#the-native-cbor-flag) |
 
 ### The two presets
 
@@ -209,6 +210,41 @@ cd . && dart run build_runner build --delete-conflicting-outputs
 
 Re-run `build_runner` (or pass `--run-build-runner` again) every time you regenerate — the `.g.dart`/`.mapper.dart` output tracks the *generated* source, and it's gitignored in every riverpod-preset package (see the generated `.gitignore`), so a fresh clone always needs this step before the package will analyze or build.
 
+## The `--native-cbor` flag
+
+CBOR encode/decode sits on every request a generated client makes. By default the generated package depends on [`package:cbor`](https://pub.dev/packages/cbor), which is pure Dart and works everywhere. Pass `--native-cbor` (issue [#563](https://github.com/cratestack/cratestack/issues/563)) to depend on [`cratestack_cbor`](https://pub.dev/packages/cratestack_cbor) instead — the framework's own `cratestack-codec-cbor` Rust crate, bound through flutter_rust_bridge natively and wasm-bindgen on web:
+
+```bash
+cratestack generate-dart \
+  --schema schema.cstack \
+  --out ./client \
+  --native-cbor
+```
+
+Because both sides are the same Rust codec the server uses, the wire bytes are identical across languages — the same property `@cratestack/cbor-node` and `@cratestack/cbor-web` give the JavaScript clients.
+
+The flag is purely additive. Every other emitted file is byte-identical with and without it; only the `pubspec.yaml` dependency and the runtime's codec wiring change.
+
+### Platform support
+
+`cratestack_cbor` vendors prebuilt binaries rather than building Rust on a consumer's machine, so a platform works only if a binary was vendored for it:
+
+| Platform | Supported |
+|---|---|
+| Linux x86_64 | yes |
+| Windows x64 | yes |
+| macOS (universal arm64 + x86_64) | yes |
+| iOS (device + simulator) | yes |
+| Android (`arm64-v8a`, `x86_64`, `armeabi-v7a`) | yes |
+| Web | yes (wasm-bindgen) |
+| Linux arm64 | **no** — `createCborCodec()` throws `UnsupportedError` |
+
+<Warning>
+  The published package can lag the framework. Windows, macOS and iOS support landed after the most recent `cratestack_cbor` release, so a client generated with `--native-cbor` today resolves a pub.dev version that still throws `UnsupportedError` on those three platforms. Check the [pub.dev changelog](https://pub.dev/packages/cratestack_cbor/changelog) for the version your generated `pubspec.yaml` pins before shipping to them.
+</Warning>
+
+This is why `--native-cbor` is opt-in rather than the default: `package:cbor` runs anywhere, so it stays the safe choice until the platform matrix you need is actually published.
+
 ## Getting started: schema to a running screen
 
 This walkthrough follows `examples/flutter-riverpod/` in the framework repo — a real, checked-in Flutter app that consumes a `--preset riverpod` client with zero hand-written providers, built from the same schema `examples/react-vite-swr` already uses for its TypeScript sibling.
@@ -363,4 +399,5 @@ Everything else — `widget(id)`, `WidgetCreateController.create(...)`, `WidgetU
 - [`examples/flutter-riverpod`](https://github.com/cratestack/cratestack/tree/main/examples/flutter-riverpod) — the real, running app this guide's walkthrough is drawn from
 - [TypeScript client generation](/guides/typescript-client-generation) — the sibling generator, including the additive `--swr` layout and a cross-language side-by-side comparison
 - [Client Runtime](/architecture/client-runtime) — the underlying FFI bridge and codec ordering the Dart runtime is built on
+- [`cratestack_cbor`](https://pub.dev/packages/cratestack_cbor) — the native codec `--native-cbor` depends on, and its per-release platform matrix
 - [RPC transport](/guides/rpc-transport) — full design for `transport rpc`
