@@ -390,6 +390,25 @@ It's `IMap`, not a plain `Map`, for the same reason `CratestackListQuery` needed
 
 Everything else — `widget(id)`, `WidgetCreateController.create(...)`, `WidgetUpdateController.save(id, patch)`, `WidgetDeleteController.delete(id)`, one `@riverpod` function per query procedure and one controller per mutation procedure — is structurally identical to the REST case above.
 
+## Computed-field params
+
+A model with a `@computed(params: <Type>?)` field gets a generated
+`<Model>ComputedParams` class, and its `get`/`list` calls — plain APIs and the
+riverpod convenience providers, REST and RPC alike — accept it as an optional
+named parameter:
+
+```dart
+final image = await client.images.get(
+  7,
+  computedParams: ImageComputedParams(proxyUrl: ProxyParams(width: 800)),
+);
+```
+
+The class has value equality, so riverpod family providers keyed on it cache
+correctly. Models without parameterized computed fields don't get the parameter
+at all. See [Computed Fields](/guides/computed-fields) for the schema side and
+the wire format.
+
 ## Caveats
 
 - **`@@paged` models are supported by the `riverpod` preset.** A paged model's list provider returns `Page<Model>`, same as the REST/RPC cases elsewhere in this guide — the generator only skips the `IList<Model>` substitution (used for unpaged list results) for a paged model's return type.

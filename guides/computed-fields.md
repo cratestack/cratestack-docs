@@ -181,10 +181,25 @@ that does not deserialize into the declared type. The first four are checked
 before any database query runs; the deserialize check happens while composing the
 response.
 
+### RPC transport
+
+On `transport rpc` schemas the same params ride **inside the frame**, as a field
+holding the JSON-object text:
+
+```json
+POST /rpc/model.Image.get
+{ "id": 7, "computedParams": "{\"proxyUrl\":{\"width\":800}}" }
+```
+
+`model.<X>.list` frames carry the same optional `computedParams` field, and each
+frame in a `POST /rpc/batch` envelope carries its own. Old frames without the
+field keep working unchanged, and validation is byte-for-byte the same code path
+the REST query parameter goes through. Because the frame bytes are the signed
+canonical body, in-frame params are covered by request signing automatically.
+
 Where `computedParams` does **not** reach, the resolver receives `None`:
-relation-included records, every non-read path (create/update/delete), procedure
-outputs, and the RPC transport — `computedParams` is a REST query-string feature
-and applies to the request's root model only.
+relation-included records, every non-read path (create/update/delete), and
+procedure outputs. It applies to the request's root model only.
 
 ## Generated clients
 
@@ -192,23 +207,45 @@ Computed fields appear in generated response types for Rust, Dart, and
 TypeScript, and are excluded from create/update inputs, `Where` builders, and
 sort enums in all three.
 
-The Dart and TypeScript clients accept `computedParams` on `get`/`list` as an
-untyped map in this version:
+Every client accepts `computedParams` on `get`/`list` as a **typed, generated
+per-model class** — one optional property per parameterized computed field, typed
+as the declared params `type`. The parameter only exists on models that declare
+at least one `@computed(params: …)` field; passing params to any other model is
+a compile error in all three languages, not a runtime 422.
 
 ```dart
-final image = await client.images.get(7, computedParams: {
-  'proxyUrl': {'width': 800},
-});
+final image = await client.images.get(
+  7,
+  computedParams: ImageComputedParams(proxyUrl: ProxyParams(width: 800)),
+);
 ```
+
+The Dart surface covers both presets and both transports — the plain APIs, the
+riverpod `@riverpod` convenience providers (the params class has value equality,
+so provider caching keys correctly), and the RPC client mode.
 
 ```typescript
 const image = await client.images.get(7, {
-  computedParams: { proxyUrl: { width: 800 } },
+  computedParams: { proxyUrl: { width: 800 } } satisfies ImageComputedParams,
 });
 ```
 
-Dart only emits the parameter for models that actually declare a parameterized
-computed field. The generated Rust client has no `computedParams` argument yet.
+TypeScript's gate is the type system itself: the shared query types are generic
+(`CratestackFetchQuery<TComputedParams = never>`), so `computedParams` is
+unassignable on models without parameterized computed fields. swr cache keys
+incorporate the params, so differently-parameterized reads never collide.
+
+```rust
+let image = client.images()
+    .get(7, Some(&ImageComputedParams {
+        proxyUrl: Some(ProxyParams { width: Some(800), ..Default::default() }),
+        ..Default::default()
+    }), &[])
+    .await?;
+```
+
+The Rust client (both `include_client_schema!` and the server's embedded
+self-client) exposes the same generated struct on REST and RPC calls.
 
 ## Rules enforced at parse time
 
@@ -233,6 +270,10 @@ declaration:
 - Two computed fields whose resolver method names would collide after
   snake-casing (`Image.setUrl` and `ImageSet.url` both yield
   `resolve_image_set_url`).
+- An attribute argument list separated from its attribute by whitespace —
+  `@computed (params: ProxyParams?)` is an error naming the attached spelling,
+  not a silently bare `@computed`. (This applies to every field attribute, e.g.
+  `@default (5)` too.)
 
 `include_embedded_schema!` rejects any schema containing a computed field at
 macro-expansion time. The embedded backend is synchronous and has no response
@@ -243,8 +284,10 @@ boundary at which a resolver could run; use `include_server_schema!` or
 
 - Event and change-stream payloads never carry computed fields.
 - `@stream` procedures cannot return computed-bearing items.
-- The generated Rust client has no `computedParams` surface.
-- `computedParams` is REST-only and applies to the root model of the request.
+- `computedParams` applies to the request's root model only; relation-included
+  records, write-path responses, and procedure outputs resolve with `None`.
+- RPC `get` frames carry `computedParams` but no `fields`/`include` selection —
+  RPC `get` always returns the full record.
 - Computed fields cannot be redacted through `@pii` / `@sensitive`, since
   `@computed` cannot be combined with another attribute. A resolver must not
   return data that requires audit-log redaction.

@@ -608,6 +608,24 @@ let published = client
 
 The pattern holds across languages: model accessors are named after the pluralized model (`posts` / `blogClient.posts` / `client.posts()`), procedures live under a `procedures` namespace, and only method/procedure names are cased per-language convention — `camelCase` in TypeScript and Dart, `snake_case` in Rust (`.posts()`, `get_feed`). Struct field names (e.g. `authorId`, `postId`) keep the schema's own original casing verbatim in all three languages, Rust included — there's no serde rename, so a Rust `CreatePostInput` literal still reads `authorId: 1`, not `author_id: 1`, as the code samples above show.
 
+## Computed-field params
+
+A model with a `@computed(params: <Type>?)` field gets a generated
+`<Model>ComputedParams` interface, and the shared query types are generic over
+it (`CratestackFetchQuery<TComputedParams = never>`) — so `computedParams` is
+fully typed on parameterized models and a **compile error** on everything else:
+
+```typescript
+const image = await client.images.get(7, {
+  computedParams: { proxyUrl: { width: 800 } },
+});
+```
+
+This works on both the REST and RPC clients and through the `/swr` layout, whose
+cache keys incorporate the params so differently-parameterized reads never
+collide. See [Computed Fields](/guides/computed-fields) for the schema side and
+the wire format.
+
 ## Caveats
 
 - **Bundle size on large schemas, default layout only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `/swr` file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
