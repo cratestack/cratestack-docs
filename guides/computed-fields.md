@@ -191,11 +191,30 @@ POST /rpc/model.Image.get
 { "id": 7, "computedParams": "{\"proxyUrl\":{\"width\":800}}" }
 ```
 
-`model.<X>.list` frames carry the same optional `computedParams` field, and each
-frame in a `POST /rpc/batch` envelope carries its own. Old frames without the
-field keep working unchanged, and validation is byte-for-byte the same code path
-the REST query parameter goes through. Because the frame bytes are the signed
-canonical body, in-frame params are covered by request signing automatically.
+`get` frames also carry the full REST selection surface — `fields`, `include`,
+and `include_fields` (snake_case on the wire, matching the list frame) — so a
+projected, relation-including, parameterized read is one frame:
+
+```json
+POST /rpc/model.Image.get
+{
+  "id": 7,
+  "fields": ["id", "proxyUrl"],
+  "include": ["album"],
+  "include_fields": { "album": ["id"] },
+  "computedParams": "{\"proxyUrl\":{\"width\":800}}"
+}
+```
+
+`model.<X>.list` frames carry the same fields, and each frame in a
+`POST /rpc/batch` envelope carries its own — selection and params are applied
+per-frame, order preserved. Old frames without these keys keep working
+unchanged, and validation is byte-for-byte the same code path the REST query
+parameters go through: an unknown field name, an orphan `include_fields`
+relation, or `computedParams` naming a field excluded by `fields` are all
+rejected identically on both transports. Because the frame bytes are the
+signed canonical body, everything in-frame is covered by request signing
+automatically.
 
 Where `computedParams` does **not** reach, the resolver receives `None`:
 relation-included records, every non-read path (create/update/delete), and
@@ -218,6 +237,12 @@ final image = await client.images.get(
   7,
   computedParams: ImageComputedParams(proxyUrl: ProxyParams(width: 800)),
 );
+
+// Or through the generated fluent builder — the same convention every
+// generated Dart data class has:
+final params = ImageComputedParamsBuilder()
+    .proxyUrl(ProxyParams(width: 800))
+    .build();
 ```
 
 The Dart surface covers both presets and both transports — the plain APIs, the
@@ -236,16 +261,28 @@ unassignable on models without parameterized computed fields. swr cache keys
 incorporate the params, so differently-parameterized reads never collide.
 
 ```rust
-let image = client.images()
-    .get(7, Some(&ImageComputedParams {
-        proxyUrl: Some(ProxyParams { width: Some(800), ..Default::default() }),
-        ..Default::default()
-    }), &[])
-    .await?;
+let params = ImageComputedParams::builder()
+    .proxyUrl(Some(ProxyParams { width: Some(800), ..Default::default() }))
+    .build();
+let image = client.images().get(7, Some(&params), &[]).await?;
 ```
 
-The Rust client (both `include_client_schema!` and the server's embedded
-self-client) exposes the same generated struct on REST and RPC calls.
+`<Model>ComputedParams` carries the same generated typestate builder every other
+generated object has; a plain struct literal with `..Default::default()` works
+too. The Rust client (both `include_client_schema!` and the server's embedded
+self-client) exposes the struct on REST and RPC calls.
+
+### Projected reads
+
+Selection rides a separate client surface from the full-record `get`, on both
+transports: the Rust client's `get_view<P: ProjectionDecoder>(id, projection)`
+(now with an RPC twin) decodes a projected payload, and TypeScript's RPC `get`
+takes `fields`/`include`/`includeFields` on its per-model options bag — the same
+shape TS REST has always had. `get_view` carries no `computedParams` (matching
+REST's `get_view`), so through the generated Rust surfaces you choose per call:
+projection (`get_view`) or params (`get`, full record). The **wire** composes
+both — TypeScript's options bag can send `fields` and `computedParams`
+together, and a hand-built `RpcGetInput` can too.
 
 ## Rules enforced at parse time
 
@@ -286,8 +323,9 @@ boundary at which a resolver could run; use `include_server_schema!` or
 - `@stream` procedures cannot return computed-bearing items.
 - `computedParams` applies to the request's root model only; relation-included
   records, write-path responses, and procedure outputs resolve with `None`.
-- RPC `get` frames carry `computedParams` but no `fields`/`include` selection —
-  RPC `get` always returns the full record.
+- The Rust client's RPC `get_view` carries no `computedParams`, matching REST's
+  `get_view`; the Dart RPC client has no projection surface yet (for `list`
+  either); swr's RPC `get` cache key does not incorporate `fields`.
 - Computed fields cannot be redacted through `@pii` / `@sensitive`, since
   `@computed` cannot be combined with another attribute. A resolver must not
   return data that requires audit-log redaction.

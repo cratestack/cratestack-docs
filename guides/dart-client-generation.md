@@ -405,9 +405,18 @@ final image = await client.images.get(
 ```
 
 The class has value equality, so riverpod family providers keyed on it cache
-correctly. Models without parameterized computed fields don't get the parameter
-at all. See [Computed Fields](/guides/computed-fields) for the schema side and
-the wire format.
+correctly, and it comes with the same fluent builder every other generated data
+class has:
+
+```dart
+final params = ImageComputedParamsBuilder()
+    .proxyUrl(ProxyParams(width: 800))
+    .build();
+```
+
+Models without parameterized computed fields don't get the parameter at all.
+See [Computed Fields](/guides/computed-fields) for the schema side and the wire
+format.
 
 ## Caveats
 
