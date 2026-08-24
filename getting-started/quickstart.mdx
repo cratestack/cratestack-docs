@@ -90,11 +90,18 @@ let app = axum::Router::new().nest(
     "/api",
     cratestack_schema::axum::model_router(
         cool.clone(),
+        (),
         cratestack_codec_cbor::CborCodec,
         AppAuthProvider,
     ),
 );
 ```
+
+The `()` in second position is the **computed-field resolver**. A schema with no
+`@computed` fields needs no resolver at all, and the macro generates
+`impl ComputedFieldResolver for ()` so the unit type satisfies the bound. Replace it
+with your own resolver once you declare a computed field — see
+[Computed Fields](../guides/computed-fields).
 
 ## Procedures-only servers (no database)
 

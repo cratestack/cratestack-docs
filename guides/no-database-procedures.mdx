@@ -96,6 +96,7 @@ async fn main() {
         cratestack_schema::axum::procedure_router(
             cool.clone(),
             MyProcedures,
+            (),
             cratestack_codec_cbor::CborCodec,
             AppAuthProvider,
         ),
@@ -107,6 +108,11 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 ```
+
+The `()` in third position is the **computed-field resolver**, and `()` is the right value
+whenever the schema declares no `@computed` fields. A `db = None` schema can still declare
+them — on a `type` returned by a procedure — in which case pass your resolver here instead;
+see [Computed Fields](./computed-fields).
 
 `Cratestack::builder()` takes **zero parameters** here — there's no pool to configure, no connection string to thread through, no `PgPool` anywhere in the type. Compare this to the `db = Postgres` path (see [Quickstart](../getting-started/quickstart)), where the builder takes a pool and every generated model delegate borrows it; on `db = None` there are no model delegates to borrow it, so the builder has nothing left to ask for. Only `procedure_router` gets mounted — there's no `model_router` to nest alongside it, because there are no models.
 
