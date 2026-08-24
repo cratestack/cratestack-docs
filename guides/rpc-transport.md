@@ -91,6 +91,17 @@ Body shape per verb:
 // POST /rpc/model.Widget.get  or  /rpc/model.Widget.delete
 { "id": 42 }
 
+// get (not delete) also accepts the REST fetch-query surface, all optional —
+// same keys and semantics as GET /<plural>/{id}; old bare {id} frames
+// keep working unchanged
+{
+  "id": 42,
+  "fields": ["id", "name"],
+  "include": ["parts"],
+  "include_fields": { "parts": ["id"] },
+  "computedParams": "{\"proxyUrl\":{\"width\":800}}"
+}
+
 // POST /rpc/model.Widget.update
 // patch decoded against the model's UpdateWidgetInput shape
 { "id": 42, "patch": { "name": "new name" } }

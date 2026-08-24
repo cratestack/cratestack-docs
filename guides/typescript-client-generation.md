@@ -623,8 +623,20 @@ const image = await client.images.get(7, {
 
 This works on both the REST and RPC clients and through the `/swr` layout, whose
 cache keys incorporate the params so differently-parameterized reads never
-collide. See [Computed Fields](/guides/computed-fields) for the schema side and
-the wire format.
+collide. The RPC client's per-model `get` options bag also carries the
+projection surface — `fields`, `include`, and `includeFields` — mirroring what
+`CratestackFetchQuery` has always given REST `get`, so a projected,
+parameterized read is one call:
+
+```typescript
+const image = await client.images.get(7, {
+  fields: ["id", "proxyUrl"],
+  computedParams: { proxyUrl: { width: 800 } },
+});
+```
+
+See [Computed Fields](/guides/computed-fields) for the schema side and the wire
+format.
 
 ## Caveats
 
