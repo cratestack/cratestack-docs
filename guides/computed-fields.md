@@ -5,6 +5,12 @@ description: "`@computed` — response-time fields backed by a generated resolve
 
 # Computed Fields
 
+<Note>
+`@computed` is merged on `main` and ships in the next release — it is not in
+0.8.10. It replaces the earlier `@custom` attribute, which generated a resolver
+trait nothing ever called; a schema still using `@custom` now fails to parse.
+</Note>
+
 Some fields are not stored and cannot be: a signed CDN URL that expires in
 fifteen minutes, a display string assembled from three columns and the caller's
 locale, a price converted at today's rate. Writing them into the table means
