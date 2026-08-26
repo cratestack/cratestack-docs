@@ -247,6 +247,12 @@ final params = ImageComputedParamsBuilder()
     .build();
 ```
 
+Like every generated Dart builder, `ImageComputedParamsBuilder` is expanded by
+`build_runner` from a `@CratestackBuilder(...)` annotation rather than emitted
+inline — see [Dart client generation: the `--run-build-runner`
+flag](/guides/dart-client-generation#the-run-build-runner-flag) for what that
+means for the `default` preset specifically.
+
 The Dart surface covers both presets and both transports — the plain APIs, the
 riverpod `@riverpod` convenience providers (the params class has value equality,
 so provider caching keys correctly), and the RPC client mode.

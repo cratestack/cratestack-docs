@@ -39,7 +39,7 @@ Once the CLI binary is installed, drop the `cargo run -p cratestack-cli --` pref
 
 `--preset` selects the generated package's shape:
 
-- **`default`** — today's existing output: one monolithic `lib/src/models.dart` and one monolithic `lib/src/apis.dart`. This is byte-identical to what the generator produced before the `riverpod` preset existed, and it stays the default — nothing changes for an existing consumer that doesn't pass `--preset`.
+- **`default`** — one monolithic `lib/src/models.dart` and one monolithic `lib/src/apis.dart`. This layout is unchanged from before the `riverpod` preset existed, and it stays the default — you don't need `--preset` to get it. It is **not** byte-identical output anymore, though: as of the builder-generation move (see [The `--run-build-runner` flag](#the-run-build-runner-flag) below), every data class in `models.dart` now carries a `@CratestackBuilder(...)` annotation and the file gains a `part 'models.builder.dart';` directive, so a `default`-preset regeneration now needs a `build_runner` pass it never needed before.
 - **`riverpod`** (opt-in, epic [#297](https://github.com/cratestack/cratestack/issues/297)) — one file per model under `lib/src/models/` (a shared `lib/src/models/shared_types.dart` for cross-model types like `Page`/`PageInfo`), procedures in their own `lib/src/procedures.dart`, and package-wide DI providers (`xAdapterProvider`, `xClientProvider`) living in `lib/src/client.dart`. Every model and procedure-argument file also declares a full set of generated `@riverpod` providers — see [The `riverpod` preset](#the-riverpod-preset) below.
 
 ```bash
@@ -186,7 +186,38 @@ A `FindMany<Model>` procedure argument is the same story one level deeper: `Post
 
 ## The `--run-build-runner` flag
 
-`riverpod`-preset output isn't directly runnable Dart — the `@riverpod` and `@MappableClass()` annotations are inert until `build_runner` expands them into `.g.dart`/`.mapper.dart` part files. Without that step the package doesn't compile, let alone `flutter analyze` clean.
+<Warning>
+  **Breaking change, landing in the next CrateStack release** (merged to `main`, not yet published —
+  the current release is 0.8.13). Generated Dart no longer emits `{Class}Builder` classes inline.
+  Every generated data class — models, `Create<Model>Input`/`Update<Model>Input`,
+  `<Model>Where`/`<Model>OrderByClause`/`<Model>FindMany`, `type` blocks, and per-procedure argument
+  classes — now carries a `@CratestackBuilder(...)` annotation from
+  [`cratestack_annotations`](https://pub.dev/packages/cratestack_annotations), and its containing file
+  gains a `part '<stem>.builder.dart';` directive that
+  [`cratestack_builder`](https://pub.dev/packages/cratestack_builder)'s `build_runner` step expands.
+  The builder's own API — setters, `add<Field>`, `build()` — is unchanged; only how it comes into
+  existence changed. **This is why this whole section now applies to the `default` preset too**: it
+  previously needed no build step at all, so a regenerated `default`-preset client will not
+  `flutter analyze` clean until `build_runner` has run — and if you commit your generated client, a
+  bare upgrade-and-regenerate leaves your tree broken until you add that step. The `riverpod` preset
+  already ran `build_runner` for its own `@riverpod`/`dart_mappable` codegen, so for it this is
+  additive, not new. Generated `.builder.dart` output is a build artifact, not generator output —
+  gitignore it (`**/*.builder.dart`) in your own repo, the same way this repo's own
+  `examples/flutter-riverpod/.gitignore` does for its committed example, alongside the pre-existing
+  `*.g.dart`/`*.mapper.dart` patterns. TypeScript clients are unaffected by any of this — TS has no
+  generated builders and never did. Rust clients are unaffected too — the Rust macro still emits
+  builders at compile time, no build step involved.
+</Warning>
+
+Two independent codegen passes need `build_runner` now, layered on top of each other:
+
+- **Every preset** — every generated data class carries `@CratestackBuilder(...)`; its containing
+  file gets a `part '<stem>.builder.dart';` that `package:cratestack_builder` expands into the actual
+  `{Class}Builder`.
+- **`riverpod` preset only** — on top of that, the `@riverpod` and `@MappableClass()` annotations are
+  inert until `build_runner` expands them into `.g.dart`/`.mapper.dart` part files too.
+
+Without running it, neither preset's output compiles, let alone `flutter analyze` clean.
 
 Pass `--run-build-runner` (issue [#303](https://github.com/cratestack/cratestack/issues/303)) to have the CLI do it for you right after generation:
 
@@ -199,16 +230,16 @@ cargo run -p cratestack-cli -- generate-dart \
   --run-build-runner
 ```
 
-It's opt-in, not the default — a Rust CLI unpromptedly shelling out to a separate Dart toolchain would be a surprising behavior change for existing or scripted callers, so you have to ask for it. It requires a Dart SDK on `PATH`; it has no effect together with `--check` (drift-detection mode never writes files, so there's nothing to run `build_runner` against).
+It's opt-in, not the default — a Rust CLI unpromptedly shelling out to a separate Dart toolchain would be a surprising behavior change for existing or scripted callers, so you have to ask for it. It requires a Dart SDK on `PATH`; it has no effect together with `--check` (drift-detection mode never writes files, so there's nothing to run `build_runner` against). `--check` no longer sees the expanded builder either way — it only sees the annotation and the `part` directive, since drift-detection mode never runs `build_runner`.
 
-Without the flag, the generated README tells you the manual two-step equivalent:
+Without the flag, the generated README tells you the manual two-step equivalent — this now applies to the `default` preset too, not just `riverpod`:
 
 ```bash
-cratestack generate-dart --schema schema.cstack --out . --preset riverpod
+cratestack generate-dart --schema schema.cstack --out .
 cd . && dart run build_runner build --delete-conflicting-outputs
 ```
 
-Re-run `build_runner` (or pass `--run-build-runner` again) every time you regenerate — the `.g.dart`/`.mapper.dart` output tracks the *generated* source, and it's gitignored in every riverpod-preset package (see the generated `.gitignore`), so a fresh clone always needs this step before the package will analyze or build.
+Re-run `build_runner` (or pass `--run-build-runner` again) every time you regenerate — its output tracks the *generated* source, is a build artifact rather than generator output, and should be gitignored in your own repo, so a fresh clone always needs this step before the package will analyze or build. The generated `pubspec.yaml` reflects the new dependencies either way: `cratestack_annotations` under `dependencies:` (runtime, zero transitive dependencies of its own), and `cratestack_builder` plus `build_runner` under `dev_dependencies:`.
 
 ## The CBOR codec
 
@@ -406,7 +437,9 @@ final image = await client.images.get(
 
 The class has value equality, so riverpod family providers keyed on it cache
 correctly, and it comes with the same fluent builder every other generated data
-class has:
+class has — expanded by `build_runner` from a `@CratestackBuilder(...)`
+annotation, like every other generated builder (see
+[The `--run-build-runner` flag](#the-run-build-runner-flag) above):
 
 ```dart
 final params = ImageComputedParamsBuilder()
@@ -432,4 +465,6 @@ format.
 - [TypeScript client generation](/guides/typescript-client-generation) — the sibling generator, including the additive `--swr` layout and a cross-language side-by-side comparison
 - [Client Runtime](/architecture/client-runtime) — the underlying FFI bridge and codec ordering the Dart runtime is built on
 - [`cratestack_cbor`](https://pub.dev/packages/cratestack_cbor) — the native codec generated clients depend on by default, and its per-release platform matrix
+- [`cratestack_annotations`](https://pub.dev/packages/cratestack_annotations) — the runtime `@CratestackBuilder(...)` annotation every generated data class carries
+- [`cratestack_builder`](https://pub.dev/packages/cratestack_builder) — the `build_runner` generator that expands the annotation into `{Class}Builder`
 - [RPC transport](/guides/rpc-transport) — full design for `transport rpc`
