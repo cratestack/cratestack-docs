@@ -187,9 +187,9 @@ A `FindMany<Model>` procedure argument is the same story one level deeper: `Post
 ## The `--run-build-runner` flag
 
 <Warning>
-  **Breaking change, landing in the next CrateStack release** (merged to `main`, not yet published —
-  the current release is 0.8.13). Generated Dart no longer emits `{Class}Builder` classes inline.
-  Every generated data class — models, `Create<Model>Input`/`Update<Model>Input`,
+  **Breaking change, released in CrateStack 0.8.14.** Generated Dart no longer emits
+  `{Class}Builder` classes inline. Every generated data class — models,
+  `Create<Model>Input`/`Update<Model>Input`,
   `<Model>Where`/`<Model>OrderByClause`/`<Model>FindMany`, `type` blocks, and per-procedure argument
   classes — now carries a `@CratestackBuilder(...)` annotation from
   [`cratestack_annotations`](https://pub.dev/packages/cratestack_annotations), and its containing file
@@ -290,9 +290,13 @@ cratestack generate-dart \
 
 The choice is purely additive. Every other emitted file is byte-identical either way; only the `pubspec.yaml` dependency and the runtime's codec wiring change.
 
-<Warning>
-  **Breaking change, landing in the next CrateStack release** (merged, not yet published — the current release is 0.8.7, where `--native-cbor` is still the flag). The native codec used to be opt-in behind that flag. It is now the default, and that flag has been **removed** — a bare `--flag` cannot express "on by default", so it was replaced by `--no-native-cbor`. An existing `--native-cbor` invocation is an unknown-argument error, not a no-op. Drop it (native is now the default), or swap it for `--no-native-cbor` if you were relying on the pure-Dart codec.
-</Warning>
+<Note>
+  `--native-cbor` was replaced by `--no-native-cbor` — since **v0.8.9**. The native codec used to be
+  opt-in behind `--native-cbor`; that flag has been **removed**, not merely defaulted differently — a
+  bare `--flag` cannot express "on by default". An existing `--native-cbor` invocation is an
+  unknown-argument error, not a no-op. Drop it (native is now the default), or swap it for
+  `--no-native-cbor` if you were relying on the pure-Dart codec.
+</Note>
 
 ### Platform support
 
