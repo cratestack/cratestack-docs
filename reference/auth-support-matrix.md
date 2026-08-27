@@ -27,6 +27,33 @@ Procedure policies:
 * if no allow rule exists, invocation is denied
 * canonical procedure-policy literals, predicates, and expressions now live in `cratestack-policy`
 
+Field policies — **rejected at parse time**:
+
+* a **field-level** `@allow(...)` / `@deny(...)` is a compile error, on all
+  five field-bearing declaration kinds: `model`, `view`, `mixin`, `type`
+  and the `auth` block. The error names the offending field
+* it used to parse, report `schema OK`, sit in the IR, and be read by
+  **nothing** — an annotation that reads as access control and enforces
+  none. The field reached every caller the model-level read policy
+  admitted, exactly as if it were absent
+* what to reach for instead: model/view-level `@@allow` / `@@deny` for row
+  visibility, [`@readonly`](./field-attributes#exposure-controls) to keep a
+  field out of generated inputs, and
+  [`@server_only`](./field-attributes#exposure-controls) to keep it out of
+  client responses
+* this targets the field-position, single-`@` case only — procedure-level
+  `@allow` / `@deny` and model/view-level `@@allow` / `@@deny` are
+  untouched
+
+<Note>
+Only half of [#679](https://github.com/cratestack/cratestack/issues/679) is
+closed. Unknown field attributes are still accepted generally, so a
+misspelled `@raedonly` silently drops `@readonly` and leaves the field
+writable. Catching that needs a generic unknown-attribute pass, which is
+an intentional non-choice today — so don't rely on the parser to catch a
+typo'd exposure attribute.
+</Note>
+
 Auth-derived defaults:
 
 * create-time `@default(auth().field)` is supported
