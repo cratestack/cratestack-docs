@@ -101,11 +101,12 @@ The macro excludes `@version` from both Create and Update inputs. The
 runtime seeds it to `0` on create and bumps it in the same statement as
 every update or soft-delete.
 
-## Model-level uniqueness
+## Model-level uniqueness and indexes
 
 | Attribute            | Behaviour                                                                 |
 |-----------------------|----------------------------------------------------------------------------|
 | `@@unique([...])`     | Composite uniqueness across the listed fields. Emits a `CREATE UNIQUE INDEX` spanning all of them, in declaration order. |
+| `@@index([...])`      | A non-unique index across the listed fields, in declaration order. At least one field. |
 
 ```cstack
 model Application {
@@ -115,10 +116,74 @@ model Application {
   environment String
 
   @@unique([tenantId, name, environment])
+  @@index([tenantId])
 }
 ```
 
-Field-level `@unique` (a single-column shorthand) is unaffected by this — `@@unique` is for composite constraints that span more than one field. See [Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness) for the emitted DDL, and [Upsert](../guides/upsert) for why a matching unique index is required for `ON CONFLICT` targets.
+Field-level `@unique` (a single-column shorthand) is unaffected by this. See
+[Migrations](../guides/migrations#foreign-keys-referential-actions-and-composite-uniqueness)
+for the emitted DDL, and [Upsert](../guides/upsert) for why a matching
+unique index is required for `ON CONFLICT` targets.
+
+### Keyword arguments
+
+Both attributes accept keyword arguments after the field list. Every one
+of them is **verbatim passthrough** — the value is never parsed or
+validated by CrateStack, only carried through to the emitted DDL and left
+for the database to accept or reject.
+
+| Argument               | `@@unique` | `@@index` | Effect                                            |
+|------------------------|:----------:|:---------:|---------------------------------------------------|
+| `where: "<predicate>"` | yes        | yes       | Trailing `WHERE <predicate>` — a **partial** index |
+| `using: "<method>"`    | no         | yes       | Index method, e.g. `gin`, `gist`                   |
+| `opclass: "<opclass>"` | no         | yes       | Operator class for the indexed column              |
+
+Passing an unsupported key is a compile error, as is declaring the same
+key twice.
+
+### Partial indexes
+
+`where:` constrains the index to the rows matching a predicate:
+
+```cstack
+model Payment {
+  id             String  @id
+  idempotencyKey String?
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")
+}
+```
+
+Note the predicate is written in **SQL**, against column names, not
+schema field names — it is passed through untouched.
+
+**`where:` is the one case where a single-field `@@unique` is legal.**
+Without it, `@@unique([x])` is rejected with "use a field-level `@unique`
+instead", because the shorthand exists and is simpler. With `where:` that
+alternative disappears — a field-level `@unique` has nowhere to put a
+keyword argument — so the floor drops from two fields to one. It never
+drops to zero: `@@unique([], where: "...")` is still rejected, matching
+`@@index`'s unconditional at-least-one-field rule.
+
+The example above is the motivating shape: a genuinely optional column
+that must be unique **only when present**, with the predicate keeping the
+index off the rows where the column is `NULL`.
+
+SQLite supports the same `WHERE` syntax (partial indexes since 3.8.0). The
+divergence between backends is what a predicate may legally *reference*,
+not the syntax.
+
+<Note>
+Partial indexes round-trip through `cratestack migrate` without churn.
+Postgres normalizes a stored predicate — `idempotency_key IS NOT NULL`
+reads back as `(idempotency_key IS NOT NULL)`, and literal comparisons
+gain an explicit cast (`status = 'active'::text`) — so the diff engine
+compares predicates through a type-aware normalization rather than by raw
+string equality. Writing the predicate in a different but equivalent
+spelling than Postgres would store may still produce one drop-and-recreate;
+ambiguous cases deliberately fail toward recreating the index rather than
+toward silently leaving a stale one in place.
+</Note>
 
 ## Validators
 

@@ -15,7 +15,9 @@ names instead of applying to a single field:
 Both share the same syntax and the same field-name rules — at least two
 fields, no repeats, every name must resolve to a real scalar field on the
 model (not a relation, not a field carrying `@readonly` / `@server_only`
-on `@@id`'s case) — but they differ in what they unlock today.
+on `@@id`'s case) — but they differ in what they unlock today. The
+two-field floor has exactly one exception: `@@unique([x], where: "...")`,
+a single-column [partial index](./field-attributes#partial-indexes).
 
 ```cstack
 model AccountMembership {
@@ -81,6 +83,13 @@ Unlike `@@id`, this one compiles through codegen without complaint —
 there's no ORM-level feature depending on it yet, so there's nothing to
 reject.
 
+`@@unique([...])` also accepts a `where: "<sql predicate>"` argument,
+declaring a **partial** unique index — and that is the one case where a
+single-field `@@unique` is accepted rather than redirected to the
+field-level `@unique` shorthand. See
+[partial indexes](./field-attributes#partial-indexes) for the
+rule and the emitted DDL.
+
 ### What it enables today
 
 A real, enforced database constraint. This matters beyond integrity:
@@ -115,15 +124,51 @@ client
     .await?;
 ```
 
-`ConflictTarget` is a two-variant enum —
-`ConflictTarget::PrimaryKey` (the default) and
-`ConflictTarget::Columns(&'static [&'static str])` — defined in
-`cratestack-sql` and threaded through the `.on_conflict(...)` builder
-method in `cratestack-sqlx`. The named columns must form a `UNIQUE`
-constraint/index on the target table (exactly what `@@unique([...])`
-emits), or Postgres will reject the `ON CONFLICT` clause at runtime. The
-same builder method and `ConflictTarget` are available on the embedded
-(rusqlite) path too, so this isn't a Postgres-only capability.
+`ConflictTarget` is defined in `cratestack-sql` and threaded through the
+`.on_conflict(...)` builder method in `cratestack-sqlx`. The named
+columns must form a `UNIQUE` constraint/index on the target table
+(exactly what `@@unique([...])` emits), or Postgres will reject the
+`ON CONFLICT` clause at runtime. The same builder method and
+`ConflictTarget` are available on the embedded (rusqlite) path too, so
+this isn't a Postgres-only capability.
+
+### Targeting a partial unique index
+
+Postgres refuses to infer a **partial** unique index from an unpredicated
+`ON CONFLICT (<cols>)`, so targeting one requires restating its
+predicate. `.where_index("<predicate>")` attaches it:
+
+```rust
+client
+    .payment()
+    .upsert(input)
+    .on_conflict(
+        ConflictTarget::columns(&["idempotency_key"])
+            .where_index("idempotency_key IS NOT NULL"),
+    )
+    .run(&ctx)
+    .await?;
+```
+
+The predicate is a compile-time `&'static str`, the same
+no-runtime-value-path posture `@@index`'s `using` / `opclass` already
+take. It must match the predicate on the
+[`@@unique([...], where: "...")`](./field-attributes#partial-indexes)
+declaration that emitted the index.
+
+Pairing a predicate with `ConflictTarget::PrimaryKey` is a runtime
+`Validation` error rather than a silently dropped predicate — a primary
+key index is never partial. The invalid combination is deliberately
+representable so it is rejected with a message instead of being
+unwriteable.
+
+<Note>
+`ConflictTarget` grew from two variants to four in 0.8.14 and is now
+`#[non_exhaustive]`. Construction is unaffected — `PrimaryKey`,
+`Columns(...)` and the `.columns(..).where_index(..)` builder all work as
+before. Only external code that `match`es `ConflictTarget`
+**exhaustively without a wildcard arm** needs a `_ =>` arm added.
+</Note>
 
 There's still no query-builder helper for "look up by this tuple" —
 finding a row by its composite unique key is a hand-written `WHERE`
