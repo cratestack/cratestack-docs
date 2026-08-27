@@ -12,6 +12,9 @@ This reference covers every supported field-level attribute. Model-level
 [pagination](../guides/pagination) for `@@paged`,
 [auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`, and
 [composite keys](./composite-keys) for `@@id([...])` / `@@unique([...])`.
+Two model-level attributes are documented here because they have no
+dedicated guide: `@@internal(...)` (below) and `@@unique([...])`'s
+emitted DDL.
 
 ## Identity & Defaults
 
@@ -87,6 +90,81 @@ timestamps, computed totals). Use `@server_only` for columns clients
 should never see (internal risk scores, raw token blobs). Use `@pii` or
 `@sensitive` to control audit redaction without changing input/output
 surfaces.
+
+## Route suppression
+
+`@@internal("action")` is a model-level declaration that an action must
+never be reachable from the wire: no REST route, no RPC dispatch arm,
+and no client stub in any generated SDK, on either transport.
+
+```cstack
+model Widget {
+  id   String @id
+  name String
+
+  @@allow("create", auth().isSystem())
+  @@internal("create")
+}
+```
+
+It accepts one action per declaration, from the same vocabulary
+`@@allow` / `@@deny` use — so there is no second action vocabulary to
+learn:
+
+| Action     | Wire verbs suppressed                     |
+|------------|-------------------------------------------|
+| `"list"`   | `list`                                    |
+| `"detail"` | `get`                                     |
+| `"read"`   | `list`, `get`                             |
+| `"create"` | `create`                                  |
+| `"update"` | `update`                                  |
+| `"delete"` | `delete`                                  |
+| `"all"`    | `list`, `get`, `create`, `update`, `delete` |
+
+**Exactly one action per declaration.** `@@internal("create", "update")`
+is a compile error. Suppressing more than one action means writing more
+than one `@@internal("action")` line — the same repeated-declaration
+shape `@@allow` / `@@deny` already use. An action name outside the table
+above is also a compile error, naming the model and the bad action.
+
+### What suppression actually does
+
+Suppression is implemented as *emitting nothing*, so the observable
+behaviour is whatever axum does with a route that was never registered:
+
+* A suppressed verb on a path that still has surviving verbs gets axum's
+  own **`405 Method Not Allowed`**.
+* A model that suppresses every verb on a path never registers that path
+  at all — axum's own **`404`**.
+* A suppressed RPC op id falls into the pre-existing unknown-op-id arm
+  and returns the same `NotFound` a genuinely unknown op id gets,
+  including per-frame inside `POST /rpc/batch` (a suppressed op in one
+  frame does not poison sibling frames).
+
+The canonical case this unblocks is a model whose policy is fail-closed
+and correct but whose route could only ever `403` — `@@allow("create",
+auth().isSystem())` still generated a `POST` route and a `.create()`
+client method. `@@internal("create")` removes both.
+
+### Scope and limits
+
+* **Generation-time only.** Policy evaluation is untouched: a suppressed
+  action's `@@allow` / `@@deny` rules still compile and still gate
+  in-process callers, so a custom procedure calling `db.create()`
+  directly is still policy-checked exactly as before.
+* **Client input types follow.** `Create<Model>Input` /
+  `Update<Model>Input` are omitted from generated **client** SDKs when
+  the corresponding verb is suppressed. The server's own ORM-facing
+  input types are unaffected.
+* **Mock stubs follow.** [`generate-wiremock`](../tooling/generate-wiremock)
+  omits mappings for suppressed actions, so a mock never advertises a
+  contract the real server doesn't honour.
+* **Breaking, opt-in per action.** Adding `@@internal` to an action a
+  generated client already calls removes that client method — a compile
+  error at the call site on regeneration rather than a runtime `403`
+  discovered later. [`cratestack diff`](../tooling/schema-diff)
+  classifies that as Breaking. A model with no `@@internal` attribute
+  generates byte-identical output to before the feature existed.
 
 ## Optimistic locking
 

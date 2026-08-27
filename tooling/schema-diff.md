@@ -97,6 +97,9 @@ Each change lands in one of three buckets:
 * Retyping a field, argument, or return type.
 * Narrowing arity: optional → required, or introducing/removing a list (`[]`).
 * A procedure changing kind (`query` ↔ `mutation`) — the generated dispatch/HTTP method differs.
+* Adding [`@@internal("action")`](../reference/field-attributes#route-suppression) to a
+  model action — the route, the RPC dispatch arm and the generated client method all disappear, so a
+  PR that suppresses an action with live consumers fails the gate.
 
 ### Additive
 
@@ -106,14 +109,18 @@ Each change lands in one of three buckets:
   `@default(...)` in the current schema model, so adding a required procedure argument is always
   Breaking, regardless of any default.
 * Widening arity: required → optional.
+* Removing `@@internal("action")` — restoring a suppressed action adds a route and a client method
+  back. Additive for what a schema-only diff can observe: it cannot see a consumer's hand-written
+  replacement handler colliding with the regenerated route at the same path.
 
 ### Internal-only
 
-* Model-level attributes other than `@@paged` — `@@soft_delete`, `@@audit`, `@@retain(...)`,
-  `@@emit(...)`, [composite `@@id([...])` / `@@unique([...])`](../reference/composite-keys). These
-  affect server-side behavior or database constraints, not the shape of the response the client sees.
+* Model-level attributes other than `@@paged` and `@@internal(...)` — `@@soft_delete`, `@@audit`,
+  `@@retain(...)`, `@@emit(...)`, [composite `@@id([...])` / `@@unique([...])`](../reference/composite-keys).
+  These affect server-side behavior or database constraints, not the shape of the response the client sees.
   Each declared `@@unique([...])` is tracked as its own constraint — a model carrying several reports
-  each add/remove separately rather than collapsing them into one entry.
+  each add/remove separately rather than collapsing them into one entry. Each `@@internal("action")`
+  declaration is keyed independently for the same reason.
 
 ## Known gaps
 
