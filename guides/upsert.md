@@ -187,10 +187,22 @@ deliberate, banking-friendly sequence:
    `AuditOperation::Create`, no `before` snapshot, one statement, no extra
    round trip
 9. **No returned row means the probe lost a race**, and the winning row
-   has not been touched yet. The runtime re-enters the update branch
-   properly: lock the winner, run the update policy gate, capture a real
-   `before` snapshot, then issue the `DO UPDATE`. The outcome is
-   `Updated` / `AuditOperation::Update` with the winner's row as `before`
+   has not been touched yet. The runtime re-enters the update branch from
+   the top, re-running the same probe — which blocks until the winning
+   transaction commits, so it reads that transaction's final data:
+   - **Re-probe finds the winner** (the ordinary case) → run the update
+     policy gate, capture a real `before` snapshot, then `DO UPDATE`.
+     Outcome is `Updated` / `AuditOperation::Update` with the winner's
+     row as `before`
+   - **Re-probe still finds nothing** → the conflict is real but
+     invisible to the probe. `DO UPDATE` runs **without** the update
+     policy gate and the outcome is reported as `Inserted` / `Created`
+     with no `before`. Two causes: the winning row was deleted again
+     between the two statements (in which case the statement really did
+     insert, and `Inserted` is correct), or a soft-delete tombstone sits
+     at the conflict target — see
+     [below](#soft-deleted-rows-and-the-two-paths), where that second
+     case is a known defect rather than the correct answer
 10. **Enqueue the event and the audit entry** reflecting what the database
     actually did, then commit and drain the outbox
 
@@ -283,10 +295,12 @@ the probe step, and the two upsert paths diverge from there.
 <Warning>
 **The `DO UPDATE` path revives a tombstone and reports it as a create.**
 Because `select_for_update_by_conflict_target` deliberately treats a
-tombstone as "no row", a tombstone sitting at the conflict target is
-invisible to the probe, so the `DO UPDATE` un-deletes that row and
-returns `UpsertOutcome::Inserted` — with a `Created` event and
-`AuditOperation::Create`. This is a known defect, recorded in
+tombstone as "no row", a tombstone at the conflict target is invisible to
+**both** probes — the initial one and the re-probe in step 9 — so the
+`DO UPDATE` un-deletes that row and returns `UpsertOutcome::Inserted`,
+with a `Created` event and `AuditOperation::Create`. This is the second
+bullet of step 9: `before` is `None`, so the runtime reports an insert
+and the update policy gate does not run. This is a known defect, recorded in
 `upsert_resolve.rs` at the branch where it surfaces. It was explicitly
 left alone by [#745](https://github.com/cratestack/cratestack/issues/745),
 whose fix was scoped to the race path only; correcting it here would
