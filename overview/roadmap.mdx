@@ -62,7 +62,7 @@ Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialize
 
 ## Transport and codecs
 
-`transport rest`, `transport rpc`, and `transport grpc` are all shipped today — see [Current State](./current-state). `transport grpc` currently covers model CRUD only; procedures aren't wired into the generated gRPC service yet. The items below are the remaining deferred seams, not a list of missing transports.
+`transport rest` and `transport rpc` are both shipped today — see [Current State](./current-state). They are the only two transports: protobuf/gRPC support was removed in 0.8.5 ([ADR 0017](https://github.com/cratestack/cratestack/blob/main/docs/adr/0017-remove-grpc-protobuf.md)). The items below are the remaining deferred seams, not a list of missing transports.
 
 ### COSE transport envelope
 

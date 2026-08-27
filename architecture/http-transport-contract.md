@@ -24,8 +24,6 @@ This document covers the **REST and RPC HTTP bindings** specifically — the `tr
 
 This document does not define authentication or authorization behavior.
 
-`transport grpc` is a separate, already-shipped transport binding (protobuf over `tonic`/HTTP/2, not the JSON/CBOR-over-HTTP contract described here) and is out of scope for this document. See `./transport-architecture.md`'s "gRPC binding" section for where it is introduced.
-
 ## Transport Vocabulary
 
 Terms in this document follow `./transport-architecture.md`.

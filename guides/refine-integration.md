@@ -281,7 +281,7 @@ const resources = cratestackRefineResources(client);
 
 `--refine` is additive: every other generated file is byte-identical with
 and without it. It requires a REST schema and the default preset — the
-RPC and gRPC-Web clients don't share the REST client's `list(options)` /
+RPC clients don't share the REST client's `list(options)` /
 `CratestackFetchQuery` shape, and the `/swr` layout emits free functions
 rather than a client class for a resource to bind to.
 

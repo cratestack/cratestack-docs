@@ -2,16 +2,16 @@
 
 ## Status
 
-Mixed — the codec/framing/envelope architecture below is proposed-and-partially-spiked as originally written, but large parts of the client-generation surface it describes have since shipped and stabilized (Dart's Riverpod preset, TypeScript's additive `--swr` layout, `dart_mappable`-backed equality, gRPC clients in all three languages). Read this document for the transport/codec/framing contract and the FFI-bridge (`cratestack-client-flutter`) path specifically — for the *actual current default path* most Dart consumers use, see "Two Dart generation paths" immediately below before reading further.
+Mixed — the codec/framing/envelope architecture below is proposed-and-partially-spiked as originally written, but large parts of the client-generation surface it describes have since shipped and stabilized (Dart's Riverpod preset, TypeScript's additive `--swr` layout, `dart_mappable`-backed equality). Read this document for the transport/codec/framing contract and the FFI-bridge (`cratestack-client-flutter`) path specifically — for the *actual current default path* most Dart consumers use, see "Two Dart generation paths" immediately below before reading further.
 
 ## Two Dart generation paths — read this before the rest of the document
 
 This document was written around a single narrative: Dart never talks to HTTP directly, it goes through an FFI-ready Rust bridge (`cratestack-client-flutter`) that owns transport/codec/framing. That path is real and shipped — see the `cratestack-client-flutter` section below — but it is **not** what the `cratestack generate-dart` CLI's default and `--preset riverpod` output actually do today. Verified against the real generated templates (`crates/cratestack-client-dart/templates/rest-runtime.dart.j2`, `rpc_runtime/dio_cbor.dart.j2`, `dio_json.dart.j2`): generated Dart talks to the server **directly via `dio`**, with no Rust FFI bridge in the loop at all. Concretely, there are two independent paths, not one:
 
-1. **Dio-direct generated Dart** (`cratestack generate-dart`, default and `--preset riverpod`) — a `CratestackDioAdapter`/`CratestackRpcDioAdapter` wraps `dio` and talks HTTP directly; Rust is not in the runtime path. This is what most Dart/Flutter consumers use today. See `crates/cratestack-client-dart/README.md` for its real scope (both presets, plus native gRPC Dart client generation).
+1. **Dio-direct generated Dart** (`cratestack generate-dart`, default and `--preset riverpod`) — a `CratestackDioAdapter`/`CratestackRpcDioAdapter` wraps `dio` and talks HTTP directly; Rust is not in the runtime path. This is what most Dart/Flutter consumers use today. See `crates/cratestack-client-dart/README.md` for its real scope (both presets).
 2. **The Rust-FFI-bridge path** (`cratestack-client-flutter`) — for apps that specifically want Rust to own business logic, persistence, and transport, with Dart as UI only, communicating over an FFI bridge rather than issuing its own HTTP calls. This is what the rest of this document describes.
 
-Both are real and shipped; they are not sequential phases of the same effort, and a schema author doesn't choose between them via the schema — it's a choice of *which client generator/crate* to reach for. Neither the generated-layout options (TypeScript's additive `--swr`, Dart's `--preset riverpod`) nor the native gRPC client generators (Rust `tonic`, TypeScript gRPC-Web, Dart) are covered anywhere else in this document — see each language's own crate README for those.
+Both are real and shipped; they are not sequential phases of the same effort, and a schema author doesn't choose between them via the schema — it's a choice of *which client generator/crate* to reach for. The generated-layout options (TypeScript's additive `--swr`, Dart's `--preset riverpod`) are not covered anywhere else in this document — see each language's own crate README for those.
 
 ## Why this change
 
@@ -60,7 +60,6 @@ Responsibilities:
 6. request journaling and client-local persistence hooks
 7. an FFI-ready Rust bridge for Dart and Flutter wrappers
 8. additive selected `get/list` helpers that keep projecting through the canonical HTTP query contract
-9. an off-by-default `grpc` Cargo feature that generates `CratestackGrpcClient<T>` — a native `tonic`-based gRPC client, exposed to schema consumers as `cratestack_schema::grpc::Client<T = tonic::transport::Channel>`, mirroring `tonic-build`'s own generated client shape — for schemas declaring `transport grpc`. The feature is off by default because it pulls in `tonic` (and transitively `prost`, `h2`, `tower`); a REST/RPC-only consumer never pays for it. `CratestackGrpcClient::with_request_authorizer` attaches the same `RequestAuthorizer` convention the REST/RPC clients use, and errors surface as `GrpcClientError`, wrapping `tonic::Status` directly rather than decoding a body. Model CRUD only today: the server-side gRPC service gained procedure support (unary + server-streaming) in v0.7.2, but this generated client has no methods for `procedure` declarations yet — see `./transport-architecture.md`'s "gRPC binding" section (issue #171 tracks the client-side gap)
 
 ### `cratestack-client-flutter`
 
@@ -77,13 +76,12 @@ Responsibilities:
 
 ### `cratestack-client-dart`
 
-Owns generated Dart contracts and typed facades — for its default and `--preset riverpod` output, these talk to the server **directly via `dio`** (`CratestackDioAdapter`/`CratestackRpcDioAdapter`), not through the FFI bridge crate — see "Two Dart generation paths" at the top of this document. A separate native gRPC Dart client generator also lives in this crate.
-
+Owns generated Dart contracts and typed facades — for its default and `--preset riverpod` output, these talk to the server **directly via `dio`** (`CratestackDioAdapter`/`CratestackRpcDioAdapter`), not through the FFI bridge crate — see "Two Dart generation paths" at the top of this document. 
 Responsibilities:
 
 1. generated Dart models and inputs, with real `operator ==`/`hashCode` via `dart_mappable` in the `riverpod` preset (needed for Riverpod's family-provider argument-value caching)
 2. generated typed APIs and query builders, including canonical query params such as `fields`, `include`, `includeFields[path]`, `sort`, `limit`, `offset`, `where`, and legacy `or`
-3. a `dio`-backed adapter (default preset) or one `@riverpod` provider per operation (`--preset riverpod`) at the composition boundary — plus a separate native gRPC client generator for `transport grpc` schemas
+3. a `dio`-backed adapter (default preset) or one `@riverpod` provider per operation (`--preset riverpod`) at the composition boundary
 4. repo-managed MiniJinja templates that callers can override through a template directory
 5. generated field/include constant groups so callers can assemble safer `fields` and `include` selections without stringly-typed literals everywhere
 
