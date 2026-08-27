@@ -241,6 +241,40 @@ cd . && dart run build_runner build --delete-conflicting-outputs
 
 Re-run `build_runner` (or pass `--run-build-runner` again) every time you regenerate — its output tracks the *generated* source, is a build artifact rather than generator output, and should be gitignored in your own repo, so a fresh clone always needs this step before the package will analyze or build. The generated `pubspec.yaml` reflects the new dependencies either way: `cratestack_annotations` under `dependencies:` (runtime, zero transitive dependencies of its own), and `cratestack_builder` plus `build_runner` under `dev_dependencies:`.
 
+### These two are API floors, not the release version
+
+Both are emitted as **API-compatibility floors** — `^0.8.10`, naming the
+earliest release whose annotation surface the generated code actually
+needs — not as the version of CrateStack that generated the client
+([#754](https://github.com/cratestack/cratestack/issues/754)).
+
+They used to name the current workspace version. Because pub.dev
+publishing runs off a tag pushed *after* the version-bump PR merges, that
+meant every generated client spent each release cycle asking for a
+version pub.dev could not serve yet.
+
+Two consequences worth knowing:
+
+- **What you actually resolve is unchanged today.** Pub resolves
+  `>=0.8.10 <0.9.0` to the newest 0.8.x. After 0.9.0 ships, generated
+  clients keep resolving 0.8.x until the floor is deliberately raised —
+  staleness rather than breakage.
+- **Generator output no longer moves with the release.** Committed
+  snapshots and example clients survive a version bump instead of being
+  invalidated by it, which is why `just regen-examples --check` stays
+  green across one.
+
+The floors are backed by tests rather than comments: the emitted floor
+must be at least the one `cratestack_builder`'s own pubspec declares, and
+both must sit strictly below the current, not-yet-published workspace
+version.
+
+<Note>
+`cratestack_cbor` is **not** covered by this and still derives its
+emitted requirement from the release version — see [the CBOR
+codec](#the-cbor-codec) below.
+</Note>
+
 ## The CBOR codec
 
 CBOR encode/decode sits on every request a generated client makes. By default the generated package depends on [`cratestack_cbor`](https://pub.dev/packages/cratestack_cbor) (issue [#563](https://github.com/cratestack/cratestack/issues/563)) — the framework's own `cratestack-codec-cbor` Rust crate, bound through flutter_rust_bridge natively and wasm-bindgen on web. Because both sides are the same Rust codec the server uses, the wire bytes are identical across languages, the same property `@cratestack/cbor-node` and `@cratestack/cbor-web` give the JavaScript clients.
