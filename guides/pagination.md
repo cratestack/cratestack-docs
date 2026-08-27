@@ -104,10 +104,8 @@ Canonical shape: `cratestack_core::page::{Page, PageInfo}`.
 
 A non-`@@paged` model's list route is unaffected under REST and RPC — it
 keeps returning a bare array, and `limit`/`offset` have no special
-handling for it. **`transport grpc` schemas are the exception:** every
-model's `list` op returns `Page<Model>` under gRPC regardless of
-whether `@@paged` is declared — `@@paged` there only gates REST/RPC
-envelope shape, not a semantic switch a gRPC schema can opt out of.
+handling for it. REST and RPC are the only two transports, so this rule
+has no exceptions.
 
 ## Generated clients
 
@@ -232,7 +230,7 @@ await client.procedures.listFeed(
 
 ## Embedded (on-device) pagination
 
-Everything above describes the REST/RPC/gRPC server surface, but pagination
+Everything above describes the REST/RPC server surface, but pagination
 isn't limited to it. Every embedded (`cratestack-rusqlite`) model **and
 view** delegate exposes `.find_many(...).paginate(page: PageInput) ->
 Page<M>` unconditionally — `@@paged` is neither rejected nor required on

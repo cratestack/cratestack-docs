@@ -151,32 +151,11 @@ a `TrustedProxyConfig` is present but a request arrives with no
 this misconfiguration gets, and it only fires after step 2 is still
 missing at request time, not at boot.
 
-### gRPC needs the same treatment, on its own router
-
-A schema with `transport grpc` builds a **separate** `axum::Router` via
-`into_router()` — not the same router instance `router()` returns.
-Applying `TrustedProxyConfig` and `into_make_service_with_connect_info`
-to `router()` only protects REST/RPC traffic; gRPC requests go through
-`into_router()`'s own router entirely unaffected unless you wire both
-steps onto it too:
-
-```rust
-let grpc_router = cratestack_schema::grpc::into_router(db, procedures, JsonCodec, auth)
-    .layer(Extension(
-        TrustedProxyConfig::trusting(["10.0.0.0/8".parse().unwrap()]).max_hops(1),
-    ));
-
-let grpc_listener = tokio::net::TcpListener::bind(grpc_addr).await?;
-axum::serve(
-    grpc_listener,
-    grpc_router.into_make_service_with_connect_info::<SocketAddr>(),
-)
-.await?;
-```
-
-Both entry points reuse the same generated dispatch code internally, so
-the trust logic itself is identical — only the router instance, and
-therefore the bootstrap wiring, is separate.
+This section previously documented a second router that a `transport
+grpc` schema built via `into_router()`, needing the same two steps wired
+onto it separately. **Protobuf/gRPC support was removed in 0.8.5**
+([ADR 0017](https://github.com/cratestack/cratestack/blob/main/docs/adr/0017-remove-grpc-protobuf.md)),
+so there is only one router to protect: the one `router()` returns.
 
 ## What this does *not* fix: #416's rate-limit / idempotency fingerprint
 

@@ -5,7 +5,20 @@ description: Pick `transport rpc` in your `.cstack` schema to swap REST routes f
 
 # RPC transport
 
-A `.cstack` schema's `TransportStyle` has three variants — REST, RPC, and gRPC (`transport grpc`, its own `cratestack-grpc` crate and codegen). The default is REST — per-model `/users`, `/users/{id}`, `/$procs/<name>` routes, the shape this framework was built around. This guide covers the second style, **RPC** — a single `POST /rpc/{op_id}` route per callable, a `POST /rpc/batch` endpoint that takes N frames at a time, and content-negotiated streaming on the same unary route. gRPC is out of scope here; see its own docs if you're picking that binding. One binding per schema; the macro emits exactly one binding's worth of routes and client surface. There is no runtime flip and no schema runs both.
+A `.cstack` schema's `TransportStyle` has two variants — REST and RPC. The default is REST — per-model `/users`, `/users/{id}`, `/$procs/<name>` routes, the shape this framework was built around. This guide covers the second style, **RPC** — a single `POST /rpc/{op_id}` route per callable, a `POST /rpc/batch` endpoint that takes N frames at a time, and content-negotiated streaming on the same unary route. One binding per schema; the macro emits exactly one binding's worth of routes and client surface. There is no runtime flip and no schema runs both.
+
+<Note>
+There used to be a third variant. **Protobuf/gRPC support was removed in
+0.8.5** ([ADR 0017](https://github.com/cratestack/cratestack/blob/main/docs/adr/0017-remove-grpc-protobuf.md));
+`transport grpc` and the `@pb` attribute no longer parse at all. A schema
+still declaring it gets a compile error pointing here:
+
+```text
+`transport grpc` is no longer supported: protobuf/gRPC support was removed in 0.8.5
+(see docs/adr/0017-remove-grpc-protobuf.md). Migrate the schema to `transport rest`
+or `transport rpc` and regenerate its clients
+```
+</Note>
 
 This guide covers what the RPC binding does today and when to pick it. The full design is in [ADR 0005](../internals/rpc-transport-adr).
 
@@ -421,7 +434,7 @@ Two composition rules to keep straight:
 1. **`next` re-runs everything below it in the chain** — the real fetch *and* any links declared after it — never "just" the terminal fetch. That's what lets a retry link compose with an auth-refresh link declared earlier: calling `next` from the retry link re-invokes the auth-refresh link's own `next` chain on each attempt, not a shortcut straight to the network.
 2. **`stream()` calls bypass the chain entirely.** A link that wants to inspect a response body would need to clone/replay a streamed body, which defeats the point of streaming — so `call()` and `batch()` go through `links`, `stream()` doesn't. If you need logging or auth-refresh on streaming calls today, wrap the call site itself rather than relying on a link.
 
-This is **RPC-transport (`transport rpc`) only.** The REST binding (`transport rest`) and the gRPC-Web binding don't have a link chain yet — that's a future ticket, not an oversight.
+This is **RPC-transport (`transport rpc`) only.** The REST binding (`transport rest`) doesn't have a link chain yet — that's a future ticket, not an oversight.
 
 ### Automatic call coalescing with `@cratestack/api`
 

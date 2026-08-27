@@ -15,22 +15,21 @@ Current implementation has closed most of this document's original gap, though i
 
 Since this document was first written, CrateStack also ships a **second binding style** for `.cstack` schemas — see `./../internals/rpc-transport-adr.md` for the canonical ADR. The codec / framing / envelope layering below is unchanged and applies to both bindings; the addition is at the *routing* layer:
 
-1. A `.cstack` schema picks **one** generation style with the top-level `transport rest|rpc|grpc` directive. Default is `rest` (back-compat with everything written before the directive existed).
+1. A `.cstack` schema picks **one** generation style with the top-level `transport rest|rpc` directive. Default is `rest` (back-compat with everything written before the directive existed).
 2. `transport rpc` schemas mount `POST /rpc/{op_id}` (unary) and `POST /rpc/batch` instead of REST-shaped per-model routes. Streaming for `Sequence`-kind ops works on the same unary route via `Accept: application/cbor-seq` — same negotiated framing as below.
 3. Errors on the RPC binding go on the wire as `RpcErrorBody { code, message, details? }` with gRPC-style lowercase codes (`not_found`, `invalid_argument`, `permission_denied`, …) rather than the REST `CratestackErrorResponse` shape.
-4. `transport grpc` schemas pick a third generation style: `cratestack-proto` emits `.proto` message and enum definitions for the schema's types, backed by a field-number lockfile (`<schema>.pb.lock`) so wire numbers stay stable across schema edits, and `cratestack-grpc` mounts a hand-rolled `tonic` service (macro-generated protobuf mirror structs, mountable into an `axum::Router` via `cratestack_schema::grpc::into_router`) covering model CRUD **and procedures** (unary + list-arity server-streaming, shipped in v0.7.2 via #208). What's still missing is on the **client** side: none of the three generated gRPC clients (Rust, Dart, TypeScript) expose procedure methods yet — tracked as issue #171. See "gRPC binding" below for the full picture.
-5. `@@subscribe` model-event subscriptions shipped in v0.7.2 (#183, #390) over **Server-Sent Events**, not WebSocket — see "Subscriptions: shipped over SSE, not WebSocket" below. A true bidirectional WebSocket binding remains pending, gated on a concrete use case that needs client-to-server frames on the same channel.
+4. `@@subscribe` model-event subscriptions shipped in v0.7.2 (#183, #390) over **Server-Sent Events**, not WebSocket — see "Subscriptions: shipped over SSE, not WebSocket" below. A true bidirectional WebSocket binding remains pending, gated on a concrete use case that needs client-to-server frames on the same channel.
 
-## gRPC binding
+## gRPC binding — removed
 
-`transport grpc` is a third, already-shipped peer to `transport rest` and `transport rpc` — not an HTTP-JSON/CBOR binding but a protobuf-over-`tonic` one. It shipped in v0.4.14 ("Protobuf + gRPC support"), with a native Dart gRPC client generator following in v0.4.17.
-
-What it generates:
-
-1. **`.proto` definitions** — `cratestack-proto` owns the field-number lockfile and stable-numbering algorithm; it emits `.proto` message and enum definitions for the schema's types and does not itself contain a gRPC runtime.
-2. **Server-side gRPC service** — `cratestack-grpc` is the server-integration runtime, the gRPC sibling of `cratestack-axum`. It holds `CratestackError` → `tonic::Status` mapping, `tonic::metadata::MetadataMap` ↔ `http::HeaderMap` conversion so the existing header-driven `AuthProvider` ports unchanged, and unframed-body envelope canonicalization for request signing. Behind a Cargo `grpc` feature, it macro-generates protobuf mirror structs plus a hand-rolled `tonic` service covering model CRUD and procedures, mountable into an `axum::Router`: unary procedures get a `tonic::server::UnaryService` impl and list-arity procedures get a `ServerStreamingService` impl, both dispatched through the same handler function — and therefore the same policy/audit pipeline — that REST and RPC already call (shipped in v0.7.2, #208).
-3. **Native Rust gRPC client** — `cratestack-client-rust`'s `grpc` Cargo feature (off by default; it pulls in `tonic`, `prost`, `h2`, `tower`) generates `cratestack_schema::grpc::Client<T = tonic::transport::Channel>` on top of `CratestackGrpcClient<T>`, mirroring `tonic-build`'s own generated client shape. Errors surface as `GrpcClientError`, wrapping `tonic::Status` directly. Model CRUD only today: the generated client has no methods for `procedure` declarations even though the server now serves them behind the `UnaryService`/`ServerStreamingService` impls above — that client-side gap is what issue #171 tracks. See `./client-runtime.md` for the client-side crate split.
-4. **Dart gRPC client** — `generate-dart` gained a native gRPC client generator for `transport grpc` schemas in v0.4.17, with channel-shutdown and per-call option exposure on the generated client. Same scope limit as the Rust client: CRUD-only, no generated methods for `procedure` declarations (#171).
+`transport grpc` was a third binding style: protobuf over `tonic`, with
+`.proto` emission and a field-number lockfile, plus native gRPC clients
+for Rust and Dart. **It was removed in 0.8.5**
+([ADR 0017](https://github.com/cratestack/cratestack/blob/main/docs/adr/0017-remove-grpc-protobuf.md)).
+The `cratestack-grpc` and `cratestack-proto` crates are gone, `transport
+grpc` and `@pb` no longer parse, and REST and RPC are the only two
+bindings. This section is kept as a pointer for readers arriving from
+older material.
 
 ## Purpose
 
