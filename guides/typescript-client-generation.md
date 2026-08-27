@@ -34,6 +34,7 @@ cargo run -p cratestack-cli -- generate-typescript \
 | `--full-selection` | no | off | emit fully-required model interfaces instead of the projection-driven optional-everywhere default — see [Full selection: fully-required model types](#full-selection-fully-required-model-types) |
 | `--swr` | no | off | *additionally* emit a file-per-model layout with SWR hooks under `src/swr/`, alongside the default layout — see [Adding the SWR layout with `--swr`](#adding-the-swr-layout-with---swr) |
 | `--refine` | no | off | *additionally* emit `src/refine.ts`, the [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) resource manifest for the schema |
+| `--no-native-cbor` | no | off | RPC transport only: fall back to the pure-TypeScript `jsonRpcCodec` instead of the native [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) codec, which is the default — see [The CBOR codec](#the-cbor-codec) |
 
 The client class name is derived from `--package-name`: non-alphanumeric characters become spaces, the result is PascalCased, and `Client` is appended. `@example/blog-client` becomes `ExampleBlogClientClient`. Pick a package name with that in mind if the resulting class name matters to you.
 
@@ -205,7 +206,7 @@ This rule isn't configurable per call. If you need different invalidation, call 
 
 **Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/swr/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
 
-**Known gaps.** `--swr` doesn't support `transport grpc` schemas — tracked as a generator follow-up, not a permanent limitation. `@@paged` models are handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/swr/models/shared.ts`, same as the default layout.
+**Known gaps.** `--swr` doesn't support `transport grpc` schemas — tracked as a generator follow-up, not a permanent limitation. `@@paged` models are handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/swr/models/shared.ts`, same as the default layout. For `transport rpc` schemas, `--swr` also ignores the codec default entirely — `src/swr/runtime.ts` stays on `jsonRpcCodec` regardless of `--no-native-cbor` — see [The CBOR codec](#the-cbor-codec) below.
 
 ## Build the generated package
 
@@ -218,6 +219,8 @@ npm run build   # runs `tsc -p tsconfig.json`, emits dist/
 ```
 
 The generated `package.json` lists `@tanstack/react-query` as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks. With `--swr` the manifest additionally lists `swr` and `react`, needed only if you import a `.hooks` module — importing a model's plain functions or `src/swr/procedures.ts` needs neither.
+
+For a `transport rpc` schema, the manifest also lists `@cratestack/cbor` under real `dependencies` (not `peerDependencies`) — `npm install` pulls it in automatically, no opt-in step required — because the RPC runtime resolves it by default (see [The CBOR codec](#the-cbor-codec) below). Pass `--no-native-cbor` and that dependency is absent instead. REST-transport packages never carry it either way; `rest-runtime.ts.j2` has no codec seam.
 
 ## Full selection: fully-required model types
 
@@ -397,7 +400,7 @@ for await (const ping of client.runtime.stream<Ping>("procedure.manyPings", {}))
 }
 ```
 
-When the server picks the negotiated non-streaming codec (JSON by default — see below), the body is a single array decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, the runtime's own CBOR-sequence boundary scanner decodes and yields each item as it arrives on the wire — never after buffering the whole body first. A response that ends in the mid-stream error sentinel throws `CratestackRpcStreamError` instead of yielding a final item. See the [RPC transport guide's "Consuming streams" section](/guides/rpc-transport#consuming-streams) for the wire-level details and how this compares to the Rust/Flutter/dio client paths.
+When the server picks the negotiated non-streaming codec (CBOR by default — see below), the body is a single array decoded and yielded in one go. When the server picks `application/cbor-seq` for a genuinely-incremental `@stream` procedure, the runtime's own CBOR-sequence boundary scanner decodes and yields each item as it arrives on the wire — never after buffering the whole body first. A response that ends in the mid-stream error sentinel throws `CratestackRpcStreamError` instead of yielding a final item. See the [RPC transport guide's "Consuming streams" section](/guides/rpc-transport#consuming-streams) for the wire-level details and how this compares to the Rust/Flutter/dio client paths.
 
 `CratestackRpcClientOptions` also accepts a `links?: RpcLink[]` array for composing cross-cutting concerns (logging, retry, auth-refresh, automatic batch coalescing via `@cratestack/api`) in front of `call()`/`batch()` without one override clobbering another — see [RPC transport: client middleware](./rpc-transport#client-middleware-the-rpclink-chain) for the full design. `stream()` calls bypass `links` entirely.
 
@@ -424,18 +427,7 @@ That structural fit is what the `@cratestack/*` npm family builds on: twelve sma
 | [`@cratestack/cbor-web`](https://www.npmjs.com/package/@cratestack/cbor-web) | wasm-bindgen CBOR codec for browsers — async one-time WASM init, synchronous encode/decode after, backed by the same Rust `CborCodec`. |
 | [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) | Umbrella package: conditional `exports` auto-select `@cratestack/cbor-node` in Node or `@cratestack/cbor-web` in the browser behind one import path and one async `createCborCodec()` factory. |
 
-The generated RPC runtime's default codec is JSON (`this.codec = options.codec ?? jsonRpcCodec`, sending/expecting `application/json`) — a stock generated TypeScript client speaks JSON until you wire in something else. To switch a client to CBOR, pass `createCborCodec()`'s result as the `codec` option:
-
-```ts
-import { createCborCodec } from "@cratestack/cbor";
-import { ExampleWidgetClientClient } from "@example/widget-client";
-
-const client = new ExampleWidgetClientClient("https://api.example.com", {
-  codec: await createCborCodec(),
-});
-```
-
-(This is unrelated to the Rust client, `cratestack-client-rust`, which defaults to CBOR — see the side-by-side comparison below. The generated TypeScript RPC runtime's default is JSON.)
+See [The CBOR codec](#the-cbor-codec) below for what the generated RPC runtime resolves by default and how to opt back into JSON.
 
 ```ts
 import { createBatchLink, createLoggerLink } from "@cratestack/api";
@@ -461,6 +453,58 @@ import { rpcQueryOptions } from "@cratestack/api/adapter-tanstack-query";
 ```
 
 New projects can install the individual packages directly instead — smaller install, no unused peer dependencies pulled in through the umbrella. Every package in the family is scoped to RPC-transport generated clients; none of it applies to `transport rest` schemas, since the REST client has no `links`/`streamLinks` chain to plug into.
+
+## The CBOR codec
+
+By default, a generated `transport rpc` client resolves [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor)'s `createCborCodec()` (issue [#746](https://github.com/cratestack/cratestack/issues/746)) — the same umbrella package listed in the table above, auto-selecting `@cratestack/cbor-node` in Node or `@cratestack/cbor-web` in the browser. Because both sides are the same Rust `CborCodec` the server uses, the wire bytes are identical across languages, the same property `cratestack_cbor` gives the Dart client and `cratestack-client-rust` gives the Rust one. The default request/response `Content-Type`/`Accept` becomes `application/cbor` accordingly.
+
+The constructor stays synchronous even though `createCborCodec()` is async: the runtime lazily creates and memoizes the codec promise, awaiting it right after `buildHeaders()` on each call, and a *rejected* resolution is not memoized — a transient init failure retries on the next call rather than permanently bricking the runtime instance. `codec:` in `CratestackRpcClientOptions` still overrides synchronously and skips resolution entirely, exactly as before.
+
+Pass `--no-native-cbor` at generation time to opt back into the pure-TypeScript `jsonRpcCodec` (`application/json`) instead — the same escape hatch Dart's `--no-native-cbor` provides:
+
+```bash
+cargo run -p cratestack-cli -- generate-typescript \
+  --schema schema.cstack \
+  --out packages/widget-client \
+  --package-name @example/widget-client \
+  --no-native-cbor
+```
+
+Or keep the native default and pass `jsonRpcCodec` explicitly at the call site instead of regenerating:
+
+```ts
+import { jsonRpcCodec } from "@example/widget-client";
+import { ExampleWidgetClientClient } from "@example/widget-client";
+
+const client = new ExampleWidgetClientClient("https://api.example.com", {
+  codec: jsonRpcCodec,
+});
+```
+
+This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-rust`), Dart (`cratestack_cbor`, issue [#563](https://github.com/cratestack/cratestack/issues/563)), and TypeScript RPC clients all default to CBOR now. Only REST-transport TypeScript clients are unaffected: `rest-runtime.ts.j2` has no codec seam, so a REST client stays JSON-only regardless of this flag.
+
+### Platform support
+
+`@cratestack/cbor-node`'s native N-API binary is only vendored for some platforms:
+
+| Platform | Supported |
+|---|---|
+| macOS (x64, arm64) | yes |
+| Linux x64 (glibc) | yes |
+| Linux arm64 (glibc) | yes |
+| Windows x64 | yes |
+| Linux x64/arm64 (musl, e.g. Alpine) | **no** |
+| Windows arm64 | **no** |
+
+`@cratestack/cbor-web`'s wasm-bindgen build has no platform gap — it runs anywhere a browser or a WASM-capable JS runtime does.
+
+<Warning>
+  **Alpine (musl) and Windows arm64 are why `--no-native-cbor` exists for TypeScript.** A default-generated RPC client's `dependencies` on `@cratestack/cbor` resolves to `@cratestack/cbor-node` in Node, which has no prebuild for those two targets. If your deployment target is one of them, pass `--no-native-cbor` at generation time and the client falls back to the pure-TypeScript `jsonRpcCodec` — no native binary required, runs anywhere Node or a browser does.
+</Warning>
+
+<Warning>
+  **`--swr` ignores this default entirely — known bug, [#765](https://github.com/cratestack/cratestack/issues/765).** `src/swr/runtime.ts` renders from the same `rpc-runtime.ts.j2` template as `src/runtime.ts`, but through a `SwrSchemaContext` that has no `native_cbor` field, so every `{% if native_cbor %}` branch in the template is falsy there regardless of `--no-native-cbor`. Because `--swr` is *additive* (the default `src/` layout is always emitted alongside it), one generated package ends up with two runtimes on two different default codecs: `src/runtime.ts` defaults to `application/cbor`, `src/swr/runtime.ts` defaults to `application/json`. Measured on a real `--swr`-only run: 7 `createCborCodec` occurrences in `src/runtime.ts`, 0 in `src/swr/runtime.ts` — `package.json` lists `@cratestack/cbor` either way. In practice, the same operation goes out as CBOR through the default-layout client and as JSON through the `/swr` hooks; against a CBOR-only server, the SWR half of your app fails while the rest works. REST-transport `--swr` is unaffected — REST has no codec seam. Until #765 lands, don't mix `--swr` and the default layout against the same RPC server, or a server whose `CodecSet` doesn't also accept JSON.
+</Warning>
 
 ## Side-by-side: TypeScript, Dart, and Rust
 
@@ -644,6 +688,8 @@ format.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error contract across the generated clients today.
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
 - **`--swr` gap.** No `transport grpc` support yet — tracked as a generator follow-up. `@@paged` models are supported: `Page`/`PageInfo` are imported into every file that needs them, same as the default layout.
+- **Regenerating an existing RPC client silently switches its wire codec from JSON to CBOR.** Since issue [#746](https://github.com/cratestack/cratestack/issues/746), the native `@cratestack/cbor` codec — and `application/cbor` as the default `Content-Type`/`Accept` — is on by default for `transport rpc` schemas. Re-running `generate-typescript` against an `--out` directory generated before that change (or with an older CLI) upgrades it in place with no warning at generation time. Before regenerating a client that talks to a live server, confirm the server's `CodecSet` includes `CborCodec` (`CodecSet::new(CborCodec, JsonCodec)` — see [RPC transport](/guides/rpc-transport#mounting-the-router)) — a JSON-only `CodecSet` will reject the regenerated client with `406`/`415`. Otherwise pass `--no-native-cbor` to keep the client on JSON.
+- **`--swr` ignores `native_cbor` for `transport rpc` schemas — known bug, [#765](https://github.com/cratestack/cratestack/issues/765).** `src/swr/runtime.ts` renders from the same template as `src/runtime.ts` but through a context with no `native_cbor` field, so it always falls back to `jsonRpcCodec`/`application/json`, regardless of `--no-native-cbor`. Since `--swr` is additive, one generated package ends up with the default layout's `src/runtime.ts` defaulting to CBOR and `src/swr/runtime.ts` defaulting to JSON — the same operation is sent as CBOR through the plain client and JSON through the SWR hooks. REST-transport `--swr` is unaffected. See [The CBOR codec](#the-cbor-codec) for the full explanation until this is fixed upstream.
 
 ## See also
 

@@ -61,6 +61,17 @@ The router mounts two paths:
 - `POST /rpc/{op_id}` — unary for every CRUD verb + every procedure
 - `POST /rpc/batch` — sequence of `RpcRequest` frames
 
+<Warning>
+  **A JSON-only `CodecSet` will reject a default-generated TypeScript RPC client.** Since issue
+  [#746](https://github.com/cratestack/cratestack/issues/746), `cratestack generate-typescript`
+  defaults `transport rpc` clients to the native `@cratestack/cbor` codec, sending
+  `Content-Type: application/cbor` and `Accept: application/cbor`. If your router is mounted with
+  `CodecSet::new(JsonCodec)` alone — no `CborCodec` — those requests get `406`/`415` instead of a
+  response. Mount `CodecSet::new(CborCodec, JsonCodec)` as shown above, or generate the client with
+  `--no-native-cbor` if the server genuinely stays JSON-only. See [TypeScript client
+  generation](/guides/typescript-client-generation#the-cbor-codec) for the client side of this.
+</Warning>
+
 ## Op identity
 
 Every callable in a `transport rpc` schema gets a stable dotted id. The id is the only dispatch key and appears in the URL:

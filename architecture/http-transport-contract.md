@@ -271,6 +271,7 @@ Current repo reality:
 4. generated Axum metadata is publicly inspectable through `cratestack_schema::axum::ROUTE_TRANSPORTS`
 5. `catalog-service` wires generated routes with `CodecSet::new(CborCodec, JsonCodec)`, so its CrateStack-generated routes now support negotiated JSON and CBOR
 6. `catalog-service` does not currently have a list-returning generated procedure that exercises `application/cbor-seq`
+7. a router mounted with a JSON-only `CodecSet` (i.e. `CodecSet::new(JsonCodec)`, omitting `CborCodec`) now rejects a default-generated TypeScript RPC client with `406`/`415`, since `cratestack generate-typescript` defaults `transport rpc` clients to the native `@cratestack/cbor` codec (issue [#746](https://github.com/cratestack/cratestack/issues/746)) — see the warning in [RPC transport: Mounting the router](/guides/rpc-transport#mounting-the-router)
 
 
 ## Companion Document
