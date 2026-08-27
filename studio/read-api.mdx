@@ -44,18 +44,45 @@ that, and both are intended, not bugs:
   against a `[target.db]` target. A `@sensitive` or role-gated field
   is readable through Studio's HTTP API by anyone who can reach it —
   unauthenticated, regardless of what the schema's policies declare.
+- **[`@@internal(...)`](../reference/field-attributes#route-suppression)
+  route suppression is not enforced either.** A model whose `create` is
+  suppressed with `@@internal("create")` — or denied outright by an
+  `@@allow` rule — is still creatable through
+  `POST /api/targets/{key}/models/{model}/records` on an `rw`
+  `[target.db]` target. Suppression is a generation-time routing
+  decision about the *generated API*; a direct SQL connection sits
+  beneath it, the way `psql` does.
 - Writes additionally bypass `@version` bumping and `@@emit(...)`
   event-outbox rows; see [the unsafe-write
   guard](./write-api#the-unsafe-write-guard) on the write API page.
 
-`[target.api]` targets don't have this gap: they proxy through the
-deployed service's own generated routes, which apply `@@allow` (and
-`@version`/`@@emit`) exactly as declared in the schema. Prefer
-`[target.api]` for a schema whose policies you need enforced, and
-scope which network can reach a `[target.db]`-backed Studio instance
-accordingly — Studio binds `127.0.0.1:7878` by default, which keeps it
-off the network unless you deliberately rebind it or put it behind a
-proxy.
+The only pre-flight checks on a `[target.db]` write are `TargetMode::Rw`,
+the `@version`/`@@emit` write-routability guard, and its
+`allow_unsafe_writes` opt-in. Making Studio enforce `@@internal` while
+`@@allow` stayed unenforced was considered and rejected as the arbitrary
+half of the change.
+
+An **`[target.api]`-only** target is the opposite and gets both for free:
+it issues ordinary HTTP requests against the deployed service's generated
+routes — the same surface the TypeScript and Dart clients consume — so a
+suppressed verb has no route to call (`405`, or `404` when every verb on
+the path is suppressed) and policies are evaluated server-side against the
+identity in `[target.api].auth`.
+
+<Warning>
+**`[target.db]` wins when a target declares both.** The workspace loader
+takes `[target.db]` whenever the target declares one, so a target carrying
+both blocks is a `[target.db]` target for **every** read and write.
+Adding `[target.api]` alongside an existing `[target.db]` buys no
+enforcement — to get policy and route-suppression enforcement, the target
+must declare `[target.api]` and **no** `[target.db]`.
+</Warning>
+
+Prefer an `[target.api]`-only target for a schema whose policies you need
+enforced, and scope which network can reach a `[target.db]`-backed Studio
+instance accordingly — Studio binds `127.0.0.1:7878` by default, which
+keeps it off the network unless you deliberately rebind it or put it
+behind a proxy.
 
 ## Endpoints
 
