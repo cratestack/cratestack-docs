@@ -174,18 +174,47 @@ deliberate, banking-friendly sequence:
    must permit the call, against the input values plus defaults
 4. **Begin transaction**, ensure outbox / audit tables exist
 5. **Probe with `SELECT … FOR UPDATE`** on the primary key — this both
-   discriminates insert vs. update *and* serializes concurrent upserts on
+   predicts insert vs. update *and* serializes concurrent upserts on
    the same key
 6. If the probe found a row → evaluate the **update policy** against the
-   live row. Denial is indistinguishable from a missing row, matching
-   ordinary `.update(...)` semantics.
-7. Execute `INSERT … ON CONFLICT (<pk>) DO UPDATE SET …` and read the
-   resulting row back via `RETURNING`
-8. **Enqueue the appropriate event** — `Created` if the probe saw no row,
-   `Updated` otherwise — into the event outbox
-9. **Enqueue the audit event** with the `before` snapshot from the probe
-   (`None` on the insert branch) and the `after` snapshot from `RETURNING`
-10. Commit, then drain the outbox
+   live row, capture the `before` snapshot, and run `DO UPDATE`. Denial is
+   indistinguishable from a missing row, matching ordinary `.update(...)`
+   semantics.
+7. If the probe found **no** row → execute
+   `INSERT … ON CONFLICT (<target>) DO NOTHING RETURNING …`, so the
+   database itself answers "did I actually insert?"
+8. **A returned row means a genuine insert** — `Created`,
+   `AuditOperation::Create`, no `before` snapshot, one statement, no extra
+   round trip
+9. **No returned row means the probe lost a race**, and the winning row
+   has not been touched yet. The runtime re-enters the update branch
+   properly: lock the winner, run the update policy gate, capture a real
+   `before` snapshot, then issue the `DO UPDATE`. The outcome is
+   `Updated` / `AuditOperation::Update` with the winner's row as `before`
+10. **Enqueue the event and the audit entry** reflecting what the database
+    actually did, then commit and drain the outbox
+
+<Note>
+**Why the database decides, not the probe** ([#745](https://github.com/cratestack/cratestack/issues/745)).
+Before 0.8.14 the Created-vs-Updated decision came from the pre-statement
+probe and was never reconciled against what actually happened. When a
+concurrent transaction committed a conflicting row in the gap, Postgres
+serialized on the unique index and performed a genuine **UPDATE** — but
+the runtime still emitted a `Created` event and wrote
+`AuditOperation::Create` with a `null` before-snapshot, and skipped the
+update-policy gate entirely. The returned row was correct; the audit
+trail and event stream described something that never happened.
+
+Nothing changed off the race path: the uncontended insert and the
+probe-predicted update emit exactly what they always did, and
+`UpsertOutcome`'s public shape is unchanged.
+
+This is deliberately **not** implemented with `RETURNING (xmax = 0)`,
+which classifies correctly but only *after* the prior row has been
+overwritten and is unrecoverable — and is a Postgres storage detail with
+no counterpart elsewhere, where `ON CONFLICT DO NOTHING … RETURNING` is
+documented behaviour SQLite mirrors verbatim.
+</Note>
 
 The extra round-trip for `SELECT … FOR UPDATE` is the price of clean
 event / audit semantics without leaning on Postgres `xmax` — keeping the
@@ -246,15 +275,31 @@ what makes "return what the probe found, untouched" safe without a second statem
    before the fallback read completes, the call returns `CratestackError::Conflict` rather than
    inventing a result; retry the call.
 
-### Soft-deleted rows are not silently revived
+### Soft-deleted rows and the two paths
 
 Models with `@@soft_delete` treat tombstoned rows as "not present" for
-the probe step. The INSERT branch then trips the primary-key uniqueness
-constraint and the upsert fails — the framework refuses to silently
-un-tombstone a row that an operator deleted. Callers who genuinely need
-revive-on-upsert semantics should issue an explicit update that sets
-`deleted_at = NULL`; we may add a `.revive_soft_deleted()` opt-in later
-if a real use case appears.
+the probe step, and the two upsert paths diverge from there.
+
+<Warning>
+**The `DO UPDATE` path revives a tombstone and reports it as a create.**
+Because `select_for_update_by_conflict_target` deliberately treats a
+tombstone as "no row", a tombstone sitting at the conflict target is
+invisible to the probe, so the `DO UPDATE` un-deletes that row and
+returns `UpsertOutcome::Inserted` — with a `Created` event and
+`AuditOperation::Create`. This is a known defect, recorded in
+`upsert_resolve.rs` at the branch where it surfaces. It was explicitly
+left alone by [#745](https://github.com/cratestack/cratestack/issues/745),
+whose fix was scoped to the race path only; correcting it here would
+change behaviour off that path.
+
+`.do_nothing()` does **not** share the defect — it surfaces a `Conflict`
+for the same shape.
+
+If a model uses `@@soft_delete` and you upsert on a conflict target that
+tombstones can occupy, don't rely on the outcome flag to mean "this row
+is new". Issue an explicit update setting `deleted_at = NULL` when you
+genuinely want revive-on-upsert semantics.
+</Warning>
 
 ### Auth-derived defaults are insert-only
 
