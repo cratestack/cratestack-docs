@@ -209,14 +209,25 @@ both:
 
 - **`[target.db]` only** — Studio opens its own sqlx pool. Best for
   schemas without a running service, or when you want to bypass
-  application-level RBAC for debugging.
+  application-level RBAC for debugging. Note that "bypass" is literal:
+  no `@@allow`/`@@deny` and no `@@internal(...)` suppression is enforced
+  on this channel.
 - **`[target.api]` only** — Studio proxies through your deployed
   CrateStack service. Same auth and policy the service enforces in
   production. Pick this for shared environments where direct DB access
   is undesirable.
-- **Both** — Studio uses the DB for browsing and routes procedures
-  (and anything in `prefer_for`) through the API. The DB pool is
-  read-only unless the target also has `mode = "rw"`.
+- **Both** — the target is a **`[target.db]` target for every read and
+  write**. The workspace loader takes `[target.db]` whenever the target
+  declares one and falls back to `[target.api]` only when there is no
+  `[target.db]` block at all, so adding `[target.api]` alongside buys no
+  policy or route-suppression enforcement. See
+  [`[target.db]` is a direct database connection](./read-api#target-db-is-a-direct-database-connection).
+
+  <Warning>
+  `[target.api].prefer_for` is **parsed but not consulted by anything
+  today** — it does not redirect procedures, reads or writes to the API.
+  Don't configure it expecting a split channel.
+  </Warning>
 
 ## Read-only vs read/write
 
