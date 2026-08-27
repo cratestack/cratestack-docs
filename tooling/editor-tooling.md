@@ -27,14 +27,60 @@ Implemented in this repo today:
 
 Implemented `.cstack` editor features:
 
-* diagnostics
+* diagnostics — **all independent errors at once**, not one per save
 * hover
 * completion
-* go-to-definition
+* go-to-definition, including enums and mixins
+* find-all-references (`textDocument/references`)
+* rename (F2), with `prepareRename` so the editor can refuse an invalid rename before showing the input box
+* semantic tokens (`textDocument/semanticTokens/full`)
 * document symbols
+* document highlight
 * basic syntax highlighting through the bundled TextMate grammar
 * relation-aware definition lookup inside `@relation(fields:[...],references:[...])`
 * narrower relation diagnostics that point at the bad relation token instead of only the whole declaration line
+
+### Semantic tokens
+
+The TextMate grammar cannot tell `String` (a builtin scalar), `User` (a
+model), `Role` (an enum) and `Timestamps` (a mixin) apart — to a regex
+they are four bare capitalised words. The server re-colours identifiers
+by what they actually resolve to:
+
+| Schema construct   | Token type   |
+|--------------------|--------------|
+| model              | `struct`     |
+| enum               | `enum`       |
+| enum variant       | `enumMember` |
+| mixin              | `interface`  |
+| builtin scalar     | `type`       |
+| field, `@relation` column | `property` |
+| procedure          | `function`   |
+| procedure argument | `parameter`  |
+
+Tokens **supplement** the grammar rather than replace it. VS Code has no
+tree-sitter API for third-party languages, so the grammar keeps handling
+keywords, strings and comments — available instantly, before the server
+starts — and the server layers resolved identifier colouring on top.
+Only an attribute's `@name` head is a decorator, so columns named inside
+`@relation(fields: [...], references: [...])` keep colouring as the
+properties they are.
+
+### Features survive a syntax error
+
+A failed parse used to drop the schema entirely, so every feature needing
+one flickered off keystroke by keystroke while typing — a file spends
+most of its editing life invalid. The server now retains the last schema
+that parsed *together with the exact text it was parsed from*, because
+spans index into the text that produced them: resolving a retained span
+against the current buffer would land in the wrong place while still
+looking like working navigation.
+
+Two limits are deliberate. **Diagnostics always describe the current
+text**, so a retained schema never suppresses a live error. And a
+document that has never parsed keeps nothing. Because a result can now
+legitimately predate what is on screen, hover marks a stale popup with a
+one-line note rather than presenting it as current.
 
 Implemented Rust-side editor improvements:
 
@@ -45,7 +91,8 @@ Current limitations:
 
 * the parser still validates an initial schema subset rather than the full target grammar described across the broader docs
 * Rust-side support is still project-dependent and requires real Cargo context
-* the LSP does not yet implement rename, references, formatting, semantic tokens, or code actions
+* the LSP does not yet implement formatting or code actions
+* parsing has no error recovery, so a **syntax** error still yields exactly one diagnostic — the multi-error reporting above applies to semantic validation, where declarations are independent
 * the VS Code extension prefers a bundled server binary when one is staged, but it does not yet auto-download release binaries
 
 ## Rust Setup In VS Code
@@ -156,10 +203,12 @@ This gives reasonable confidence that the current editor stack works end to end,
 Highest-value follow-up work:
 
 1. Add code actions for common relation mistakes, especially missing `fields` / `references` targets and simple typo recovery.
-2. Add semantic tokens so schema highlighting is less dependent on the TextMate grammar alone.
-3. Add rename, find-references, and document-wide symbol search on top of the precise spans now carried in the schema model.
-4. Add stronger extension-host end-to-end tests that assert definition, hover, and diagnostics through the actual VS Code APIs.
-5. Add a marketplace icon to `packages/cratestack-vscode/package.json` — `.vscodeignore`, `license`, and `repository` metadata are already in place, but there's still no `icon` field.
+2. Add formatting (`textDocument/formatting`) for `.cstack` files.
+3. Add stronger extension-host end-to-end tests that assert definition, hover, and diagnostics through the actual VS Code APIs.
+4. Add a marketplace icon to `packages/cratestack-vscode/package.json` — `.vscodeignore`, `license`, and `repository` metadata are already in place, but there's still no `icon` field.
+
+Semantic tokens, rename and find-references were on this list and have
+since shipped — see [Current State](#current-state).
 
 Likely medium-term work:
 
