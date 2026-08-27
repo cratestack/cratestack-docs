@@ -96,10 +96,13 @@ audit log with a flag distinguishing it from an ordinary write, so
 fact. Prefer `[target.api]` when the schema declares `@version` or
 `@@emit(...)` you need enforced.
 
-See also [the read API's note on `@@allow` and `@sensitive`
-enforcement](./read-api#target-db-is-a-direct-database-connection) —
-the same "`[target.db]` is not the generated API" caveat applies to
-reads, not just writes.
+See also [the read API's note on `@@allow`, `@@internal` and
+`@sensitive` enforcement](./read-api#target-db-is-a-direct-database-connection)
+— the same "`[target.db]` is not the generated API" caveat applies to
+reads, not just writes. In particular, a model action suppressed with
+`@@internal(...)` is still writable here, and a target declaring both
+`[target.db]` and `[target.api]` is a `[target.db]` target for every
+write.
 
 ## Validators
 
