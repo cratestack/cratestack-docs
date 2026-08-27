@@ -206,7 +206,22 @@ This rule isn't configurable per call. If you need different invalidation, call 
 
 **Type ownership.** A type referenced by exactly one model is defined inline in that model's own file. A type referenced by two or more models, referenced only by a procedure, or declared but unused, lives in `src/swr/models/shared.ts` and is imported by its consumers instead. A relation field that references another model's own type (e.g. `author: User` on a `Post`) is always imported with `import type`, never a value import, so two models that reference each other can only ever produce a type-only import cycle — which TypeScript tolerates — never a runtime one.
 
-**Known gaps.** `@@paged` models are handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/swr/models/shared.ts`, same as the default layout. For `transport rpc` schemas, `--swr` also ignores the codec default entirely — `src/swr/runtime.ts` stays on `jsonRpcCodec` regardless of `--no-native-cbor` — see [The CBOR codec](#the-cbor-codec) below.
+**A procedure may not share a name with a generated model function.** `--swr` is the only layout that exports a model's CRUD operations as top-level free functions (`listPosts`, `getPost`, `createPost`, …, derived from the model name), and its `src/swr/index.ts` barrel re-exports both `./models/<model>.js` and `./procedures.js`. A schema with `model Post` **and** `procedure listPosts` therefore puts two bindings of the same name into one barrel:
+
+```text
+TS2308: Module "./models/post.js" has already exported a member named 'listPosts'
+```
+
+Generation used to exit `0` and leave that for the consumer's own build to discover. Since 0.8.14, `generate-typescript --swr` **refuses the schema up front**, before writing any file, naming the procedure, the model, the operation and the shared identifier. Details:
+
+- The check normalizes to camelCase, so `procedure list_posts` is caught too — not just an already-camelCase spelling.
+- **Suppressed operations are exempt.** A name kept out of the generated file by [`@@internal`](/reference/field-attributes#route-suppression) or a missing `create` rule cannot collide.
+- `get<Model>WithResponse` is checked for REST schemas only; the RPC template never emits it.
+- Only `--swr` is affected. The default layout exposes model operations as methods on per-model classes (`client.post.list(...)`), so there is nothing for a top-level procedure function to collide with. `--refine` adds no comparable surface. `--tanstack` has the same category of hazard structurally but is not covered by this check.
+
+Rename the procedure (or the model) to resolve it.
+
+**Known gaps.** `@@paged` models are handled correctly: every file that needs it imports `Page`/`PageInfo` from `src/swr/models/shared.ts`, same as the default layout. For `transport rpc` schemas, `--swr`'s `src/swr/runtime.ts` honours the CBOR default and `--no-native-cbor` identically to the default layout's `src/runtime.ts` — since 0.8.14, see [The CBOR codec](#the-cbor-codec) below.
 
 ## Build the generated package
 
@@ -503,7 +518,7 @@ This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-r
 </Warning>
 
 <Warning>
-  **`--swr` ignores this default entirely — known bug, [#765](https://github.com/cratestack/cratestack/issues/765).** `src/swr/runtime.ts` renders from the same `rpc-runtime.ts.j2` template as `src/runtime.ts`, but through a `SwrSchemaContext` that has no `native_cbor` field, so every `{% if native_cbor %}` branch in the template is falsy there regardless of `--no-native-cbor`. Because `--swr` is *additive* (the default `src/` layout is always emitted alongside it), one generated package ends up with two runtimes on two different default codecs: `src/runtime.ts` defaults to `application/cbor`, `src/swr/runtime.ts` defaults to `application/json`. Measured on a real `--swr`-only run: 7 `createCborCodec` occurrences in `src/runtime.ts`, 0 in `src/swr/runtime.ts` — `package.json` lists `@cratestack/cbor` either way. In practice, the same operation goes out as CBOR through the default-layout client and as JSON through the `/swr` hooks; against a CBOR-only server, the SWR half of your app fails while the rest works. REST-transport `--swr` is unaffected — REST has no codec seam. Until #765 lands, don't mix `--swr` and the default layout against the same RPC server, or a server whose `CodecSet` doesn't also accept JSON.
+  **Regenerating a `--swr` + `transport rpc` client changes its wire codec from JSON to CBOR.** Until 0.8.14, `src/swr/runtime.ts` ignored `native_cbor` entirely and always emitted the `jsonRpcCodec` fallback, so a `--swr` package shipped two runtimes that disagreed: `src/runtime.ts` on `application/cbor`, `src/swr/runtime.ts` on `application/json`. [#765](https://github.com/cratestack/cratestack/issues/765) fixed that — both runtimes now resolve `createCborCodec()` by default, and `--no-native-cbor` turns both off identically. This is the same breaking change [#752](https://github.com/cratestack/cratestack/issues/752) already made for the default layout, now applied to `--swr` for real: a server on a JSON-only `CodecSet` will reject a regenerated `--swr` client with `406`/`415`. Confirm the server accepts CBOR before regenerating, or pass `--no-native-cbor`. Anyone relying on the previous split behaviour was relying on the bug.
 </Warning>
 
 ## Side-by-side: TypeScript, Dart, and Rust
@@ -688,7 +703,6 @@ format.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error contract across the generated clients today.
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
 - **Regenerating an existing RPC client silently switches its wire codec from JSON to CBOR.** Since issue [#746](https://github.com/cratestack/cratestack/issues/746), the native `@cratestack/cbor` codec — and `application/cbor` as the default `Content-Type`/`Accept` — is on by default for `transport rpc` schemas. Re-running `generate-typescript` against an `--out` directory generated before that change (or with an older CLI) upgrades it in place with no warning at generation time. Before regenerating a client that talks to a live server, confirm the server's `CodecSet` includes `CborCodec` (`CodecSet::new(CborCodec, JsonCodec)` — see [RPC transport](/guides/rpc-transport#mounting-the-router)) — a JSON-only `CodecSet` will reject the regenerated client with `406`/`415`. Otherwise pass `--no-native-cbor` to keep the client on JSON.
-- **`--swr` ignores `native_cbor` for `transport rpc` schemas — known bug, [#765](https://github.com/cratestack/cratestack/issues/765).** `src/swr/runtime.ts` renders from the same template as `src/runtime.ts` but through a context with no `native_cbor` field, so it always falls back to `jsonRpcCodec`/`application/json`, regardless of `--no-native-cbor`. Since `--swr` is additive, one generated package ends up with the default layout's `src/runtime.ts` defaulting to CBOR and `src/swr/runtime.ts` defaulting to JSON — the same operation is sent as CBOR through the plain client and JSON through the SWR hooks. REST-transport `--swr` is unaffected. See [The CBOR codec](#the-cbor-codec) for the full explanation until this is fixed upstream.
 
 ## See also
 
