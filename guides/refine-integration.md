@@ -67,6 +67,8 @@ const client = new ExampleApiClientClient("https://api.example.com", { basePath:
 const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
 ```
 
+This client defaults to the native `@cratestack/cbor` codec unless the schema was generated with `--no-native-cbor` — see [The CBOR codec](/guides/typescript-client-generation#the-cbor-codec) for what that means for a server whose `CodecSet` doesn't include `CborCodec`.
+
 ### RPC with logging and batching
 
 RPC clients accept a `links` chain. `createBatchLink` collapses calls
