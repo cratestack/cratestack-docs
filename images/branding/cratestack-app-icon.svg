@@ -1,0 +1,28 @@
+<!--
+  App icon: the mark on its #1E222E tile.
+
+  Geometry measured from the shipped mark (icon.png), not eyeballed — see
+  gen-svg.py in the brand asset tooling. All CrateStack marks share one
+  definition so the app icon, logomark and file icons cannot drift apart.
+  The tile belongs to THIS asset only, never to a file icon.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img">
+  <title>CrateStack app icon</title>
+
+  <rect width="256" height="256" rx="56" fill="#1E222E"/>
+
+  <!-- bottom crate -->
+  <polygon points="127.5,115 204,152 127.5,189 51,152" fill="#F7B270"/>
+  <polygon points="51,152 127.5,189 127.5,225 51,188" fill="#E88A3A"/>
+  <polygon points="204,152 127.5,189 127.5,225 204,188" fill="#BF6A26"/>
+
+  <!-- middle crate -->
+  <polygon points="127.5,74 204,111 127.5,148 51,111" fill="#F7B270"/>
+  <polygon points="51,111 127.5,148 127.5,184 51,147" fill="#E88A3A"/>
+  <polygon points="204,111 127.5,148 127.5,184 204,147" fill="#BF6A26"/>
+
+  <!-- top crate -->
+  <polygon points="127.5,33 204,70 127.5,107 51,70" fill="#F7B270"/>
+  <polygon points="51,70 127.5,107 127.5,143 51,106" fill="#E88A3A"/>
+  <polygon points="204,70 127.5,107 127.5,143 204,106" fill="#BF6A26"/>
+</svg>
