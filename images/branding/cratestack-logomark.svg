@@ -1,0 +1,25 @@
+<!--
+  Logomark: the mark alone, transparent ground, tightly cropped.
+
+  Geometry measured from the shipped mark (icon.png), not eyeballed — see
+  gen-svg.py in the brand asset tooling. All CrateStack marks share one
+  definition so the app icon, logomark and file icons cannot drift apart.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 208.0 208.0" width="512" height="512" role="img">
+  <title>CrateStack logomark</title>
+
+  <!-- bottom crate -->
+  <polygon points="104,90 180.5,127 104,164 27.5,127" fill="#F7B270"/>
+  <polygon points="27.5,127 104,164 104,200 27.5,163" fill="#E88A3A"/>
+  <polygon points="180.5,127 104,164 104,200 180.5,163" fill="#BF6A26"/>
+
+  <!-- middle crate -->
+  <polygon points="104,49 180.5,86 104,123 27.5,86" fill="#F7B270"/>
+  <polygon points="27.5,86 104,123 104,159 27.5,122" fill="#E88A3A"/>
+  <polygon points="180.5,86 104,123 104,159 180.5,122" fill="#BF6A26"/>
+
+  <!-- top crate -->
+  <polygon points="104,8 180.5,45 104,82 27.5,45" fill="#F7B270"/>
+  <polygon points="27.5,45 104,82 104,118 27.5,81" fill="#E88A3A"/>
+  <polygon points="180.5,45 104,82 104,118 180.5,81" fill="#BF6A26"/>
+</svg>
