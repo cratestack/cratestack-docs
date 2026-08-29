@@ -186,6 +186,8 @@ Current release flow:
 
 The VSIX packaging step uses `vsce --no-dependencies` because the extension ships a small JavaScript wrapper plus the staged server binary rather than relying on npm dependency scanning to decide runtime contents.
 
+Listing metadata is in place: alongside `.vscodeignore`, `license`, and `repository`, `package.json` declares an `icon` (`packages/cratestack-vscode/icon.png`, a 256×256 PNG) and a matching `galleryBanner`. Neither the Marketplace nor Open VSX requires an icon to accept a publish, so without one both listings — and the in-editor Extensions sidebar after a manual VSIX install — fall back to a generic placeholder. The field is platform-independent, so every per-target VSIX carries it without extra work.
+
 ## Verification In Repo
 
 Covered today:
@@ -205,10 +207,10 @@ Highest-value follow-up work:
 1. Add code actions for common relation mistakes, especially missing `fields` / `references` targets and simple typo recovery.
 2. Add formatting (`textDocument/formatting`) for `.cstack` files.
 3. Add stronger extension-host end-to-end tests that assert definition, hover, and diagnostics through the actual VS Code APIs.
-4. Add a marketplace icon to `packages/cratestack-vscode/package.json` — `.vscodeignore`, `license`, and `repository` metadata are already in place, but there's still no `icon` field.
 
 Semantic tokens, rename and find-references were on this list and have
-since shipped — see [Current State](#current-state).
+since shipped — see [Current State](#current-state). So has the marketplace
+icon — see [Packaging And Release Flow](#packaging-and-release-flow).
 
 Likely medium-term work:
 
