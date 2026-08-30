@@ -48,6 +48,7 @@
               "guides/offline-first-sqlite",
               "guides/async-io-with-embedded-sqlite",
               "guides/materialized-views",
+              "guides/spatial-postgis",
               "guides/find-many",
               "guides/computed-fields",
               "guides/prepared-statements-and-caching",

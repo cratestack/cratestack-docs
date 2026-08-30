@@ -27,6 +27,27 @@ representation.
 Type modifiers `?` (optional) and `[]` (list) apply on top of any scalar
 where the underlying SQL type supports it.
 
+## Extension scalars
+
+Three further scalars exist only when the schema declares the matching
+`extension` block **and** the consuming crate enables the same-named
+Cargo feature. Declaring the block without the feature is a
+`compile_error!`, not a silent no-op.
+
+| Scalar | Extension | Rust type | Postgres type |
+|---|---|---|---|
+| `Vector(n)` | `extension pgvector { }` | `Vec<f32>` | `vector(n)` |
+| `Geography(...)` | `extension postgis { }` | `Vec<u8>` (EWKB) | `geography(...)` |
+| `Geometry(...)` | `extension postgis { }` | `Vec<u8>` (EWKB) | `geometry(...)` |
+
+All three are Postgres-only: `include_embedded_schema!` rejects both
+extensions outright, since the rusqlite backend has neither pgvector nor
+SpatiaLite. None may be list-valued, and none is accepted in a procedure
+signature.
+
+See [Spatial Columns (PostGIS)](../guides/spatial-postgis) for the
+geography/geometry argument forms, generated DDL and query builders.
+
 ## Decimal
 
 The `Decimal` scalar exists specifically so banking code does **not** end
