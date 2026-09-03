@@ -383,9 +383,13 @@ Every error on the RPC binding — whether raised inside the dispatcher (decode 
 }
 ```
 
-The `code` field uses **gRPC-style lowercase strings**: `not_found`, `invalid_argument`, `permission_denied`, `failed_precondition`, `conflict`, `unauthenticated`, `internal`. Never the REST binding's `SCREAMING_CASE` (`NOT_FOUND`, `FORBIDDEN`, …).
+The `code` field uses **gRPC-style lowercase strings**: `not_found`, `invalid_argument`, `permission_denied`, `failed_precondition`, `conflict`, `unauthenticated`, `resource_exhausted`, `unavailable`, `internal`. Never the REST binding's `SCREAMING_CASE` (`NOT_FOUND`, `FORBIDDEN`, …).
 
 HTTP status codes match the error category. Clients that catch by status work unchanged from REST; clients that parse the body get a stable string vocabulary.
+
+`resource_exhausted` (REST `TOO_MANY_REQUESTS`, HTTP 429) and `unavailable` (REST `UNAVAILABLE`, HTTP 503) arrived in 0.11.0 alongside the additive `CratestackError::TooManyRequests` variant ([#846](https://github.com/cratestack/cratestack/issues/846)). This matters most for `/rpc/batch`: that response is always HTTP 200 and the per-frame status is synthesized from the code, so before the arm existed a throttled frame surfaced as a synthetic 500. `@cratestack/link-batch`'s `errorStatus` now maps `resource_exhausted` to 429.
+
+The two tower middleware layers participate in this vocabulary too: every response they emit themselves is now the codec-negotiated envelope — `RpcErrorBody` on `/rpc/*` paths, `CratestackErrorResponse` elsewhere — rather than a bare `text/plain` string. See [rate limiting](./rate-limiting#request-flow).
 
 ## Client middleware — the `RpcLink` chain
 

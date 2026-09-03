@@ -188,6 +188,66 @@ The VSIX packaging step uses `vsce --no-dependencies` because the extension ship
 
 Listing metadata is in place: alongside `.vscodeignore`, `license`, and `repository`, `package.json` declares an `icon` (`packages/cratestack-vscode/icon.png`, a 256×256 PNG) and a matching `galleryBanner`. Neither the Marketplace nor Open VSX requires an icon to accept a publish, so without one both listings — and the in-editor Extensions sidebar after a manual VSIX install — fall back to a generic placeholder. The field is platform-independent, so every per-target VSIX carries it without extra work.
 
+## Marketplace And Open VSX
+
+The published extension's identity, for anyone searching for it or scripting an install:
+
+| | |
+|---|---|
+| Extension ID | `cratestack.cratestack-vscode-plugin` |
+| Display name | **`CrateStack Schema`** |
+| Registries | Visual Studio Marketplace (VS Code) and Open VSX (VSCodium, Cursor, Windsurf) |
+
+The display name is `CrateStack Schema`, not `CrateStack`. The Marketplace rejects the shorter name
+as already taken — independently of the extension ID, which was itself accepted. Nothing public holds
+the shorter name: an `extensionquery` for `CrateStack` across the entire gallery, not just VS Code
+extensions, returns zero results, so whatever reserves it is unlisted, removed, or internal. Gallery
+search is therefore not a valid way to check a candidate display name in advance; only a real publish
+attempt answers the question.
+
+Open VSX has no such constraint and accepted `CrateStack` at v0.10.1, so the two registries genuinely
+disagree about this name's availability — v0.10.1 is live on Open VSX under the old display name.
+
+### Verifying a publish
+
+**The Marketplace item page lags a successful publish.** After a publish succeeds, the listing page
+can return 404 for several minutes — in both publisher casings — while the extension is already fully
+published with every target platform. That is the same write-path/read-path split that makes `npm view`
+unreliable immediately after publishing, and it reads exactly like a failed publish.
+
+Query the gallery API instead. It is consistent with the write path, and it returns `targetPlatform`
+per version, so it also confirms every per-platform vsix landed — which the item page does not show
+directly:
+
+```bash
+curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json;api-version=3.0-preview.1' \
+  -d '{"filters":[{"criteria":[{"filterType":7,"value":"cratestack.cratestack-vscode-plugin"}],"pageSize":5,"pageNumber":1}],"flags":914}'
+```
+
+`itemName` is case-insensitive — both `cratestack.` and `Cratestack.` resolve. Worth knowing, because
+the gallery API reports the publisher as `Cratestack` while `package.json` declares `cratestack`,
+which is enough of a mismatch to look like a problem when it isn't.
+
+### Probing a publish without cutting a release
+
+`release-vscode.yml` normally runs on a `vX.Y.Z` tag push. It also accepts a manual
+`workflow_dispatch`, which builds every target and publishes to the **Marketplace only** — the
+`attach-github-release` and `publish-openvsx` jobs are gated `if: github.event_name == 'push'`, so a
+manual run can neither create a GitHub Release nor reach Open VSX.
+
+That is a deliberate exception to the tag-push-only rule, narrowed so the rule still holds absolutely
+for Open VSX (where a publish cannot be cleanly deleted and retried). It exists because several
+Marketplace rejections are discoverable only at publish time, and some cost a version number to retry
+— a `displayName` collision worst of all, since the field is baked into the vsix at package time and a
+failed release is bumped past rather than re-run. A failed Marketplace publish consumes nothing: the
+version is taken only on success, so probing the same version repeatedly is safe.
+
+The trade is that a *successful* probe is a real publish, and can put a version on the Marketplace
+whose artifact differs from the one attached to that tag's GitHub Release — which is exactly what
+happens when the probe is what fixed the artifact. Cosmetic, and resolved at the next real tag.
+
 ## Verification In Repo
 
 Covered today:

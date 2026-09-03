@@ -99,6 +99,34 @@ string**, content-type, and body. `POST /transfer?dry_run=true` and `POST
 /transfer?dry_run=false` therefore hash differently — replays don't cross
 query-string-encoded operation modes.
 
+## Error bodies are typed
+
+Every response this layer emits itself carries the framework's own
+codec-negotiated error envelope, encoded through the same `Accept`
+negotiation the generated handlers use — the REST `CratestackErrorResponse`
+`{code, message, details}` on ordinary paths, `RpcErrorBody` on `/rpc/*`
+ones. That covers the in-flight `409`, the `422` key conflict, the
+principal-fingerprint refusal (`412`), and the buffer-limit errors. Before
+0.11.0 these were bare `text/plain` strings that a generated client could
+not branch on ([#846](https://github.com/cratestack/cratestack/issues/846));
+consumers asserting on them as text will see the change.
+
+An unsatisfiable or malformed `Accept` falls back to the default codec and
+**keeps the original status** rather than becoming a 406 or 400 — `Accept`
+is caller-controlled, and a caller must not be able to rewrite the status of
+a refusal aimed at it.
+
+<Note>
+  **This layer gets no fail-open policy.** Unlike
+  [rate limiting](./rate-limiting#when-the-store-fails), a failed idempotency
+  store must keep failing the request — that is the entire point of having
+  one. What did change is promptness: `RedisIdempotencyStore` now configures
+  explicit 2-second connection and response timeouts on its
+  `ConnectionManager`, so it fails fast instead of awaiting an unbounded
+  reconnect. It also gets no retry-once, because a double-apply is exactly
+  what it exists to prevent.
+</Note>
+
 ## Replay fidelity
 
 Replays reproduce the original response's:
