@@ -50,6 +50,7 @@
               "guides/materialized-views",
               "guides/spatial-postgis",
               "guides/find-many",
+              "guides/declarative-query",
               "guides/computed-fields",
               "guides/prepared-statements-and-caching",
               "guides/rpc-transport",

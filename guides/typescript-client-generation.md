@@ -500,21 +500,31 @@ This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-r
 
 ### Platform support
 
-`@cratestack/cbor-node`'s native N-API binary is only vendored for some platforms:
+`@cratestack/cbor-node`'s native N-API binary is vendored for seven platforms as of 0.11.0:
 
-| Platform | Supported |
-|---|---|
-| macOS (x64, arm64) | yes |
-| Linux x64 (glibc) | yes |
-| Linux arm64 (glibc) | yes |
-| Windows x64 | yes |
-| Linux x64/arm64 (musl, e.g. Alpine) | **no** |
-| Windows arm64 | **no** |
+| Platform | napi target | Supported |
+|---|---|---|
+| macOS x64 | `x86_64-apple-darwin` | yes |
+| macOS arm64 | `aarch64-apple-darwin` | yes |
+| Linux x64 (glibc) | `x86_64-unknown-linux-gnu` | yes |
+| Linux arm64 (glibc) | `aarch64-unknown-linux-gnu` | yes |
+| Linux x64 (musl, e.g. Alpine) | `x86_64-unknown-linux-musl` | yes — new in 0.11.0 |
+| Linux arm64 (musl, e.g. Alpine) | `aarch64-unknown-linux-musl` | yes — new in 0.11.0 |
+| Windows x64 | `x86_64-pc-windows-msvc` | yes |
+| Windows arm64 | — | **no** |
 
 `@cratestack/cbor-web`'s wasm-bindgen build has no platform gap — it runs anywhere a browser or a WASM-capable JS runtime does.
 
+<Note>
+  **Alpine works now** ([#850](https://github.com/cratestack/cratestack/issues/850)). The failure it fixes was not a fallback to something slower — it was fatal. The generated `native.mjs` detects musl and looks only at the `-musl` package names; the `-gnu` binary sitting next to it is never attempted, so the loader ended at *"Cannot find native binding. npm has a bug related to optional dependencies…"*, which points at npm rather than at the missing platform.
+
+  Alpine consumers are not gated on the platform subpackages being bootstrapped on npm: the main `@cratestack/cbor-node` tarball bundles every `.node` binary and the loader prefers the bundled file over the subpackage, so a released package initializes on Alpine either way. That bundling is deliberate, not an oversight.
+
+  The target list in `packages/cratestack-cbor-node/package.json`'s `napi.targets` and the CI build matrix are checked against each other by `just verify-napi-targets` — adding a target in one place without the other fails the build rather than shipping a silently missing platform.
+</Note>
+
 <Warning>
-  **Alpine (musl) and Windows arm64 are why `--no-native-cbor` exists for TypeScript.** A default-generated RPC client's `dependencies` on `@cratestack/cbor` resolves to `@cratestack/cbor-node` in Node, which has no prebuild for those two targets. If your deployment target is one of them, pass `--no-native-cbor` at generation time and the client falls back to the pure-TypeScript `jsonRpcCodec` — no native binary required, runs anywhere Node or a browser does.
+  **Windows arm64 is why `--no-native-cbor` still exists for TypeScript.** A default-generated RPC client's `dependencies` on `@cratestack/cbor` resolves to `@cratestack/cbor-node` in Node, which has no prebuild for that target. If your deployment target is Windows arm64, pass `--no-native-cbor` at generation time and the client falls back to the pure-TypeScript `jsonRpcCodec` — no native binary required, runs anywhere Node or a browser does.
 </Warning>
 
 <Warning>

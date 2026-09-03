@@ -38,12 +38,12 @@ The bare `cratestack` crate on crates.io is a documentation-only landing page wi
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.8", features = ["decimal-rust-decimal"] }
-cratestack-macros = "0.8"
-cratestack-rusqlite = "0.8"
+cratestack = { package = "cratestack-sqlite", version = "0.11", features = ["decimal-rust-decimal"] }
+cratestack-macros = "0.11"
+cratestack-rusqlite = "0.11"
 ```
 
-The `0.8` requirements float across the whole `0.8.x` line rather than pinning a patch — every
+The `0.11` requirements float across the whole `0.11.x` line rather than pinning a patch — every
 cratestack crate is released in lockstep off one workspace version, so mixing patch levels is never
 what you want, and a pinned patch here goes stale on the next release. Pin exactly only if you have
 a specific reason to.
