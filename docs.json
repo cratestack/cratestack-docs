@@ -96,7 +96,8 @@
               "tooling/schema-diff",
               "tooling/migrate-baseline",
               "tooling/editor-tooling",
-              "tooling/generate-wiremock"
+              "tooling/generate-wiremock",
+              "tooling/agent-skills"
             ]
           },
           {
