@@ -81,7 +81,7 @@ for the generated DDL and naming convention.
 | Attribute       | Effect on input        | Effect on output                   | Effect on audit                |
 |-----------------|------------------------|------------------------------------|--------------------------------|
 | `@readonly`     | Excluded from Create + Update inputs | Visible in responses | Visible in `before`/`after`    |
-| `@server_only`  | Excluded from Create + Update inputs | Stripped from responses | Omitted entirely from snapshots |
+| `@server_only`  | Excluded from Create + Update inputs; ignored in procedure arguments | Stripped from responses | Omitted entirely from snapshots |
 | `@pii`          | No effect              | No effect                          | Redacted as `"[redacted-pii]"` |
 | `@sensitive`    | No effect              | No effect                          | Redacted as `"[redacted-sensitive]"` |
 
@@ -90,6 +90,14 @@ timestamps, computed totals). Use `@server_only` for columns clients
 should never see (internal risk scores, raw token blobs). Use `@pii` or
 `@sensitive` to control audit redaction without changing input/output
 surfaces.
+
+A procedure argument can name a model directly (`procedure p(account: Account)`)
+or through a `type` that embeds one. A `@server_only` field in that argument is
+never read from the request: the implementation always sees the field's default,
+whatever the client sent, on both transports. Until cratestack#1051 (unreleased)
+the field was only skipped on output, so a client could set it this way. If a
+procedure took a `@server_only` value from its argument, treat that value as
+client-controlled and derive it on the server instead.
 
 ## Route suppression
 
