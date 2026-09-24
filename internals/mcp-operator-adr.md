@@ -122,8 +122,7 @@ The block turns MCP on for the schema and sets its scope:
 
 ```cstack
 mcp {
-  expose tools
-  expose resources
+  expose = [tools, resources]
 }
 ```
 
@@ -155,9 +154,10 @@ model Post {
 }
 ```
 
-The original draft's `expose procedures` becomes `expose tools`, which matches
-MCP's own vocabulary. (That rename is part of this revision, not a separate
-decision.)
+The block uses the same `key = value` shape as `datasource`, so the
+tree-sitter grammar needs no change (maintainer, 2026-09-24). The original
+draft's `expose procedures` becomes `tools`, which matches MCP's own vocabulary.
+`expose = [tools]` and `expose = [resources]` are also valid.
 
 ### Validation
 
@@ -174,7 +174,9 @@ the general unknown-attribute policy (#679), on purpose.
   1 to 200. It lowers that resource's maximum page size (Q3), and a value above
   200 is an error, not a clamp.
 - An `@mcp`/`@@mcp` attribute in a schema with no `mcp { }` block is an error,
-  and so is `mcp { expose tools }` with no `@mcp(tool)` anywhere.
+  and so is `expose = [tools]` with no `@mcp(tool)` anywhere. An empty or
+  missing `expose`, an unknown or duplicated element, and an unknown key in the
+  block are errors too.
 - Two tools with the same name, or two resources with the same segment, are an
   error.
 - `@@mcp(resource: ...)` on a model with no read allow is an error. That means
@@ -187,7 +189,7 @@ the general unknown-attribute policy (#679), on purpose.
   reason. A procedure with no allow policy is always refused
   (`cratestack-policy/src/eval.rs`), and `@deny` alone cannot change that.
 - `@@mcp` is an error in a `db = None` schema, which has no models. More
-  generally, `mcp { expose resources }` is rejected wherever resources cannot
+  generally, `resources` in `expose` is rejected wherever resources cannot
   exist.
 - In a `part of` file, `mcp { }` is rejected (#993). The attributes follow their
   declaration.
