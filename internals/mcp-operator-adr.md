@@ -1,104 +1,145 @@
-# ADR 0002: Optional MCP Operator Surface
+---
+title: "ADR 0002: Optional MCP Operator Surface"
+description: An opt-in, schema-generated Model Context Protocol server that exposes explicitly annotated procedures as MCP tools and models as MCP resources, over the same policy-enforcing call path as REST and RPC. Proposed; revised 2026-09-24.
+---
 
-> **Status: Proposed, not implemented.** No `cratestack-mcp` crate exists as of this writing; the parser currently only accepts a bare, semantically-inert `mcp { ... }` config block (parsed generically, with no MCP-specific behavior). Everything else in this document describes a design proposal, not shipped behavior.
+# ADR 0002: Optional MCP Operator Surface
 
 ## Status
 
-Proposed
+**Proposed**, revised 2026-09-24. Nothing here is implemented. There is no
+`cratestack-mcp` crate. The parser accepts a bare `mcp { ... }` block
+(`cratestack-parser/src/parse/mod.rs`), keeps its body as raw text lines in
+`Schema.config_blocks`, and nothing validates or reads it.
+
+The first version of this ADR (2026-04-26) was written before the RPC transport,
+the layer model (ADR 0011, ADR 0014), facade disjointness (ADR 0013), the L3
+`OpExecutor` (ADR 0015) and the 2026-07-28 MCP specification. This revision
+restates it against the framework as it exists now. The original text is in
+this file's git history.
+
+The maintainer settled four questions on 2026-09-24 (D1–D4 below). The rest are
+still open. Each has a recommendation, but the recommendation is not the
+decision.
 
 ## Date
 
-2026-04-26
+- 2026-04-26: proposed
+- 2026-09-24: revised against current architecture; D1–D4 decided
+
+## Decisions for the maintainer
+
+| # | Question | Recommendation | Decision |
+|---|---|---|---|
+| D1 | Attribute syntax: the dotted `@mcp.tool` / `@@mcp.resource`, or `@mcp(tool: ...)` / `@@mcp(resource: ...)`? | The argument form. No existing attribute has a dotted name, and the tree-sitter grammar's attribute token (`"@" IDENTIFIER`, with no dot in `IDENTIFIER`) cannot lex one. | **`@mcp(tool: ...)` / `@@mcp(resource: ...)`** (2026-09-24) |
+| D2 | How does MCP dispatch relate to the L3 `OpExecutor`? | MCP goes through L3 for **admission only** (idempotency, rate limiting). Policy stays where it is enforced today. | **L3 for admission only** (2026-09-24) |
+| D3 | Which facades offer the `mcp` feature? | `cratestack-pg` (tools and resources) and `cratestack-api` (tools only). | **`cratestack-pg` + `cratestack-api`** (2026-09-24) |
+| D4 | Protocol implementation: `rmcp` or our own? | `rmcp` 3.4.x, the official Rust SDK. | **`rmcp` 3.4.x** (2026-09-24) |
+| D5 | Is MCP exempt from the REST/RPC transport-parity rule? | Yes, explicitly. MCP exposes an opt-in subset, not the application API (§ Transport parity). | _open_ |
+| D6 | Do CRUD-derived tools ship in v1? | No. v1 has procedures as tools and models as read-only resources. CRUD tools get their own ADR amendment. | _open_ |
+| Q1 | stdio identity: where does the `CratestackContext` come from? | The application supplies it explicitly when it builds the stdio server. There is no default, and there is no "local means trusted" path. | _open_ |
+| Q2 | Default tool name when `@mcp(tool)` has no `name:` argument? | The procedure name as written (`publishPost`). It already satisfies the spec's `[A-Za-z0-9_.-]{1,128}`. | _open_ |
+| Q3 | Default and maximum page size for collection resources? | 50 by default, with a hard maximum of 200. A schema can lower the maximum but never raise it past 200. | _open_ |
+| Q4 | Release gating between the parser slice and the runtime slice? | The macro emits `compile_error!` for any `@mcp`/`@@mcp` attribute until the runtime ships. Otherwise the attributes parse and do nothing, which is how `@no_idempotency` sat for two release cycles. | _open_ |
+| Q5 | Should CrateStack ship a generic OAuth access-token `AuthProvider` (JWKS, RS256/ES256, `aud` and `iss` checks), or leave that to the application? | Leave it to the application for v1, and show one in the example. The existing `IdTokenVerifier` is not that provider (§ Authentication and context). | _open_ |
 
 ## Context
 
-CrateStack v0 is designed as a Rust-native, schema-first framework layer that generates:
+CrateStack generates, from one `.cstack` schema, a typed Rust surface for one of
+three roles (server, embedded, client), published through four disjoint facades.
+A server schema serves either REST (the default) or `transport rpc`. Both use the
+codec layer (CBOR by default, JSON optional through `cratestack-codec-json`).
 
-* a SQLx-backed ORM
-* REST CRUD endpoints
-* custom procedure endpoints
-* authorization enforcement
-* codec and envelope based REST body handling
+The Model Context Protocol lets an agent discover and invoke a server's
+capabilities. CrateStack's schema already records everything an MCP server needs
+to describe itself: procedures with typed arguments and results, models with
+typed fields, and the policies that guard both. Generating an MCP surface from
+that schema is cheap, and far safer than an application wiring its own MCP
+server around generated code by hand.
 
-The primary application API remains HTTP REST and must support CBOR/COSE without assuming JSON.
+MCP is its own protocol. It runs JSON-RPC 2.0 over stdio or over Streamable
+HTTP, and its discovery and invocation model (`tools/list`, `tools/call`,
+`resources/read`) matches neither REST's resource routes nor RPC's `op_id`
+dispatch. So it is a third surface, not a mode of an existing one.
 
-However, CrateStack can also provide value to AI-native systems by exposing selected schema capabilities through the Model Context Protocol (MCP). MCP-compatible clients can discover resources and tools from an MCP server. This makes it possible for agents to inspect allowed application data and invoke selected business procedures through a standardized interface.
+The original ADR framed MCP as being in tension with a "REST-only, no RPC"
+direction. That direction no longer exists, because RPC shipped. What remains
+true is that MCP is **agent-facing and opt-in**, not a transport for the
+application API.
 
-There is an important tension:
+### Facts this revision builds on
 
-* CrateStack's primary API direction is REST-only, no RPC.
-* CrateStack's primary transport direction avoids JSON assumptions.
-* MCP itself is a separate protocol surface and is JSON-RPC based.
-
-Therefore MCP must be treated as an optional agent-facing operator, not as CrateStack's primary application API and not as a replacement for REST.
+1. **The procedure policy step is already usable without HTTP.** Every generated
+   procedure has `authorize(args, ctx)`, `authorize_with_db(db, args, ctx)` and
+   `invoke_with_db(db, args, ctx, f)`. These evaluate `@allow`/`@deny` and any
+   delegated `@authorize(...)` check, and return an `Authorized` token that the
+   implementation needs in order to run. Because the `ProcedureRegistry` method
+   requires that token, calling an implementation without running its policy
+   does not compile (cratestack#512). Under `db = None`, `Cratestack` is a unit
+   struct, so `cratestack-api` uses the same path. ADR 0018 committed to this
+   path for in-process callers.
+2. **Row-level model policy lives in the SQL.** `@@allow` is compiled into the
+   SQL of every read and write (`cratestack-sqlx/src/query/support/policy.rs`).
+   Any caller that goes through the generated ORM gets it, whatever the
+   transport.
+3. **L3 admits; it does not authorize.** `cratestack-exec`'s `OpExecutor`
+   performs idempotency admission (slice 1) and rate-limit admission (slice 2)
+   over a transport-neutral `OpInput`. Policy is not an L3 concern today, and
+   slice 3 (policy replay on streams) is not built.
+4. **ADR 0015 anticipated this.** Its *Deferred* section names "`mcp` tool
+   dispatch" as a trigger to revisit L3's scope. This ADR is that trigger. See
+   § Relationship to ADR 0015.
+5. **Procedure I/O is already serde.** Generated `Args` and output types derive
+   `Serialize`/`Deserialize`, so JSON (de)serialization of tool arguments and
+   results needs no new derives.
+6. **No JSON Schema generator exists.** `OpDescriptor.input_ty`/`output_ty` are
+   type-name strings. MCP requires a JSON Schema `inputSchema` for every tool,
+   so generating these is new work.
+7. **The embedded role enforces no policy.** `cratestack-rusqlite` compiles no
+   `@@allow`/`@allow` checks, by design.
 
 ## Decision
 
-CrateStack will support an optional MCP operator surface.
+CrateStack will offer an **optional MCP operator**: a generated MCP server that
+exposes **explicitly annotated** procedures as MCP tools and **explicitly
+annotated** models as read-only MCP resources. It reaches them through the same
+generated functions the REST and RPC paths call, so it enforces the same
+policies.
 
-The MCP operator will be generated from the `.cstack` schema and will expose selected resources and tools to MCP-compatible clients.
+- **It is opt-in, twice.** A facade feature (`mcp`) must be on, *and* each
+  procedure or model must be annotated. Nothing is exposed by default.
+- **It never bypasses policy.** An MCP tool call runs the procedure's generated
+  authorize step before the implementation. An MCP resource read goes through
+  the generated ORM, so the model's read policy is part of the SQL. MCP gets no
+  bypass, and no MCP-specific system context.
+- **It is isolated.** MCP's dependencies (`rmcp`, `serde_json`, `schemars`) live
+  in `cratestack-mcp` and behind the facade feature. They never reach
+  `cratestack-core`, the codec crates or a facade built without `mcp`.
 
-The MCP operator is explicitly separate from the primary REST API.
+## Schema surface
 
-CrateStack's primary application API remains:
-
-```text
-HTTP REST + CoolCodec + optional CoolEnvelope
-```
-
-The MCP operator is:
-
-```text
-MCP protocol adapter + CrateStack permissions + selected schema exposure
-```
-
-MCP support must be opt-in.
-
-MCP support must not pull MCP dependencies into CrateStack core.
-
-MCP support must not require JSON support in the REST codec layer.
-
-MCP exposure must never bypass CrateStack permissions.
-
-## Terminology
-
-## MCP Resource
-
-An MCP resource is a read-only data item exposed by the server for client context.
-
-In CrateStack, MCP resources may be generated from:
-
-* schema metadata
-* selected model collections
-* selected model records
-* selected read-only procedure outputs
-
-## MCP Tool
-
-An MCP tool is an invokable operation exposed by the server.
-
-In CrateStack, MCP tools should primarily be generated from schema-defined procedures.
-
-Optional CRUD-derived tools may be added later, but procedures are the preferred tool boundary.
-
-## MCP Operator
-
-The MCP operator is the generated server adapter that maps MCP resource and tool calls to CrateStack ORM and procedure operations while enforcing CrateStack authorization policies.
-
-## Schema Design
-
-MCP exposure should be explicit.
-
-Recommended initial schema syntax:
+The block turns MCP on for the schema and sets its scope:
 
 ```cstack
 mcp {
+  expose tools
   expose resources
-  expose procedures
 }
 ```
 
-Model resource exposure:
+A procedure is exposed as a tool by `@mcp(tool)`, optionally naming it:
+
+```cstack
+mutation procedure publishPost(args: PublishPostInput): Post
+  @allow(auth().role == "admin")
+  @mcp(tool, name: "publish_post", description: "Publish a draft post.")
+
+procedure getFeed(args: FeedArgs): Post[]
+  @allow(auth() != null)
+  @mcp(tool)
+```
+
+A model is exposed as a read-only resource by `@@mcp(resource: "<segment>")`:
 
 ```cstack
 model Post {
@@ -108,346 +149,275 @@ model Post {
   authorId  Int
 
   @@allow("read", published || authorId == auth().id)
-
-  @@mcp.resource("posts")
+  @@mcp(resource: "posts")
 }
 ```
 
-Procedure tool exposure:
+The original draft's `expose procedures` becomes `expose tools`, which matches
+MCP's own vocabulary. (That rename is part of this revision, not a separate
+decision.)
 
-```cstack
-mutation procedure publishPost(args: PublishPostInput): Post
-  @allow(auth().role == "admin")
-  @mcp.tool(name: "publish_post")
-```
+### Validation
 
-Read procedure exposure:
+MCP exposure changes what an agent can reach, so a malformed or contradictory
+MCP annotation is a **hard error**, never silently inert. This is stricter than
+the general unknown-attribute policy (#679), on purpose.
 
-```cstack
-procedure getFeed(limit: Int?): Post[]
-  @allow(auth() != null)
-  @mcp.tool(name: "get_feed")
-```
+- `@mcp(...)` on a procedure must contain `tool`. `name:` must match
+  `[A-Za-z0-9_.-]{1,128}`, and `description:` must be a string literal.
+- `@@mcp(...)` on a model must contain `resource: "<segment>"`, and the segment
+  must match `[a-z0-9-]+`.
+- An `@mcp`/`@@mcp` attribute in a schema with no `mcp { }` block is an error,
+  and so is `mcp { expose tools }` with no `@mcp(tool)` anywhere.
+- Two tools with the same name, or two resources with the same segment, are an
+  error.
+- `@@mcp(resource: ...)` on a model with no `@@allow("read", ...)` is an error.
+  A resource with no read policy would be readable by anyone the transport
+  admits.
+- `@mcp(tool)` on a procedure with no `@allow`/`@deny` is an error, for the same
+  reason.
+- `@@mcp` is an error in a `db = None` schema, which has no models. More
+  generally, `mcp { expose resources }` is rejected wherever resources cannot
+  exist.
+- In a `part of` file, `mcp { }` is rejected (#993). The attributes follow their
+  declaration.
 
-Alternative shorthand may be supported later:
+## Dispatch
 
-```cstack
-@mcp.tool
-```
+The macro emits a per-schema `mcp` module next to the REST and RPC modules
+(`cratestack-macros/src/include/server/mcp_module/`). It contains:
 
-where the generated tool name is derived from the procedure name.
+- a static table of exposed tools and resources: name, description, annotations,
+  and JSON Schemas generated at compile time;
+- a `match` from tool name to a call into that procedure's generated functions.
 
-## Exposure Defaults
-
-MCP exposure must be default-off.
-
-A model, procedure, or resource is not exposed to MCP unless explicitly annotated or included through a clear MCP block directive.
-
-Recommended v0 default:
-
-```text
-No @mcp annotation means not exposed through MCP.
-```
-
-This is separate from authorization.
-
-An operation must be both:
-
-1. exposed through MCP, and
-2. authorized by CrateStack permissions.
-
-## Permission Model
-
-MCP must not bypass permissions.
-
-### MCP Resource Permission
-
-MCP resources derived from model data must enforce model read policies.
-
-Example:
-
-```cstack
-@@allow("read", published || authorId == auth().id)
-```
-
-An MCP resource read for posts must apply the same policy as REST and ORM reads.
-
-### MCP Tool Permission
-
-MCP tools derived from procedures must enforce procedure-level `@allow` before invoking the procedure implementation.
-
-Example:
-
-```cstack
-mutation procedure publishPost(args: PublishPostInput): Post
-  @allow(auth().role == "admin")
-  @mcp.tool(name: "publish_post")
-```
-
-The MCP tool call must check the procedure permission before calling `publish_post`.
-
-### Procedure Internal Permissions
-
-Procedure implementations still use normal policy-protected ORM APIs.
-
-No system bypass is introduced for MCP.
-
-The v0 rule remains:
-
-```text
-No as_system.
-No policy bypass.
-```
-
-## Generated Surface
-
-When MCP support is enabled, the macro may generate:
-
-```rust
-cratestack_schema::mcp::server(cool)
-cratestack_schema::mcp::resources(cool)
-cratestack_schema::mcp::tools(cool)
-```
-
-Possible application setup:
-
-```rust
-let cool = cratestack_schema::Cratestack::builder(pool)
-    .codec(cratestack_codec_cbor::CborCodec::default())
-    .procedures(AppProcedures)
-    .build();
-
-let rest = cratestack_schema::routes(cool.clone());
-let mcp = cratestack_schema::mcp::server(cool.clone());
-```
-
-The exact transport binding is deferred. The important architectural decision is that MCP is generated as a separate optional adapter.
-
-## MCP Resource Mapping
-
-For a model annotated as:
-
-```cstack
-@@mcp.resource("posts")
-```
-
-CrateStack may expose resources such as:
-
-```text
-cool://schema/models/Post
-cool://models/posts
-cool://models/posts/{id}
-```
-
-Recommended v0 resource set:
-
-1. Schema metadata resources.
-2. Record-by-id resources for explicitly exposed models.
-3. Optional collection resources with limit enforcement.
-
-Collection resources must have conservative limits to avoid accidental large data exposure.
-
-Example resource behavior:
-
-```text
-Resource: cool://models/posts/123
-Operation: read Post id=123 through generated ORM
-Permission: model read policy applies
-```
-
-## MCP Tool Mapping
-
-For a procedure annotated as:
-
-```cstack
-@mcp.tool(name: "publish_post")
-```
-
-CrateStack exposes an MCP tool named:
-
-```text
-publish_post
-```
-
-Tool input schema is derived from the procedure input type.
-
-Tool result schema is derived from the procedure return type.
+`cratestack-mcp` supplies the protocol side. It implements `rmcp`'s
+`ServerHandler` over that generated table, so no hand-written `#[tool]`
+functions are involved.
 
 Tool execution path:
 
 ```text
-MCP tool call
-  -> deserialize tool arguments according to MCP protocol
-  -> construct CoolContext
-  -> evaluate procedure @allow/@deny
-  -> run delegated DB-backed `@authorize(...)` checks if present
-  -> call generated procedure wrapper
-  -> procedure implementation runs
-  -> ORM calls remain policy-protected
-  -> return MCP tool result
+tools/call
+  -> look up the tool by name                  (unknown -> JSON-RPC -32602)
+  -> deserialize arguments into the procedure's Args  (invalid -> isError result)
+  -> build OpInput, OpExecutor admission       (L3: rate limit, idempotency)
+  -> <procedure>::invoke_with_db(db, &args, &ctx, |authorized| impl(...))
+       -> @allow / @deny, then delegated @authorize(...) checks
+       -> the implementation runs; its ORM calls carry model @@allow in SQL
+  -> serialize output as structuredContent + text   (policy denial -> isError)
 ```
 
-## Authentication and Context
-
-MCP does not replace CrateStack authentication delegation.
-
-The MCP integration must provide a way to construct `CoolContext` from the MCP session/request.
-
-Potential context sources:
-
-* OAuth/JWT claims supplied by the MCP transport layer
-* server-side session identity
-* local trusted identity for stdio deployments
-* explicit anonymous context
-
-The MCP adapter must make the auth source explicit.
-
-There must be no silent assumption that MCP clients are trusted.
-
-## Transport Considerations
-
-CrateStack REST transport remains codec/envelope based and may use CBOR/COSE.
-
-MCP transport is separate.
-
-MCP may require JSON-RPC messages. This must not contaminate the REST codec architecture.
-
-Therefore:
-
-* `cratestack-codec-json` remains optional for REST.
-* MCP support may depend on JSON internally as required by the MCP protocol.
-* This JSON dependency must live in `cratestack-mcp`, not in `cratestack-core` or REST codec crates.
-
-## Crate Layout
-
-Add an optional crate:
+Resource read path:
 
 ```text
-cratestack-mcp/
-  // MCP operator integration
-  // generated resource/tool mapping helpers
-  // MCP server adapter
+resources/read cratestack://<schema>/<segment>/<id>
+  -> parse the URI against the generated template   (unknown -> -32602)
+  -> OpExecutor admission (rate limit)
+  -> generated ORM get-by-id under ctx              (model @@allow in the SQL)
+  -> not found or not visible -> -32602 (the two are not distinguished)
 ```
 
-Root feature:
+A row the caller may not read and a row that does not exist return the same
+error. MCP must not become an oracle for existence that REST is not.
 
-```toml
-[features]
-mcp = ["dep:cratestack-mcp"]
-```
+### Relationship to ADR 0015
 
-MCP-related dependencies must be isolated to `cratestack-mcp`.
+ADR 0015 said a non-HTTP dispatch path with a real consumer should reopen its
+scope. MCP over stdio is such a path. **D2 answers the reopened question
+narrowly:** MCP uses L3 exactly as REST and RPC do, for admission. Policy stays
+in the generated authorize step and in the SQL, because both are already
+transport-neutral (facts 1 and 2). Moving them to L3 is not required to build
+MCP, and building MCP does not wait for it. An amendment to ADR 0015 records
+this, so its text and this ADR agree.
 
-## Schema Compiler Changes
+## Tools
 
-The parser and semantic analyzer must support:
+- **Input schema.** A JSON Schema 2020-12 object generated at compile time from
+  the procedure's `Args` type. Every `.cstack` type needs a defined mapping:
+  scalars, `Decimal` (as a string, so precision is not lost), `DateTime`, enums,
+  optional fields, lists and nested `type`s. This mapping is the largest single
+  piece of new code in this ADR.
+- **Output.** A generated `outputSchema` when the return type is an object. The
+  result is sent as `structuredContent` and also as a text block.
+- **Annotations.** A `procedure` gets `readOnlyHint: true`. A
+  `mutation procedure` gets `readOnlyHint: false`, and `idempotentHint` taken
+  from `OpDescriptor.idempotent_by_default`. Clients must treat these as
+  untrusted hints, and CrateStack does not rely on them for safety.
+- **Errors.** An unknown tool or a malformed request is a JSON-RPC protocol
+  error. Argument validation failures, policy denials and business errors
+  (`CratestackError`) are returned as `isError: true` results, so an agent can
+  correct itself. Internal errors are not described beyond what the REST error
+  envelope would already reveal.
+- **Listing.** `tools/list` returns the static table in declaration order. The
+  spec allows filtering the list by the caller's authorization; v1 does not
+  filter, and says so.
 
-* `mcp` configuration block
-* `@@mcp.resource(...)` model attribute
-* `@mcp.tool(...)` procedure attribute
+## Resources
 
-The IR should record:
+- **URI scheme.** `cratestack://<schema>/<segment>/{id}` for one record, and
+  `cratestack://<schema>/<segment>` for a page of records. `<segment>` comes
+  from `@@mcp(resource: ...)`, never from a table or model name, so the
+  database layout is not exposed.
+- **Collections** are paginated with the spec's opaque cursor, with a strict
+  default and maximum page size (Q3).
+- **Schema metadata** is exposed only for annotated models and tools, never for
+  the whole schema.
+- `ttlMs` and `cacheScope` are required on every result by 2026-07-28. Resource
+  reads return `cacheScope` private to the caller.
 
-```rust
-pub struct McpConfig {
-    pub enabled: bool,
-    pub expose_resources: bool,
-    pub expose_procedures: bool,
-}
+## Transports
 
-pub struct ModelMcpExposure {
-    pub resource_name: Option<String>,
-}
+Both transports follow the 2026-07-28 specification, in which every request is
+self-contained. There is no `initialize` handshake and no `Mcp-Session-Id`.
+`rmcp` 3.4.1 supports this revision, but its `ProtocolVersion::LATEST` still
+points to `2025-11-25`, so `cratestack-mcp` pins the version itself. The
+deprecated HTTP+SSE transport is not offered.
 
-pub struct ProcedureMcpExposure {
-    pub tool_name: Option<String>,
-}
-```
+- **stdio.** Newline-delimited JSON-RPC. Only MCP messages go to stdout;
+  `tracing` output goes to stderr. The server exits when stdin closes.
+- **Streamable HTTP.** A tower service mounted on the application's axum
+  router, for example `.nest_service("/mcp", ...)`. It answers `GET`/`DELETE`
+  with 405 and rejects mismatched `MCP-Protocol-Version` / `Mcp-Method` /
+  `Mcp-Name` headers. It requires an explicit allowed-origins list: `rmcp`
+  disables Origin validation when that list is empty, so `cratestack-mcp`
+  refuses to build an HTTP service without one.
 
-Exact structures may differ, but MCP exposure must be represented explicitly in the IR.
+## Authentication and context
 
-## Security Requirements
+Neither transport assumes the caller is trusted. Each builds a
+`CratestackContext` explicitly.
 
-1. MCP exposure is opt-in.
-2. MCP resource reads enforce model read policies.
-3. MCP tools enforce procedure permissions.
-4. MCP tools do not bypass model policies inside procedure implementations.
-5. No `as_system` is introduced for MCP.
-6. MCP collection resources must have strict default limits.
-7. MCP resource and tool descriptions must not leak sensitive schema details unless explicitly exposed.
-8. MCP must have an explicit auth/context extraction strategy.
-9. Local stdio MCP deployments must be treated carefully and not assumed safe by default.
-10. Generated MCP tool names must avoid collisions.
-11. Generated MCP resource URIs must avoid exposing internal database names unless explicitly configured.
-12. Dangerous procedures should require explicit `@mcp.tool` annotation.
+- **HTTP.** The MCP endpoint authenticates through the application's own
+  `AuthProvider` (`cratestack-core/src/context.rs`), the same extension point
+  its REST and RPC routers use. `rmcp`'s Streamable HTTP service carries the
+  request's `http::request::Parts` into the handler, so the provider sees the
+  real method, path and headers, and no second auth mechanism is involved.
+  `cratestack-mcp` adds the parts the MCP authorization spec requires of an
+  OAuth 2.1 resource server and `rmcp` does not provide on the server side:
+  - a 401 with `WWW-Authenticate` naming `resource_metadata`;
+  - Protected Resource Metadata (RFC 9728) at
+    `/.well-known/oauth-protected-resource`, listing the configured
+    authorization server(s);
+  - no passing of the token on to any other service.
+
+  Audience validation is the provider's job, and the spec requires it. The
+  bundled `IdTokenVerifier` checks audience, but it verifies CrateStack's own
+  Ed25519 SD-JWT id-tokens with `cnf.kid` key binding, not arbitrary OAuth access
+  tokens from a third-party authorization server (Q5).
+- **stdio.** The spec says credentials come from the environment, not from an
+  OAuth flow. `cratestack-mcp` requires the application to pass a context when
+  it builds the stdio server (Q1): for example
+  `CratestackContext::authenticated(...)` built from a verified token in the
+  environment, or `SystemContext::for_service(...)` for a deliberate service
+  identity. There is no default identity.
+
+## Crate layout and layering
+
+- **`cratestack-mcp`**, at **L4 (Bindings)** in `docs/adr/layers.toml`, next to
+  `cratestack-axum`. It is one wire protocol's encode, decode and routing. It
+  depends on `cratestack-core`, `cratestack-exec` and `rmcp`, and has no
+  database dependency. Access to the database goes through the per-schema
+  generated module compiled into the consuming crate, as with REST and RPC.
+- **Facade features (D3).** `cratestack-pg` gets `mcp = ["dep:cratestack-mcp"]`
+  (tools and resources). `cratestack-api` gets the same feature (tools only).
+  `cratestack-sqlite` and `cratestack-client` do not get it. The embedded role
+  enforces no policy (fact 7), so an MCP surface there could not keep this ADR's
+  central promise. The client facade serves nothing.
+- **Disjointness (ADR 0013).** With `mcp` off, a facade's dependency graph is
+  unchanged. CI's `facade-disjointness` job gains a `cargo tree` assertion that
+  `rmcp` is absent from every facade's default graph.
+- **Dependencies (D4).** `rmcp` 3.4.x is Apache-2.0 (already allowed in
+  `deny.toml`), has an MSRV of 1.88 (the workspace pins 1.98) and supports the
+  2026-07-28 spec. Its `server` feature always pulls in `schemars`. We accept
+  that, but still generate our own schemas from the `.cstack` IR rather than
+  deriving `JsonSchema` on generated types, because only the IR knows
+  CrateStack's type semantics (`Decimal`-as-string, `@computed`, relations).
+
+## Transport parity
+
+CrateStack's rule that REST and RPC ship together (CLAUDE.md, "Transport
+parity") exists because both carry the **application API**. MCP carries an
+**opt-in subset for agents**. **Proposed (D5):** MCP is exempt. A new
+request-surface feature ships on REST and RPC, and reaches MCP only when someone
+deliberately extends MCP. The exemption must be written into the parity rule
+itself, so it doesn't read as an oversight.
+
+## Security requirements
+
+1. Exposure is opt-in at both the facade (feature) and the declaration
+   (attribute).
+2. Resource reads enforce model read policy, through the generated ORM.
+3. Tool calls run the procedure's generated authorize step before the
+   implementation.
+4. Procedure implementations keep using the policy-enforcing ORM; MCP adds no
+   bypass.
+5. A resource or tool with no policy is a compile error, not an open door.
+6. Collection resources have a strict default and a maximum page size.
+7. Descriptions and schema metadata cover only exposed declarations.
+8. Every transport builds its context explicitly. stdio has no implicit identity.
+9. HTTP authenticates through an audience-validating `AuthProvider`, never
+   passes the token through, and requires an allowed-origins list.
+10. Tool names and resource segments are checked for collisions at compile time.
+11. Resource URIs use author-chosen segments, never table names.
+12. Not visible and not found are indistinguishable.
+13. MCP calls pass the same L3 rate-limit admission as REST and RPC.
 
 ## Consequences
 
-## Positive Consequences
+### Positive
 
-* AI agents can discover and use CrateStack-backed capabilities automatically.
-* Procedures become reusable across REST, local Rust calls, and MCP tools.
-* Model read policies also protect MCP resources.
-* MCP support does not disrupt the REST-first architecture.
-* JSON remains out of the core REST codec layer.
-* MCP dependencies stay isolated.
-* CrateStack can support agent workflows without making RPC the primary product API.
+- Agents can discover and call CrateStack capabilities, typed and
+  policy-enforced, without hand-written glue.
+- Procedures become reusable across REST, RPC, in-process calls and MCP through
+  one authorize step.
+- The JSON Schema generator this needs is reusable, for example for OpenAPI,
+  which also does not exist today.
+- MCP dependencies stay out of every build that doesn't enable the feature.
 
-## Negative Consequences
+### Negative
 
-* MCP introduces a second protocol surface.
-* MCP is JSON-RPC based, which conflicts philosophically with the primary no-RPC/no-JSON direction.
-* Additional security review is required.
-* MCP tool exposure can create dangerous agent-accessible operations if annotations are too broad.
-* Generated schema metadata could leak sensitive model structure if exposed carelessly.
-* MCP clients may behave differently, requiring compatibility testing.
+- A third protocol surface to maintain and secure.
+- `.cstack` → JSON Schema is new code with no precedent in the workspace.
+- `rmcp` is on a fast release cadence (3.x) and the spec had a breaking revision
+  on 2026-07-28, so upgrades will need attention.
+- `rmcp` brings `schemars` into MCP-enabled builds even though we generate
+  schemas ourselves.
+- Agents behave differently from each other, so compatibility testing against
+  at least one real client is required, not optional.
 
-## Alternatives Considered
+## Alternatives considered
 
-## Alternative 1: Do Not Support MCP
+1. **Do not support MCP.** Rejected: the schema already has what MCP needs, and
+   hand-built MCP servers around generated code are where policy bypasses
+   happen.
+2. **MCP as the primary API.** Rejected: MCP is agent-facing; REST and RPC stay
+   the application API.
+3. **Expose all procedures or all models automatically.** Rejected: exposure is
+   default-off and per declaration.
+4. **Wrap REST routes.** Rejected: MCP has its own discovery and invocation
+   model, and routing through HTTP handlers would add a second decode step and
+   an HTTP dependency to stdio.
+5. **Dotted attributes (`@mcp.tool`).** Rejected in D1: a new lexical shape and a
+   blocking tree-sitter grammar change, for no semantic gain.
+6. **Wait for L3 to own policy before building MCP.** Rejected in D2: policy is
+   already transport-neutral where it lives.
+7. **Offer MCP on the embedded facade.** Rejected in D3: no policy enforcement to
+   rely on.
+8. **Write the protocol layer ourselves.** Rejected in D4: `rmcp` is the official
+   SDK, supports the current spec and takes a dynamic tool list.
 
-Rejected because MCP is valuable for agent-facing integration and can be generated from CrateStack's schema and procedure metadata.
+## Implementation plan
 
-## Alternative 2: Treat MCP as the Primary API
+Each phase lands as its own pull request (or set of PRs). None is merged into a
+release while `@mcp` still parses and does nothing (Q4).
 
-Rejected because CrateStack's primary API is REST with codec/envelope support. MCP is a separate agent-facing surface.
-
-## Alternative 3: Automatically Expose All Procedures as MCP Tools
-
-Rejected because this creates a high risk of accidental exposure. MCP tools must be explicit and default-off.
-
-## Alternative 4: Automatically Expose All Models as MCP Resources
-
-Rejected because this may leak data and schema structure. Model MCP resources must be explicit and policy-protected.
-
-## Alternative 5: Reuse REST Routes for MCP
-
-Rejected because MCP has its own discovery and invocation semantics. It should be implemented as a separate adapter over the same CrateStack ORM/procedure layer, not as a wrapper over REST endpoints.
-
-## Decision Drivers
-
-1. Preserve REST-first architecture.
-2. Preserve CBOR/COSE primary API support.
-3. Enable agent-native integrations.
-4. Keep MCP optional and isolated.
-5. Reuse procedures as the safest tool boundary.
-6. Enforce default-deny permissions.
-7. Avoid accidental data/tool exposure.
-8. Avoid contaminating core with MCP-specific JSON-RPC dependencies.
-
-## Follow-Up Work
-
-1. Select MCP Rust SDK or decide to implement protocol bindings directly.
-2. Define exact `.cstack` MCP syntax.
-3. Define generated MCP resource URI scheme.
-4. Define MCP tool naming rules.
-5. Define MCP context extraction strategy.
-6. Define collection resource limits.
-7. Add MCP section to the PRD.
-8. Add MCP dependencies to the dependency decision log.
-9. Add MCP security test plan.
-10. Add compatibility tests with at least one MCP client.
-
-## Final Decision Statement
-
-CrateStack will support MCP as an optional generated operator surface that exposes explicitly annotated schema resources and procedures as MCP resources and tools. This surface is separate from the primary REST API, must not bypass CrateStack permissions, must remain default-off, and must isolate MCP's JSON-RPC requirements from the REST codec/envelope architecture.
+| Phase | Scope | Decisive test |
+|---|---|---|
+| 0 | This revision, the ADR 0015 amendment, the tracking epic | — |
+| 1 | Parser and IR: the `mcp { }` block with typed settings, `@mcp(...)` / `@@mcp(...)`, the § Validation rules, LSP completions and hover | Each validation rule has a failing-schema test that fails when the rule is removed |
+| 2 | `.cstack` → JSON Schema at compile time | serde's actual output for sample values validates against the generated schema |
+| 3 | `cratestack-mcp` and the generated `mcp` module: tools over stdio through L3 admission and `invoke_with_db` | A call denied by `@allow` returns `isError`; removing the `@allow` flips the test |
+| 4 | Streamable HTTP: `AuthProvider` integration, RFC 9728 metadata, Origin enforcement | A token for another audience gets 401; a foreign Origin gets 403 |
+| 5 | Resources: by id, paged collections, schema metadata | A row hidden by `@@allow` is invisible over MCP exactly as over REST (Postgres-backed test) |
+| 6 | Example service, a conformance run with a real MCP client, docs page, `cratestack-skills` coverage | — |
