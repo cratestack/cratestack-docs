@@ -394,6 +394,12 @@ external_aad = bstr .cbor [
 ]
 ```
 
+**Binding version 1 is not frozen yet.** Nothing that encodes this AAD has been released:
+`cratestack-cose` lands in P0 (cratestack#1005). Every shape change before that first release,
+namely `path_params`, `audience` and the nonce-based unsigned digest, is part of version 1. From that
+release on, any change to the element list or to how an element is derived bumps the version, and
+verifiers reject versions they do not know.
+
 Both sides rebuild this from context they already have, so it **costs 0 bytes on the wire**. It
 defeats:
 
