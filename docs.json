@@ -152,7 +152,8 @@
               "internals/mcp-operator-adr",
               "internals/views-adr",
               "internals/schema-diff-adr",
-              "internals/rpc-transport-adr"
+              "internals/rpc-transport-adr",
+              "internals/cose-envelope-adr"
             ]
           },
           {
