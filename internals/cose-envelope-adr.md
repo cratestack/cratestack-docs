@@ -1,16 +1,16 @@
 ---
 title: "ADR 0006: COSE Envelope Modes and Key Management"
-description: A signing envelope over the existing CBOR codec — COSE_Mac0, COSE_Sign1, and checkpoint-chained cbor-seq streams — bound to the request through external AAD, with offline-aware replay protection. Proposed; decisions open.
+description: A signing envelope over the existing CBOR codec — COSE_Mac0, COSE_Sign1, and checkpoint-chained cbor-seq streams — bound to the request through external AAD, with offline-aware replay protection. Accepted 2026-09-24.
 ---
 
 # ADR 0006: COSE Envelope Modes and Key Management
 
 ## Status
 
-**Proposed** — 2026-09-24. Nothing here is implemented in `cratestack` yet. A proof of concept
-exists outside this repository (maintainer, 2026-09-24). The design and the measurements below
-come from that work. **Ten choices are the maintainer's to make** and are listed first. None is
-decided by this document, although each carries a recommendation.
+**Accepted** — 2026-09-24. Proposed and accepted the same day; the maintainer recorded all ten
+decisions below ([cratestack#1003](https://github.com/cratestack/cratestack/issues/1003)). Nothing
+here is implemented in `cratestack` yet. A proof of concept exists outside this repository
+(maintainer, 2026-09-24). The design and the measurements below come from that work.
 
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
@@ -18,29 +18,68 @@ bytes") and its processing order (`HTTP body → envelope.open → codec.decode`
 
 ## Date
 
-2026-09-24 (proposed)
+2026-09-24 (proposed and accepted)
 
-## Decisions for the maintainer
+## Decisions
 
-Fill in the **Decision** column. This is tracked as
-[cratestack#1003](https://github.com/cratestack/cratestack/issues/1003), and the implementing
-tickets that depend on these rows are blocked on it.
+The maintainer's decisions, recorded 2026-09-24 in
+[cratestack#1003](https://github.com/cratestack/cratestack/issues/1003). Where a decision differs
+from the recommendation or needs more than one line, the paragraph below the table says what it
+means.
 
 | # | Question | Recommendation | Decision |
 |---|---|---|---|
-| D1 | Shape: a signing **envelope** over `CborCodec`, or a sibling `CratestackCodec`? | Envelope. The codec trait has no key, no request context and no `async`, and signing needs all three (§1). | _open_ |
-| D2 | Wire modes: `mac0`, `sign1`, and `chain` for streams? | All three. `chain` is what makes signed streaming affordable (§6). | _open_ |
-| D3 | Replay model for device keys: a per-device counter with a sliding window, replacing timestamp skew plus a nonce store? | Yes. The current 300 s skew window rejects any mutation that sat in an offline queue longer than that (§5). | _open_ |
-| D4 | Schema-bound integer keys: a separate packed codec, shipped later? | Yes, a separate ticket (§9). | _open_ |
-| D5 | Register CBOR tags 48900 (existing error sentinel) and 48901 (checkpoint) with IANA (First Come First Served)? | Yes, before 1.0. | _open_ |
-| Q1 | Sign unary **GET responses** by default in `Required` mode (+85 B each), or only mutations and streams? | — | _open_ |
-| Q2 | Default **server** key algorithm: EdDSA or ES256? Cloud HSMs and KMSs support P-256 more widely. | — | _open_ |
-| Q3 | Checkpoint cadence per op or global? Is 64 items / 32 KiB / 2 s right for 2G links? | — | _open_ |
-| Q4 | Counter atomicity: `JsonFileStateStore` writes with a plain `std::fs::write` (`cratestack-core/src/store/client_state.rs`), which is not crash-atomic. Should `window` mode require the SQLite store, or should the JSON store move to write-temp-then-rename first? | — | _open_ |
-| Q5 | Post-quantum: accept that algorithm agility plus chain mode is the migration path (ML-DSA-44 signatures are about 2.4 KB)? | — | _open_ |
+| D1 | Shape: a signing **envelope** over `CborCodec`, or a sibling `CratestackCodec`? | Envelope. The codec trait has no key, no request context and no `async`, and signing needs all three (§1). | Accepted: envelope. |
+| D2 | Wire modes: `mac0`, `sign1`, and `chain` for streams? | All three. `chain` is what makes signed streaming affordable (§6). | Accepted: all three. |
+| D3 | Replay model for device keys: a per-device counter with a sliding window, replacing timestamp skew plus a nonce store? | Yes. The current 300 s skew window rejects any mutation that sat in an offline queue longer than that (§5). | Accepted: `window` for device keys; `nonce` stays for service keys. |
+| D4 | Schema-bound integer keys: a separate packed codec, shipped later? | Yes, a separate ticket (§9). | Accepted: separate ticket. |
+| D5 | Register CBOR tags 48900 (existing error sentinel) and 48901 (checkpoint) with IANA (First Come First Served)? | Yes, before 1.0. | Accepted: register before 1.0. |
+| Q1 | Sign unary **GET responses** by default in `Required` mode (+85 B each), or only mutations and streams? | — | **Sign them.** In `Required` mode every response is signed, GETs included. |
+| Q2 | Default **server** key algorithm: EdDSA or ES256? Cloud HSMs and KMSs support P-256 more widely. | — | **EdDSA by default, ES256 opt-in**, both from P0. |
+| Q3 | Checkpoint cadence per op or global? Is 64 items / 32 KiB / 2 s right for 2G links? | — | **Global 64 items / 32 KiB / 2 s**, with the per-op `@stream(checkpoint: 16\|64\|256)` override. |
+| Q4 | Counter atomicity: `JsonFileStateStore` writes with a plain `std::fs::write` (`cratestack-core/src/store/client_state.rs`), which is not crash-atomic. Should `window` mode require the SQLite store, or should the JSON store move to write-temp-then-rename first? | — | **A store contract, not a store choice.** See below. |
+| Q5 | Post-quantum: accept that algorithm agility plus chain mode is the migration path (ML-DSA-44 signatures are about 2.4 KB)? | — | **Agility + chain, with a hybrid slot reserved now.** See below. |
 
 A decision that changes a public trait (D1, the async `CratestackEnvelope` below) is breaking. That
 is acceptable before 1.0, and today only `NoEnvelope` implements it.
+
+**Q2, what "opt-in" means.** The server's response-signing key is EdDSA unless a deployment
+configures ES256, typically because the key lives in a cloud KMS or HSM, or because a browser client
+holds it as a non-extractable WebCrypto key. The `CoseSigner` / `CoseVerifierResolver` traits (§1)
+already carry the algorithm, so both ship in P0. The shared test vectors (P0) are byte-exact for
+EdDSA, which is deterministic. For ES256, whose signatures are randomized, they assert verification
+instead of comparing bytes.
+
+**Q4, the counter lives behind the store trait.** The client already persists state through the
+`ClientStateStore` trait (`cratestack-core/src/store/client_state.rs`), which has in-memory, JSON
+file, SQLite (`cratestack-client-store-sqlite`) and Redis (`cratestack-client-store-redis`)
+implementations, and applications can provide their own. `window` mode does not pick a store.
+It adds a **contract** to the trait: persisting a queued signed frame and advancing the counter is
+one atomic operation, and a crash leaves either both or neither. Each shipped implementation meets
+it in its own way:
+
+- the JSON file store writes a temporary file, fsyncs it, then renames it over the old one. Today it
+  uses a plain `std::fs::write`, which is not crash-atomic.
+- SQLite uses one transaction.
+- Redis uses `MULTI`/`EXEC` or a Lua script.
+
+A third-party store that meets the contract works in `window` mode unchanged. The exact trait
+method is designed in P2 (#1015).
+
+**Q5, the reserved hybrid slot.** No post-quantum algorithm ships now. Algorithm agility (the
+protected `alg` header) plus chain mode is the migration path. Chain mode amortizes one large
+signature (ML-DSA-44 is about 2.4 KB) over a checkpoint window. What "reserved" commits P0 to:
+
+- **Nothing assumes a signature length.** Buffers, size limits and the chain checkpoint parser size
+  the signature from `alg`, never from a hard-coded 64 bytes.
+- **A hybrid is one `alg` value.** A composite algorithm identifier (a classical and a
+  post-quantum signature over the same `Sig_structure`, as in the IETF composite-signature work)
+  goes in the existing `alg` header, and the composite key's thumbprint prefix is the `kid`. The
+  COSE structure, the AAD and the checkpoint payload do not change, so adding it is not a wire break.
+- **Resolution is by `(kid, alg)`**, as `CoseVerifierResolver::resolve` already specifies. One
+  device can hold a classical key and a hybrid key side by side during migration.
+- The AAD's binding-version field (§4, currently `1`) is the escape hatch if a future scheme needs a
+  different binding.
 
 ## Context
 
@@ -489,7 +528,7 @@ story per phase). The unsigned streaming it builds on is
 
 | Phase | Scope |
 |---|---|
-| **P0** | Accept this ADR. Async `CratestackEnvelope` + `Binding`. `cratestack-cose` with unary Mac0/Sign1, AAD, `nonce` replay. Axum + Rust client wiring behind `Required`/`Optional`, **including the §12 principal handoff**. Shared test vectors (fixed keys, deterministic Ed25519) checked in. |
+| **P0** | Accept this ADR. Async `CratestackEnvelope` + `Binding`. `cratestack-cose` with unary Mac0/Sign1 (EdDSA and ES256, Q2), AAD, `nonce` replay, and no hard-coded signature length (Q5). Axum + Rust client wiring behind `Required`/`Optional`, **including the §12 principal handoff**. Shared test vectors (fixed keys, deterministic Ed25519) checked in. |
 | **P1** | `chain` streams for `@stream`. Decoders learn tag 48901. `Verified`/`Optimistic` consumption. wasm/napi exports. Flutter guard lifted. COSE_KeySet endpoint and enrolment pinning. IANA registration of 48900/48901. |
 | **P2** | `window` replay for device keys. Signed offline queue. Signed `/rpc/batch` upload. Idempotency key derived from `(kid, cti)` at L3. `HmacEnvelope` deprecation. |
 | **P3** | Resumable streams (`@stream(resumable)`). Signed subscription binding. `CborPackedCodec` (separate ticket). |
