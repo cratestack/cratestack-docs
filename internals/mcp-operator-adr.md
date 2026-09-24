@@ -395,10 +395,12 @@ itself, so it doesn't read as an oversight.
 11. Resource URIs use author-chosen segments, never table names.
 12. Not visible and not found are indistinguishable.
 13. MCP calls pass the same L3 rate-limit admission as REST and RPC, under the
-    same store-error policy. `StoreErrorPolicy` lives in `cratestack-exec`
-    (L3) and the application passes it to each transport; with `Deny`, an
-    unavailable or slow store (500 ms timeout) refuses the call on MCP exactly
-    as on HTTP (maintainer, 2026-09-24, cratestack#1038).
+    same store-error policy. Phase 3 (cratestack#1038) moves `StoreErrorPolicy`
+    from `cratestack-axum` to `cratestack-exec` (L3); `cratestack_axum::ratelimit`
+    re-exports it, so existing `use cratestack_axum::ratelimit::StoreErrorPolicy`
+    imports keep working. The application passes the policy to each transport;
+    with `Deny`, an unavailable or slow store (500 ms timeout) refuses the call
+    on MCP exactly as on HTTP (maintainer, 2026-09-24).
 
 ## Consequences
 
