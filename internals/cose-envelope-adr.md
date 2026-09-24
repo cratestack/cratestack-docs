@@ -132,8 +132,10 @@ named below.
   `encode_into` and `CratestackEnvelope` a provided `seal_value`. The COSE envelope overrides
   `seal_value` to encode straight into its output buffer, so neither trait merged in
   [cratestack#1066](https://github.com/cratestack/cratestack/pull/1066) breaks. HMAC and ES256
-  compute over the MAC/Sig structure incrementally. Ed25519 (PureEdDSA) signs the whole message, so
-  it still needs one contiguous to-be-signed copy; that follows from the algorithm, not the design.
+  compute over the MAC/Sig structure incrementally. Ed25519 keeps one contiguous to-be-signed copy.
+  PureEdDSA hashes the message twice, and `ed25519-dalek` offers two-pass streaming only in its
+  `hazmat` module, which cratestack deliberately does not use. The copy is that choice, not a limit
+  of the algorithm.
 - **Security hardening, found by the same review and implemented in #1005:**
   - the verified principal is the thumbprint of the key that actually verified, and that key's `kid`
     must match the header;
