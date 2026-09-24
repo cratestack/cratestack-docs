@@ -42,6 +42,9 @@ The ADR itself stays **Proposed** until the maintainer accepts it.
 | Q3 | Default and maximum page size for collection resources? | 50 by default, with a hard maximum of 200. A schema can lower the maximum but never raise it past 200. | **As recommended** (2026-09-24) |
 | Q4 | Release gating between the parser slice and the runtime slice? | The macro emits `compile_error!` for any `@mcp`/`@@mcp` attribute until the runtime ships. Otherwise the attributes parse and do nothing, which is how `@no_idempotency` sat for two release cycles. | **As recommended** (2026-09-24) |
 | Q5 | Should CrateStack ship a generic OAuth access-token `AuthProvider` (JWKS, RS256/ES256, `aud` and `iss` checks), or leave that to the application? | Leave it to the application for v1, and show one in the example. The existing `IdTokenVerifier` is not that provider (§ Authentication and context). | **As recommended** (2026-09-24) |
+| Q6 | MCP has no idempotency-key slot. How do mutation tools behave on retry? | No key in v1, documented. | **Optional key via `_meta`** (2026-09-24): a call carrying `_meta["dev.cratestack/idempotencyKey"]` is reserved through L3 exactly like an `Idempotency-Key` header; without it, no reservation is made (same as REST without the header). |
+| Q7 | Output types with `@computed` fields: refuse, or resolve? | Refuse for v1. | **Resolve like REST/RPC** (2026-09-24): the tool result runs the same computed-field resolution as the REST/RPC response path, and the output schema advertises those fields. |
+| Q8 | `@stream` procedures as tools? | Refuse. | **Refused** (2026-09-24): `@mcp(tool)` on a `@stream` procedure is a compile error; MCP tool results are single responses. |
 
 ## Context
 
@@ -253,6 +256,14 @@ this, so its text and this ADR agree.
   never rendered as a permissive `{}`, and `@mcp(tool)` on a procedure that uses
   it is a compile error. **`Json` is refused (maintainer, 2026-09-24):** serde
   accepts any JSON value for it, so its only faithful schema would be `{}`.
+- **Idempotency (Q6).** A mutation tool call may carry an idempotency key in
+  `_meta["dev.cratestack/idempotencyKey"]` (a reverse-DNS key under
+  `cratestack.dev`, as the spec asks for vendor `_meta` keys). When present,
+  it becomes `OpInput.idempotency_key` and L3 reserves and replays exactly as
+  for an `Idempotency-Key` header; when absent, no reservation is made.
+- **Computed fields (Q7).** Output types with `@computed` fields are resolved by
+  the same path as REST/RPC responses and advertised in the output schema.
+- **Streams (Q8).** `@mcp(tool)` on a `@stream` procedure is a compile error.
 - **Output.** A generated `outputSchema` when the return type is an object. The
   result is sent as `structuredContent` and also as a text block.
 - **Annotations.** A `procedure` gets `readOnlyHint: true`. A
