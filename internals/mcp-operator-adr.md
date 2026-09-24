@@ -132,7 +132,9 @@ mcp {
 ```
 
 `name` is the schema's name in resource URIs (`cratestack://blog/...`). It is
-required when `resources` is exposed and must match `[a-z0-9-]+`. An explicit
+required when `resources` is exposed and must be a DNS label: 1–63 characters
+from `[a-z0-9-]`, not starting or ending with `-`, since it sits in the URI's
+host position. An explicit
 name keeps URIs stable across file renames and stops two servers whose schema
 files share a name from colliding (maintainer, 2026-09-24, cratestack#1040).
 
@@ -287,7 +289,9 @@ this, so its text and this ADR agree.
   envelope would already reveal.
 - **Listing.** `tools/list` returns the static table in declaration order. The
   spec allows filtering the list by the caller's authorization; v1 does not
-  filter, and says so.
+  filter, and says so. Like every other method, it still resolves the caller
+  first and fails closed without one, as defence in depth behind the HTTP
+  guard (maintainer, 2026-09-24).
 
 ## Resources
 
@@ -295,9 +299,11 @@ this, so its text and this ADR agree.
   `cratestack://<name>/<segment>` for a page of records, where `<name>` is the
   `mcp { name = ... }` value. The scheme is matched case-insensitively (RFC 3986
   §3.1), so `CRATESTACK://` is accepted; the name, segment and id are matched
-  exactly. A NUL or unparsable id is the same "not found" as a missing row, so
-  bad input reveals nothing an agent could not learn from a missing one
-  (maintainer, 2026-09-24). `<segment>` comes
+  exactly. An id may contain only RFC 3986 path-segment characters (`pchar`);
+  anything else, such as a raw space, must be percent-encoded (`a%20b` reads id
+  `a b`). A raw non-URI character, a NUL, or an unparsable id is the same "not
+  found" as a missing row, so bad input reveals nothing an agent could not
+  learn from a missing one (maintainer, 2026-09-24). `<segment>` comes
   from `@@mcp(resource: ...)`, never from a table or model name, so the
   database layout is not exposed.
 - **Collections** are paginated with the spec's opaque cursor. The default page
