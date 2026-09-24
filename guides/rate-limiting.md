@@ -92,6 +92,48 @@ RateLimitLayer::new(store, config).with_key_fn(|req| {
 Two callers sharing a tenant share a bucket. Two callers from different
 tenants get independent buckets.
 
+## Exempting operations (`@no_rate_limit`)
+
+A procedure marked `@no_rate_limit` (in a schema that declares
+`extension rate_limit { }`) is **not** exempt by default. `RateLimitLayer` is
+installed by your application, not generated, and it limits every request until
+you tell it which operation a request is. Two ways, both reading the generated
+descriptor tables:
+
+```rust
+use cratestack_axum::ratelimit::build_rpc_ops_filter;
+
+// A predicate over the generated `OPS` (REST: `build_rest_ops_filter`
+// over `ROUTE_TRANSPORTS`).
+RateLimitLayer::new(store, config)
+    .with_should_rate_limit_fn(build_rpc_ops_filter(cratestack_schema::axum::OPS))
+```
+
+```rust
+use cratestack_axum::idempotency::build_rpc_op_resolver_with_prefix;
+
+// An op resolver — the same builders the idempotency layer uses. Required
+// when the generated router is mounted with `Router::nest`.
+Router::new().nest("/api", router).layer(
+    RateLimitLayer::new(store, config)
+        .with_op_resolver(build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS)),
+)
+```
+
+`with_op_resolver` arrives in the release after 0.12.0 (cratestack#877). Before
+it, `@no_rate_limit` cannot be honoured under a nested mount: the filters compare
+against the path the schema declares, so behind `.nest("/api", …)` every lookup
+misses. Both install paths fail closed — an operation nobody could identify is
+rate limited, never exempted — and the two setters replace each other.
+
+The resolver builders return a value that is not `Clone`, so give each layer its
+own: call the builder once for `IdempotencyLayer::with_op_resolver` and once for
+`RateLimitLayer::with_op_resolver`.
+
+`POST /rpc/batch` is always rate limited as a whole: the lookup runs before the
+batch body is decoded and cannot see the operations inside it. Call an exempt
+operation at `/rpc/{op_id}` if it must stay exempt.
+
 ## Stores
 
 The shipped implementation is `InMemoryRateLimitStore` — a `HashMap` of
@@ -284,9 +326,11 @@ caps how many of those retries actually run the handler.
 
 ## Caveats
 
-1. `InMemoryRateLimitStore` does not bound the key map. Long-running
-   processes facing a high-cardinality key space (per-IP, per-session)
-   should swap to a TTL-aware store.
+1. `InMemoryRateLimitStore` is bounded — idle buckets are swept after
+   their TTL and live buckets are capped at `DEFAULT_MAX_BUCKETS` (100 000,
+   tunable with `with_max_buckets`) — but it is still one process's heap.
+   A deployment tracking that many distinct callers wants
+   `RedisRateLimitStore`.
 2. The token bucket is wall-clock-driven; a process pause longer than one
    bucket-fill window grants a fresh burst on resume.
 3. `InMemoryRateLimitStore` does not persist across restarts. That is the
