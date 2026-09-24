@@ -126,9 +126,15 @@ The block turns MCP on for the schema and sets its scope:
 
 ```cstack
 mcp {
+  name = "blog"
   expose = [tools, resources]
 }
 ```
+
+`name` is the schema's name in resource URIs (`cratestack://blog/...`). It is
+required when `resources` is exposed and must match `[a-z0-9-]+`. An explicit
+name keeps URIs stable across file renames and stops two servers whose schema
+files share a name from colliding (maintainer, 2026-09-24, cratestack#1040).
 
 A procedure is exposed as a tool by `@mcp(tool: "<name>")`, or by a bare
 `@mcp(tool)` to use the procedure's own name (Q2). This is symmetric with
@@ -227,7 +233,7 @@ tools/call
 Resource read path:
 
 ```text
-resources/read cratestack://<schema>/<segment>/<id>
+resources/read cratestack://<name>/<segment>/<id>
   -> parse the URI against the generated template   (unknown -> -32602)
   -> OpExecutor admission (rate limit)
   -> generated ORM get-by-id under ctx              (model @@allow in the SQL)
@@ -285,8 +291,13 @@ this, so its text and this ADR agree.
 
 ## Resources
 
-- **URI scheme.** `cratestack://<schema>/<segment>/{id}` for one record, and
-  `cratestack://<schema>/<segment>` for a page of records. `<segment>` comes
+- **URI scheme.** `cratestack://<name>/<segment>/{id}` for one record, and
+  `cratestack://<name>/<segment>` for a page of records, where `<name>` is the
+  `mcp { name = ... }` value. The scheme is matched case-insensitively (RFC 3986
+  §3.1), so `CRATESTACK://` is accepted; the name, segment and id are matched
+  exactly. A NUL or unparsable id is the same "not found" as a missing row, so
+  bad input reveals nothing an agent could not learn from a missing one
+  (maintainer, 2026-09-24). `<segment>` comes
   from `@@mcp(resource: ...)`, never from a table or model name, so the
   database layout is not exposed.
 - **Collections** are paginated with the spec's opaque cursor. The default page
