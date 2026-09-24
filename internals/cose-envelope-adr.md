@@ -22,8 +22,9 @@ bytes") and its processing order (`HTTP body → envelope.open → codec.decode`
 
 ## Decisions for the maintainer
 
-Fill in the **Decision** column. The implementing epic's tickets are blocked on the rows they
-cite.
+Fill in the **Decision** column. This is tracked as
+[cratestack#1003](https://github.com/cratestack/cratestack/issues/1003), and the implementing
+tickets that depend on these rows are blocked on it.
 
 | # | Question | Recommendation | Decision |
 |---|---|---|---|
@@ -481,6 +482,10 @@ become optional" requires.
 - **Mac0 for device traffic.** Rejected (§3): a symmetric key lets the server forge device messages.
 
 ## Phasing
+
+Tracked by the epic [cratestack#1030](https://github.com/cratestack/cratestack/issues/1030) (one
+story per phase). The unsigned streaming it builds on is
+[cratestack#1029](https://github.com/cratestack/cratestack/issues/1029) (cbor-seq parity).
 
 | Phase | Scope |
 |---|---|
