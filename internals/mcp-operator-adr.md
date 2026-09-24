@@ -31,14 +31,14 @@ The ADR itself stays **Proposed** until the maintainer accepts it.
 
 | # | Question | Recommendation | Decision |
 |---|---|---|---|
-| D1 | Attribute syntax: the dotted `@mcp.tool` / `@@mcp.resource`, or `@mcp(tool: ...)` / `@@mcp(resource: ...)`? | The argument form. No existing attribute has a dotted name, and the tree-sitter grammar's attribute token (`"@" IDENTIFIER`, with no dot in `IDENTIFIER`) cannot lex one. | **`@mcp(tool: ...)` / `@@mcp(resource: ...)`** (2026-09-24) |
+| D1 | Attribute syntax: the dotted `@mcp.tool` / `@@mcp.resource`, or `@mcp(tool: ...)` / `@@mcp(resource: ...)`? | The argument form. No existing attribute has a dotted name, and the tree-sitter grammar's attribute token (`"@" IDENTIFIER`, with no dot in `IDENTIFIER`) cannot lex one. | **`@mcp(tool: "name")` / `@@mcp(resource: "segment")`**; a bare `@mcp(tool)` takes the default name (Q2) (2026-09-24) |
 | D2 | How does MCP dispatch relate to the L3 `OpExecutor`? | MCP goes through L3 for **admission only** (idempotency, rate limiting). Policy stays where it is enforced today. | **L3 for admission only** (2026-09-24) |
 | D3 | Which facades offer the `mcp` feature? | `cratestack-pg` (tools and resources) and `cratestack-api` (tools only). | **`cratestack-pg` + `cratestack-api`** (2026-09-24) |
 | D4 | Protocol implementation: `rmcp` or our own? | `rmcp` 3.4.x, the official Rust SDK. | **`rmcp` 3.4.x** (2026-09-24) |
 | D5 | Is MCP exempt from the REST/RPC transport-parity rule? | Yes, explicitly. MCP exposes an opt-in subset, not the application API (§ Transport parity). | **As recommended** (2026-09-24) |
 | D6 | Do CRUD-derived tools ship in v1? | No. v1 has procedures as tools and models as read-only resources. CRUD tools get their own ADR amendment. | **As recommended** (2026-09-24) |
 | Q1 | stdio identity: where does the `CratestackContext` come from? | The application supplies it explicitly when it builds the stdio server. There is no default, and there is no "local means trusted" path. | **As recommended** (2026-09-24) |
-| Q2 | Default tool name when `@mcp(tool)` has no `name:` argument? | The procedure name as written (`publishPost`). It already satisfies the spec's `[A-Za-z0-9_.-]{1,128}`. | **As recommended** (2026-09-24) |
+| Q2 | Default tool name for a bare `@mcp(tool)`, with no name given? | The procedure name as written (`publishPost`). It already satisfies the spec's `[A-Za-z0-9_.-]{1,128}`. | **As recommended** (2026-09-24) |
 | Q3 | Default and maximum page size for collection resources? | 50 by default, with a hard maximum of 200. A schema can lower the maximum but never raise it past 200. | **As recommended** (2026-09-24) |
 | Q4 | Release gating between the parser slice and the runtime slice? | The macro emits `compile_error!` for any `@mcp`/`@@mcp` attribute until the runtime ships. Otherwise the attributes parse and do nothing, which is how `@no_idempotency` sat for two release cycles. | **As recommended** (2026-09-24) |
 | Q5 | Should CrateStack ship a generic OAuth access-token `AuthProvider` (JWKS, RS256/ES256, `aud` and `iss` checks), or leave that to the application? | Leave it to the application for v1, and show one in the example. The existing `IdTokenVerifier` is not that provider (§ Authentication and context). | **As recommended** (2026-09-24) |
@@ -127,12 +127,14 @@ mcp {
 }
 ```
 
-A procedure is exposed as a tool by `@mcp(tool)`, optionally naming it:
+A procedure is exposed as a tool by `@mcp(tool: "<name>")`, or by a bare
+`@mcp(tool)` to use the procedure's own name (Q2). This is symmetric with
+`@@mcp(resource: "<segment>")`. `description:` is optional:
 
 ```cstack
 mutation procedure publishPost(args: PublishPostInput): Post
   @allow(auth().role == "admin")
-  @mcp(tool, name: "publish_post", description: "Publish a draft post.")
+  @mcp(tool: "publish_post", description: "Publish a draft post.")
 
 procedure getFeed(args: FeedArgs): Post[]
   @allow(auth() != null)
@@ -163,8 +165,10 @@ MCP exposure changes what an agent can reach, so a malformed or contradictory
 MCP annotation is a **hard error**, never silently inert. This is stricter than
 the general unknown-attribute policy (#679), on purpose.
 
-- `@mcp(...)` on a procedure must contain `tool`. `name:` must match
-  `[A-Za-z0-9_.-]{1,128}`, and `description:` must be a string literal.
+- `@mcp(...)` on a procedure must contain `tool`, either bare or as
+  `tool: "<name>"`. The resulting tool name, whether given or defaulted from the
+  procedure name, must match `[A-Za-z0-9_.-]{1,128}`. `description:` must be a
+  string literal.
 - `@@mcp(...)` on a model must contain `resource: "<segment>"`, and the segment
   must match `[a-z0-9-]+`. An optional `max_page_size:` must be an integer from
   1 to 200. It lowers that resource's maximum page size (Q3), and a value above
@@ -173,11 +177,15 @@ the general unknown-attribute policy (#679), on purpose.
   and so is `mcp { expose tools }` with no `@mcp(tool)` anywhere.
 - Two tools with the same name, or two resources with the same segment, are an
   error.
-- `@@mcp(resource: ...)` on a model with no `@@allow("read", ...)` is an error.
-  A resource with no read policy would be readable by anyone the transport
-  admits.
-- `@mcp(tool)` on a procedure with no `@allow`/`@deny` is an error, for the same
-  reason.
+- `@@mcp(resource: ...)` on a model with no read allow is an error. That means
+  `@@allow` with action `"read"` or `"all"`, or both a `"list"` and a `"detail"`
+  allow. It would not be an open door: reads with no allow policy compile to
+  `FALSE` (`cratestack-sqlx/src/query/support/policy.rs`). But the resource
+  could never return anything, so exposing it is a declaration mistake, and the
+  author should hear about it.
+- `@mcp(tool)` on a procedure with no `@allow` is an error, for the same
+  reason. A procedure with no allow policy is always refused
+  (`cratestack-policy/src/eval.rs`), and `@deny` alone cannot change that.
 - `@@mcp` is an error in a `db = None` schema, which has no models. More
   generally, `mcp { expose resources }` is rejected wherever resources cannot
   exist.
@@ -355,7 +363,9 @@ itself, so it doesn't read as an oversight.
    implementation.
 4. Procedure implementations keep using the policy-enforcing ORM; MCP adds no
    bypass.
-5. A resource or tool with no policy is a compile error, not an open door.
+5. A resource or tool no caller could ever use (no allow policy) is a compile
+   error. Access is deny-by-default everywhere, so this catches mistakes rather
+   than closing a hole.
 6. Collection resources have a strict default and a maximum page size.
 7. Descriptions and schema metadata cover only exposed declarations.
 8. Every transport builds its context explicitly. stdio has no implicit identity.
