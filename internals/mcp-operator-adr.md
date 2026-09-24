@@ -420,7 +420,7 @@ release while `@mcp` still parses and does nothing (Q4).
 | 0 | This revision, the ADR 0015 amendment, the tracking epic | — |
 | 1 | Parser and IR: the `mcp { }` block with typed settings, `@mcp(...)` / `@@mcp(...)`, the § Validation rules, LSP completions and hover, and the Q4 `compile_error!` gate | Each validation rule has a failing-schema test that fails when the rule is removed; a schema using `@mcp` fails to compile until phase 3 removes the gate |
 | 2 | `.cstack` → JSON Schema at compile time | serde's actual output for sample values validates against the generated schema |
-| 3 | `cratestack-mcp` and the generated `mcp` module: tools over stdio through L3 admission and `invoke_with_db`; the Q4 gate is removed; the D5 exemption is written into the transport-parity rule | A call denied by `@allow` returns `isError`; removing the `@allow` flips the test |
+| 3 | `cratestack-mcp` and the generated `mcp` module: tools over stdio through L3 admission and `invoke_with_db`; the Q4 gate is removed; the D5 exemption is written into the transport-parity rule | A call denied by `@allow` returns `isError`; loosening that `@allow` to `@allow(true)` flips the test (removing it is a compile error since phase 1) |
 | 4 | Streamable HTTP: `AuthProvider` integration, RFC 9728 metadata, Origin enforcement | A token for another audience gets 401; a foreign Origin gets 403 |
 | 5 | Resources: by id, paged collections, schema metadata | A row hidden by `@@allow` is invisible over MCP exactly as over REST (Postgres-backed test) |
 | 6 | Example service, a conformance run with a real MCP client, docs page, `cratestack-skills` coverage | — |
