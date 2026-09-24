@@ -268,9 +268,12 @@ this, so its text and this ADR agree.
 - **Output.** A generated `outputSchema` when the return type is an object. The
   result is sent as `structuredContent` and also as a text block.
 - **Annotations.** A `procedure` gets `readOnlyHint: true`. A
-  `mutation procedure` gets `readOnlyHint: false`, and `idempotentHint` taken
-  from `OpDescriptor.idempotent_by_default`. Clients must treat these as
-  untrusted hints, and CrateStack does not rely on them for safety.
+  `mutation procedure` gets `readOnlyHint: false` and `idempotentHint: false`.
+  A mutation is never advertised as safe to retry: for a mutation,
+  `idempotent_by_default` is only true under `@no_idempotency`, which opts out
+  of reservations, so a retry repeats the work (maintainer, 2026-09-24,
+  cratestack#1038). Clients must treat these as untrusted hints, and CrateStack
+  does not rely on them for safety.
 - **Errors.** An unknown tool or a malformed request is a JSON-RPC protocol
   error. Argument validation failures, policy denials and business errors
   (`CratestackError`) are returned as `isError: true` results, so an agent can
@@ -391,7 +394,13 @@ itself, so it doesn't read as an oversight.
 10. Tool names and resource segments are checked for collisions at compile time.
 11. Resource URIs use author-chosen segments, never table names.
 12. Not visible and not found are indistinguishable.
-13. MCP calls pass the same L3 rate-limit admission as REST and RPC.
+13. MCP calls pass the same L3 rate-limit admission as REST and RPC, under the
+    same store-error policy. Phase 3 (cratestack#1038) moves `StoreErrorPolicy`
+    from `cratestack-axum` to `cratestack-exec` (L3); `cratestack_axum::ratelimit`
+    re-exports it, so existing `use cratestack_axum::ratelimit::StoreErrorPolicy`
+    imports keep working. The application passes the policy to each transport;
+    with `Deny`, an unavailable or slow store (500 ms timeout) refuses the call
+    on MCP exactly as on HTTP (maintainer, 2026-09-24).
 
 ## Consequences
 
