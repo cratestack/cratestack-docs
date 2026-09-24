@@ -19,13 +19,14 @@ restates it against the framework as it exists now. The original text is in
 this file's git history.
 
 The maintainer settled every question in the table below on 2026-09-24: D1–D4
-by choosing among options, and D5, D6 and Q1–Q5 by taking the recommendation.
+by choosing among options, D5, D6, Q1–Q5 and Q8 by taking the recommendation,
+and Q6 and Q7 by choosing against it.
 The ADR itself stays **Proposed** until the maintainer accepts it.
 
 ## Date
 
 - 2026-04-26: proposed
-- 2026-09-24: revised against current architecture; D1–D6 and Q1–Q5 decided
+- 2026-09-24: revised against current architecture; D1–D6 and Q1–Q8 decided
 
 ## Decisions for the maintainer
 
