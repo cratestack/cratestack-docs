@@ -114,6 +114,34 @@ named below.
     reject every signed client. #1006/#1007 settle what the AAD binds before `Required` mode ships
     (tracked as a follow-up).
 
+**Decisions from the P0 security review** (maintainer, 2026-09-24, on
+[cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)). They amend §1, §4 and §10.
+
+- **The AAD binds the recipient (§4).** A new `audience` element carries a configured logical
+  service identifier, not the Host header, which gateways rewrite. Without it:
+  - one signed request opens at any two services that share a schema and a route, each with its own
+    nonce store;
+  - in Mac0 mode, a service's own outgoing request is a valid incoming request to itself.
+- **Signed responses to bodiless requests are fresh (§4).** A GET has no body, so its request digest
+  used to be `SHA-256("")` every time, and a year-old signed response still verified for a new GET of
+  the same URL. The client now sends `Cratestack-Nonce`: 16 random bytes, base64url without padding,
+  on every request it wants a verified response to, which in `Required` mode is all of them. For an
+  unsigned request, `request_digest = SHA-256(nonce ‖ payload)`. Each signed response is then bound
+  to exactly one request, with no server state.
+- **Encode in place stays (§1), through an additive hook.** `CratestackCodec` gains a provided
+  `encode_into` and `CratestackEnvelope` a provided `seal_value`. The COSE envelope overrides
+  `seal_value` to encode straight into its output buffer, so neither trait merged in
+  [cratestack#1066](https://github.com/cratestack/cratestack/pull/1066) breaks. HMAC and ES256
+  compute over the MAC/Sig structure incrementally. Ed25519 (PureEdDSA) signs the whole message, so
+  it still needs one contiguous to-be-signed copy; that follows from the algorithm, not the design.
+- **Security hardening, found by the same review and implemented in #1005:**
+  - the verified principal is the thumbprint of the key that actually verified, and that key's `kid`
+    must match the header;
+  - an HMAC key is bound to exactly one of alg 4 or 5, so a 256/256 deployment never accepts a 64-bit
+    tag;
+  - ESP256 signatures are low-S only, which keeps "one message, one encoding";
+  - the skew bound is validated when the envelope is built.
+
 ## Context
 
 ### What exists today
@@ -239,7 +267,9 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 ```
 
 The payload `bstr` **is** the codec output, byte for byte. The sealer encodes straight into the COSE
-buffer: it reserves up to 9 bytes for the `bstr` head, encodes, then patches the head. The verifier
+buffer: it reserves up to 9 bytes for the `bstr` head, encodes, then patches the head. The call path
+is the provided `CratestackEnvelope::seal_value` over `CratestackCodec::encode_into` (see "Decisions
+from the P0 security review"); `seal(payload)` remains for callers that already hold encoded bytes. The verifier
 checks those bytes and hands the same slice to `CborCodec::decode`. Nothing is re-serialized.
 
 The envelope is not a new `CratestackCodec` implementation. Signing needs a key, request context
@@ -267,6 +297,7 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
 
 /// Everything that goes into external_aad. Built by router/client, never sent (§4).
 pub struct Binding<'a> {
+    pub audience: &'a str,                 // configured logical service identifier (the recipient)
     pub method: &'a str,
     pub route: &'a str,                    // op_id for RPC; route template for REST
     pub path_params: &'a [&'a str],        // REST: matched values in template order; RPC: empty
@@ -350,13 +381,15 @@ payload     = bstr .cbor Body
 ```cddl
 external_aad = bstr .cbor [
   1,                        ; binding version
+  audience: tstr,           ; the recipient: a configured logical service id, never the Host header
   method: tstr,
   route: tstr,              ; RPC op_id (stable across prefix rewrites); REST route template
   path_params: [* tstr],    ; REST: matched path parameter values in template order; RPC: []
   query: tstr / null,       ; canonical_query()
   schema_sha: bstr .size 32,
   payload_type: tstr,       ; "application/cbor"
-  ? request_digest: bstr .size 32,  ; responses: SHA-256 over the request's COSE bytes (or payload if unsigned)
+  ? request_digest: bstr .size 32,  ; responses: SHA-256 over the request's COSE bytes, or
+                                    ; SHA-256(Cratestack-Nonce ‖ payload) if the request was unsigned
   ? status: uint,                   ; responses
 ]
 ```
@@ -366,7 +399,10 @@ defeats:
 
 - **cross-endpoint replay:** a body signed for `payment.create` fails on `payment.refund`;
 - **response swapping:** a response is bound to its request and its status code;
-- **schema drift:** a client built against another `.cstack` fails closed.
+- **schema drift:** a client built against another `.cstack` fails closed;
+- **cross-service replay and reflection:** the `audience` names the recipient;
+- **stale responses:** an unsigned request's digest includes the client's `Cratestack-Nonce`, so a
+  signed response answers exactly one request.
 
 Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The same fact made
 `Router::nest` break descriptor lookup in cratestack#877.)
