@@ -18,14 +18,14 @@ the layer model (ADR 0011, ADR 0014), facade disjointness (ADR 0013), the L3
 restates it against the framework as it exists now. The original text is in
 this file's git history.
 
-The maintainer settled four questions on 2026-09-24 (D1–D4 below). The rest are
-still open. Each has a recommendation, but the recommendation is not the
-decision.
+The maintainer settled every question in the table below on 2026-09-24: D1–D4
+by choosing among options, and D5, D6 and Q1–Q5 by taking the recommendation.
+The ADR itself stays **Proposed** until the maintainer accepts it.
 
 ## Date
 
 - 2026-04-26: proposed
-- 2026-09-24: revised against current architecture; D1–D4 decided
+- 2026-09-24: revised against current architecture; D1–D6 and Q1–Q5 decided
 
 ## Decisions for the maintainer
 
@@ -35,13 +35,13 @@ decision.
 | D2 | How does MCP dispatch relate to the L3 `OpExecutor`? | MCP goes through L3 for **admission only** (idempotency, rate limiting). Policy stays where it is enforced today. | **L3 for admission only** (2026-09-24) |
 | D3 | Which facades offer the `mcp` feature? | `cratestack-pg` (tools and resources) and `cratestack-api` (tools only). | **`cratestack-pg` + `cratestack-api`** (2026-09-24) |
 | D4 | Protocol implementation: `rmcp` or our own? | `rmcp` 3.4.x, the official Rust SDK. | **`rmcp` 3.4.x** (2026-09-24) |
-| D5 | Is MCP exempt from the REST/RPC transport-parity rule? | Yes, explicitly. MCP exposes an opt-in subset, not the application API (§ Transport parity). | _open_ |
-| D6 | Do CRUD-derived tools ship in v1? | No. v1 has procedures as tools and models as read-only resources. CRUD tools get their own ADR amendment. | _open_ |
-| Q1 | stdio identity: where does the `CratestackContext` come from? | The application supplies it explicitly when it builds the stdio server. There is no default, and there is no "local means trusted" path. | _open_ |
-| Q2 | Default tool name when `@mcp(tool)` has no `name:` argument? | The procedure name as written (`publishPost`). It already satisfies the spec's `[A-Za-z0-9_.-]{1,128}`. | _open_ |
-| Q3 | Default and maximum page size for collection resources? | 50 by default, with a hard maximum of 200. A schema can lower the maximum but never raise it past 200. | _open_ |
-| Q4 | Release gating between the parser slice and the runtime slice? | The macro emits `compile_error!` for any `@mcp`/`@@mcp` attribute until the runtime ships. Otherwise the attributes parse and do nothing, which is how `@no_idempotency` sat for two release cycles. | _open_ |
-| Q5 | Should CrateStack ship a generic OAuth access-token `AuthProvider` (JWKS, RS256/ES256, `aud` and `iss` checks), or leave that to the application? | Leave it to the application for v1, and show one in the example. The existing `IdTokenVerifier` is not that provider (§ Authentication and context). | _open_ |
+| D5 | Is MCP exempt from the REST/RPC transport-parity rule? | Yes, explicitly. MCP exposes an opt-in subset, not the application API (§ Transport parity). | **As recommended** (2026-09-24) |
+| D6 | Do CRUD-derived tools ship in v1? | No. v1 has procedures as tools and models as read-only resources. CRUD tools get their own ADR amendment. | **As recommended** (2026-09-24) |
+| Q1 | stdio identity: where does the `CratestackContext` come from? | The application supplies it explicitly when it builds the stdio server. There is no default, and there is no "local means trusted" path. | **As recommended** (2026-09-24) |
+| Q2 | Default tool name when `@mcp(tool)` has no `name:` argument? | The procedure name as written (`publishPost`). It already satisfies the spec's `[A-Za-z0-9_.-]{1,128}`. | **As recommended** (2026-09-24) |
+| Q3 | Default and maximum page size for collection resources? | 50 by default, with a hard maximum of 200. A schema can lower the maximum but never raise it past 200. | **As recommended** (2026-09-24) |
+| Q4 | Release gating between the parser slice and the runtime slice? | The macro emits `compile_error!` for any `@mcp`/`@@mcp` attribute until the runtime ships. Otherwise the attributes parse and do nothing, which is how `@no_idempotency` sat for two release cycles. | **As recommended** (2026-09-24) |
+| Q5 | Should CrateStack ship a generic OAuth access-token `AuthProvider` (JWKS, RS256/ES256, `aud` and `iss` checks), or leave that to the application? | Leave it to the application for v1, and show one in the example. The existing `IdTokenVerifier` is not that provider (§ Authentication and context). | **As recommended** (2026-09-24) |
 
 ## Context
 
@@ -166,7 +166,9 @@ the general unknown-attribute policy (#679), on purpose.
 - `@mcp(...)` on a procedure must contain `tool`. `name:` must match
   `[A-Za-z0-9_.-]{1,128}`, and `description:` must be a string literal.
 - `@@mcp(...)` on a model must contain `resource: "<segment>"`, and the segment
-  must match `[a-z0-9-]+`.
+  must match `[a-z0-9-]+`. An optional `max_page_size:` must be an integer from
+  1 to 200. It lowers that resource's maximum page size (Q3), and a value above
+  200 is an error, not a clamp.
 - An `@mcp`/`@@mcp` attribute in a schema with no `mcp { }` block is an error,
   and so is `mcp { expose tools }` with no `@mcp(tool)` anywhere.
 - Two tools with the same name, or two resources with the same segment, are an
@@ -259,8 +261,9 @@ this, so its text and this ADR agree.
   `cratestack://<schema>/<segment>` for a page of records. `<segment>` comes
   from `@@mcp(resource: ...)`, never from a table or model name, so the
   database layout is not exposed.
-- **Collections** are paginated with the spec's opaque cursor, with a strict
-  default and maximum page size (Q3).
+- **Collections** are paginated with the spec's opaque cursor. The default page
+  size is 50 and the maximum is 200, or the resource's `max_page_size:` if that
+  is lower (Q3). A client asking for more gets the maximum, not an error.
 - **Schema metadata** is exposed only for annotated models and tools, never for
   the whole schema.
 - `ttlMs` and `cacheScope` are required on every result by 2026-07-28. Resource
@@ -338,7 +341,7 @@ Neither transport assumes the caller is trusted. Each builds a
 
 CrateStack's rule that REST and RPC ship together (CLAUDE.md, "Transport
 parity") exists because both carry the **application API**. MCP carries an
-**opt-in subset for agents**. **Proposed (D5):** MCP is exempt. A new
+**opt-in subset for agents**. **Decided (D5):** MCP is exempt. A new
 request-surface feature ships on REST and RPC, and reaches MCP only when someone
 deliberately extends MCP. The exemption must be written into the parity rule
 itself, so it doesn't read as an oversight.
@@ -415,9 +418,9 @@ release while `@mcp` still parses and does nothing (Q4).
 | Phase | Scope | Decisive test |
 |---|---|---|
 | 0 | This revision, the ADR 0015 amendment, the tracking epic | — |
-| 1 | Parser and IR: the `mcp { }` block with typed settings, `@mcp(...)` / `@@mcp(...)`, the § Validation rules, LSP completions and hover | Each validation rule has a failing-schema test that fails when the rule is removed |
+| 1 | Parser and IR: the `mcp { }` block with typed settings, `@mcp(...)` / `@@mcp(...)`, the § Validation rules, LSP completions and hover, and the Q4 `compile_error!` gate | Each validation rule has a failing-schema test that fails when the rule is removed; a schema using `@mcp` fails to compile until phase 3 removes the gate |
 | 2 | `.cstack` → JSON Schema at compile time | serde's actual output for sample values validates against the generated schema |
-| 3 | `cratestack-mcp` and the generated `mcp` module: tools over stdio through L3 admission and `invoke_with_db` | A call denied by `@allow` returns `isError`; removing the `@allow` flips the test |
+| 3 | `cratestack-mcp` and the generated `mcp` module: tools over stdio through L3 admission and `invoke_with_db`; the Q4 gate is removed; the D5 exemption is written into the transport-parity rule | A call denied by `@allow` returns `isError`; removing the `@allow` flips the test |
 | 4 | Streamable HTTP: `AuthProvider` integration, RFC 9728 metadata, Origin enforcement | A token for another audience gets 401; a foreign Origin gets 403 |
 | 5 | Resources: by id, paged collections, schema metadata | A row hidden by `@@allow` is invisible over MCP exactly as over REST (Postgres-backed test) |
 | 6 | Example service, a conformance run with a real MCP client, docs page, `cratestack-skills` coverage | — |
