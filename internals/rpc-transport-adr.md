@@ -164,7 +164,7 @@ Subscriptions don't have that profile yet:
 2. External clients (mobile apps, browser SPAs) are the natural fit, but **no concrete CrateStack consumer is asking for subscriptions right now**.
 3. Implementing them requires new schema syntax (`@@subscribe`), a WS frame loop in the macro-emitted dispatcher, and `CratestackEventBus` per-subscription fan-out with bounded buffers — a real ADR's worth of design effort that should be motivated by an actual user, not by symmetry with streaming.
 
-The wire design from this ADR's §3.4 (the rejected drafts of §3.4 in the local repo `docs/design/rpc-transport.md`) stays as the target; the runtime work waits. **When a concrete subscription use case appears, that becomes ADR 0006.**
+The wire design from this ADR's §3.4 (the rejected drafts of §3.4 in the local repo `docs/design/rpc-transport.md`) stays as the target; the runtime work waits. **When a concrete subscription use case appears, that becomes its own ADR.** (The number 0006 later went to [COSE envelope modes](./cose-envelope-adr), whose §6 plans a signed cbor-seq subscription binding.)
 
 ## Shipping order
 

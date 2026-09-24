@@ -437,6 +437,11 @@ This allows codecs to operate generically over generated model, input, output, a
 
 COSE is not a codec. COSE wraps encoded bytes.
 
+<Note>
+The trait sketched below is superseded by [ADR 0006 §1](./cose-envelope-adr): the envelope became
+async and gained a request `Binding` (cratestack#1004). The principle in this section still holds.
+</Note>
+
 CrateStack defines:
 
 ```rust
