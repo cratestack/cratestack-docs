@@ -81,6 +81,39 @@ signature (ML-DSA-44 is about 2.4 KB) over a checkpoint window. What "reserved" 
 - The AAD's binding-version field (§4, currently `1`) is the escape hatch if a future scheme needs a
   different binding.
 
+**Decisions taken while scoping P0** (maintainer, 2026-09-24, on
+[cratestack#1003](https://github.com/cratestack/cratestack/issues/1003)). They amend the sections
+named below.
+
+- **Algorithm identifiers (§3): -19 (Ed25519) and -9 (ESP256)**, the fully specified algorithms of
+  RFC 9864, which deprecates -8 (EdDSA) and -7 (ES256). Both encode in one byte, so no size changes.
+  Nothing has shipped with -8/-7, so verifiers accept only -19 and -9 (and the Mac0 ids).
+- **REST responses are bound to the resource, not only to the route shape (§4).** The AAD gains
+  `path_params`: the matched path parameter values in template order, as the router decoded them
+  (empty for RPC, whose op id and body digest already bind it). With the template alone, a signed
+  `GET /accounts/1` response would verify as the answer to `GET /accounts/2`. That gap matters
+  because Q1 signs every GET response.
+- **Crate placement (§11): `cratestack-cose` sits at L2 with an optional `auth` feature.** Without
+  the feature it depends on `cratestack-core` only, so clients and the wasm/napi builds stay free of
+  `cratestack-auth`'s Redis, reqwest and rustls dependencies. With it, the crate owns everything
+  auth-specific too: the `ServiceSigningKey` and `DeviceKeyResolver` adapters, the Redis nonce
+  bridge, and the COSE enrolment code. `cratestack_auth::{build,parse}_cose_enroll_response` move
+  there, which is a breaking change (no known in-repo consumers).
+- **P0 defaults:**
+  - The shared vectors cover both `cti` shapes: 16 random bytes (P0 `nonce` mode) and a 2-byte
+    counter (the §3 measurements). `cti` is injectable on the seal side for that purpose.
+  - Multi-replica `nonce` replay bridges `cratestack-auth`'s existing Redis nonce store, keyed by
+    `(kid, cti)`.
+  - `DeviceKeyResolver` gains a **required** lookup-by-thumbprint method. This is breaking, so
+    implementors get a compile error instead of every COSE device request failing silently.
+  - A Mac0 `kid` is the RFC 9679 thumbprint prefix of the key. Deployers list their key ids so the
+    thumbprints can be precomputed, and secrets shorter than 32 bytes are rejected.
+  - Errors, per §10: every failed check is the same coarse `401`; a backend outage (key resolver or
+    nonce store) is a `500`.
+  - The schema SHA currently hashes the raw `.cstack` text, so a comment-only schema edit would
+    reject every signed client. #1006/#1007 settle what the AAD binds before `Required` mode ships
+    (tracked as a follow-up).
+
 ## Context
 
 ### What exists today
@@ -235,7 +268,8 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
 /// Everything that goes into external_aad. Built by router/client, never sent (§4).
 pub struct Binding<'a> {
     pub method: &'a str,
-    pub route: &'a str,                    // op_id for RPC; route template + params for REST
+    pub route: &'a str,                    // op_id for RPC; route template for REST
+    pub path_params: &'a [&'a str],        // REST: matched values in template order; RPC: empty
     pub query: Option<&'a str>,            // canonical_query()
     pub schema_sha: &'a [u8; 32],
     pub payload_media_type: &'a str,       // "application/cbor"
@@ -286,7 +320,7 @@ Negotiation uses the existing `Accept` and `Content-Type` headers. The router ga
 ```cddl
 ; Unary: COSE_Sign1 = tag 18, COSE_Mac0 = tag 17 (always tagged on the wire)
 protected = {
-  1 => int,                ; alg: -8 EdDSA (default), -7 ES256; Mac0: 4 = HMAC 256/64, 5 = HMAC 256/256
+  1 => int,                ; alg: -19 Ed25519 (default), -9 ESP256 (RFC 9864); Mac0: 4 = HMAC 256/64, 5 = HMAC 256/256
   4 => bstr .size 8,       ; kid: first 8 bytes of the RFC 9679 COSE Key Thumbprint
   ? 15 => {                ; CWT Claims (RFC 9597), requests only
     ? 6 => int,            ;   iat, seconds
@@ -301,9 +335,9 @@ payload     = bstr .cbor Body
   and rotation is self-describing. The birthday bound is about 2³² keys, and the resolver returns
   several candidates on the rare collision.
 - **Algorithms by direction.**
-  - Device → server: **EdDSA**. Device keys are already Ed25519, and these messages must be provable
+  - Device → server: **Ed25519** (-19). Device keys are already Ed25519, and these messages must be provable
     later.
-  - Server → client: **EdDSA** by default, or **ES256** where the key lives in an HSM or as
+  - Server → client: **Ed25519** by default, or **ESP256** (-9) where the key lives in an HSM or as
     non-extractable WebCrypto (Q2).
   - Service → service inside one trust domain: **Mac0 HMAC 256/256**, or HMAC 256/64 on constrained
     links. A 64-bit tag is safe only because forgery requires online attempts, and those are rate
@@ -318,6 +352,7 @@ external_aad = bstr .cbor [
   1,                        ; binding version
   method: tstr,
   route: tstr,              ; RPC op_id (stable across prefix rewrites); REST route template
+  path_params: [* tstr],    ; REST: matched path parameter values in template order; RPC: []
   query: tstr / null,       ; canonical_query()
   schema_sha: bstr .size 32,
   payload_type: tstr,       ; "application/cbor"
@@ -445,7 +480,9 @@ error. The schema SHA in the AAD makes a mismatch fail closed when signed; unsig
 ### 10. Errors and threat model
 
 - **Verification failures** return `401` with `RpcErrorBody{code: "unauthenticated"}` and a coarse
-  reason. The response must never reveal which check failed.
+  reason. The response must never reveal which check failed. A **backend failure** (the key resolver
+  or the nonce store is unreachable) is a `500`, logged server-side: it says nothing about the
+  message, and operators can tell an outage from an attack.
 - **Error responses are signed too**, or a hop could inject fake errors.
 - **A client in `Required` mode rejects unsigned or wrongly signed responses.** It never falls back
   to plain.
@@ -461,7 +498,9 @@ error. The schema SHA in the AAD makes a mismatch fail closed when signed; unsig
 
 ### 11. One implementation, every client
 
-One Rust crate, `cratestack-cose`, wraps `coset`; `cose_enroll.rs` moves into it. It is consumed by:
+One Rust crate, `cratestack-cose`, wraps `coset`; `cose_enroll.rs` moves into it. It sits at L2
+with an optional `auth` feature (see "Decisions taken while scoping P0"): without the feature it
+depends on `cratestack-core` only. It is consumed by:
 
 - `cratestack-client-rust` (native, plus the Flutter runtime via FRB), which lifts the
   "not implemented" guard;
