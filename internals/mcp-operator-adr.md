@@ -249,7 +249,10 @@ this, so its text and this ADR agree.
   the procedure's `Args` type. Every `.cstack` type needs a defined mapping:
   scalars, `Decimal` (as a string, so precision is not lost), `DateTime`, enums,
   optional fields, lists and nested `type`s. This mapping is the largest single
-  piece of new code in this ADR.
+  piece of new code in this ADR. A type with no faithful mapping is refused,
+  never rendered as a permissive `{}`, and `@mcp(tool)` on a procedure that uses
+  it is a compile error. **`Json` is refused (maintainer, 2026-09-24):** serde
+  accepts any JSON value for it, so its only faithful schema would be `{}`.
 - **Output.** A generated `outputSchema` when the return type is an object. The
   result is sent as `structuredContent` and also as a text block.
 - **Annotations.** A `procedure` gets `readOnlyHint: true`. A
