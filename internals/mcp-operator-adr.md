@@ -134,7 +134,12 @@ mcp {
 `name` is the schema's name in resource URIs (`cratestack://blog/...`). It is
 required when `resources` is exposed and must be a DNS label: 1–63 characters
 from `[a-z0-9-]`, not starting or ending with `-`, since it sits in the URI's
-host position. An explicit
+host position. Two further names are **reserved**: a name with `--` as its 3rd
+and 4th characters (`xn--…` and every `??--…`, IDNA's reserved form, RFC 5891
+§4.2.3.1), so an IDNA-aware client can never display it as a different Unicode
+string; and an all-digit name such as `127`, so a name can never read as a
+number or an address. A name must contain at least one letter (maintainer,
+2026-09-25). An explicit
 name keeps URIs stable across file renames and stops two servers whose schema
 files share a name from colliding (maintainer, 2026-09-24, cratestack#1040).
 
@@ -289,9 +294,10 @@ this, so its text and this ADR agree.
   envelope would already reveal.
 - **Listing.** `tools/list` returns the static table in declaration order. The
   spec allows filtering the list by the caller's authorization; v1 does not
-  filter, and says so. Like every other method, it still resolves the caller
-  first and fails closed without one, as defence in depth behind the HTTP
-  guard (maintainer, 2026-09-24).
+  filter, and says so. Like every other method it answers, including
+  `server/discover` and `completion/complete`, it resolves the caller first
+  and fails closed without one, as defence in depth behind the HTTP guard
+  (maintainer, 2026-09-24/25).
 
 ## Resources
 
