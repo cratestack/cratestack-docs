@@ -132,10 +132,24 @@ named below.
   `encode_into` and `CratestackEnvelope` a provided `seal_value`. The COSE envelope overrides
   `seal_value` to encode straight into its output buffer, so neither trait merged in
   [cratestack#1066](https://github.com/cratestack/cratestack/pull/1066) breaks. HMAC and ES256
-  compute over the MAC/Sig structure incrementally. Ed25519 keeps one contiguous to-be-signed copy.
-  PureEdDSA hashes the message twice, and `ed25519-dalek` offers two-pass streaming only in its
-  `hazmat` module, which cratestack deliberately does not use. The copy is that choice, not a limit
-  of the algorithm.
+  compute over the MAC/Sig structure incrementally. So does Ed25519: the maintainer chose
+  `ed25519-dalek`'s `hazmat` two-pass streaming (PureEdDSA hashes the message twice), so no algorithm
+  makes a contiguous to-be-signed copy. Its correctness is pinned by byte-identity with the standard
+  `sign` for every vector and a range of payload sizes, and by the same strict-verify and tamper tests
+  as the other algorithms.
+- **A response binds the kind of request it answers (§4).** The response AAD carries
+  `request_kind`: `0` means the request was unsigned and its digest is `SHA-256(nonce ‖ payload)`;
+  `1` means it was signed and its digest is `SHA-256(request COSE bytes)`. Without it, the two digest
+  forms could collide: a signed request `C` re-presented as an unsigned twin with nonce `C[..16]` and
+  body `C[16..]` produced a server response that verified as the answer to `C`. A response carries
+  `request_kind`, `request_digest` and `status` together; a request carries none of them.
+- **An empty `audience` is misuse** (a `500`), because it silently gives up the protection. A
+  service's inbound audience must differ from the audience it uses when sending to peers: a shared
+  name such as `internal` defeats reflection protection.
+- **Kept as specified:** the replay store is keyed by `(kid, cti)`. Two keys that share an 8-byte kid
+  could interfere, but targeting that costs about 2⁶⁴ work and only causes a denial of service. The
+  Mac0 `KeyProvider` adapter refuses an empty id list, a repeated id, and two ids that resolve to the
+  same secret; it reads the keys once at load, so a rotation means a rebuild.
 - **Security hardening, found by the same review and implemented in #1005:**
   - the verified principal is the thumbprint of the key that actually verified, and that key's `kid`
     must match the header;
@@ -306,6 +320,7 @@ pub struct Binding<'a> {
     pub query: Option<&'a str>,            // canonical_query()
     pub schema_sha: &'a [u8; 32],
     pub payload_media_type: &'a str,       // "application/cbor"
+    pub request_kind: Option<RequestKind>, // responses only: unsigned (0) or signed (1) request
     pub request_digest: Option<[u8; 32]>,  // responses only
     pub status: Option<u16>,               // responses only
 }
@@ -390,8 +405,9 @@ external_aad = bstr .cbor [
   query: tstr / null,       ; canonical_query()
   schema_sha: bstr .size 32,
   payload_type: tstr,       ; "application/cbor"
-  ? request_digest: bstr .size 32,  ; responses: SHA-256 over the request's COSE bytes, or
-                                    ; SHA-256(Cratestack-Nonce ‖ payload) if the request was unsigned
+  ? request_kind: uint,             ; responses: 0 = unsigned request, 1 = signed request
+  ? request_digest: bstr .size 32,  ; responses: kind 1 → SHA-256 over the request's COSE bytes;
+                                    ; kind 0 → SHA-256(Cratestack-Nonce ‖ payload)
   ? status: uint,                   ; responses
 ]
 ```
@@ -410,7 +426,9 @@ defeats:
 - **schema drift:** a client built against another `.cstack` fails closed;
 - **cross-service replay and reflection:** the `audience` names the recipient;
 - **stale responses:** an unsigned request's digest includes the client's `Cratestack-Nonce`, so a
-  signed response answers exactly one request.
+  signed response answers exactly one request;
+- **digest-form confusion:** `request_kind` keeps a response to an unsigned request from verifying as
+  the response to a signed one.
 
 Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The same fact made
 `Router::nest` break descriptor lookup in cratestack#877.)
