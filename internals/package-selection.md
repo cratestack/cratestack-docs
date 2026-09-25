@@ -103,7 +103,7 @@ Dependency boundary rules:
 6. `cratestack-axum` owns Axum, Tower, HTTP-body integration.
 7. `cratestack-codec-cbor` owns the Serde-based CBOR codec surface built on `minicbor-serde`.
 8. JSON support currently lives inline in `cratestack-client-rust` rather than a dedicated `cratestack-codec-json` crate.
-9. COSE is currently a reserved runtime seam rather than a dedicated implemented `cratestack-cose` crate.
+9. `cratestack-cose` owns the COSE envelope ([ADR 0006](./cose-envelope-adr)): unary COSE_Sign1 / COSE_Mac0, AAD binding and `nonce` replay, with an optional `auth` feature for the `cratestack-auth` adapters. Routers and clients do not call it yet (cratestack#1006 / #1007).
 10. `application/cbor-seq` is a planned framing-aware transport mode and is not implemented today.
 11. `cratestack-macros` owns proc-macro dependencies.
 12. `cratestack-client-rust` owns generated Rust client runtime support.
