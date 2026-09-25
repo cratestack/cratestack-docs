@@ -117,8 +117,7 @@ The server's router, the route descriptor in `ROUTE_TRANSPORTS`, the
 generated Rust, TypeScript and Dart clients, and `cratestack generate-wiremock`
 all derive this path from one function,
 `cratestack_core::procedure_route::procedure_rest_route_path`. So the path a
-generated client calls is the path the server mounts. Before
-[cratestack/cratestack#1076](https://github.com/cratestack/cratestack/pull/1076)
+generated client calls is the path the server mounts. Before this fix (unreleased)
 the clients and stubs called the unversioned `/$procs/<name>`, and every call
 to a versioned procedure returned `404`. `ROUTE_TRANSPORTS` also named the
 unversioned path, so the REST idempotency and rate-limit resolvers never
