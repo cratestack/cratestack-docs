@@ -8,9 +8,14 @@ description: A signing envelope over the existing CBOR codec — COSE_Mac0, COSE
 ## Status
 
 **Accepted** — 2026-09-24. Proposed and accepted the same day; the maintainer recorded all ten
-decisions below ([cratestack#1003](https://github.com/cratestack/cratestack/issues/1003)). Nothing
-here is implemented in `cratestack` yet. A proof of concept exists outside this repository
-(maintainer, 2026-09-24). The design and the measurements below come from that work.
+decisions below ([cratestack#1003](https://github.com/cratestack/cratestack/issues/1003)).
+**P0's envelope is implemented** in the `cratestack-cose` crate
+([cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)): unary Mac0/Sign1, the
+external AAD, `nonce` replay and the shared test vectors, plus the `auth` feature's adapters. No
+router or client calls it yet; that wiring is cratestack#1006 (server) and cratestack#1007 (Rust
+client). A proof of concept exists outside this repository (maintainer, 2026-09-24). The design and
+the measurements below come from that work; the proof of concept's fixture was reconstructed for
+the vectors because its script was not available.
 
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
@@ -567,7 +572,9 @@ error. The schema SHA in the AAD makes a mismatch fail closed when signed; unsig
 
 ### 11. One implementation, every client
 
-One Rust crate, `cratestack-cose`, wraps `coset`; `cose_enroll.rs` moves into it. It sits at L2
+One Rust crate, `cratestack-cose`, implements this ADR's wire format itself, with a strict
+parser. It uses `coset` only as an interop oracle in its tests and for the legacy enrolment
+challenge, whose code moved into its `auth` feature (cratestack#1005). It sits at L2
 with an optional `auth` feature (see "Decisions taken while scoping P0"): without the feature it
 depends on `cratestack-core` only. It is consumed by:
 
