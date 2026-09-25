@@ -132,11 +132,14 @@ named below.
   `encode_into` and `CratestackEnvelope` a provided `seal_value`. The COSE envelope overrides
   `seal_value` to encode straight into its output buffer, so neither trait merged in
   [cratestack#1066](https://github.com/cratestack/cratestack/pull/1066) breaks. HMAC and ES256
-  compute over the MAC/Sig structure incrementally. So does Ed25519: the maintainer chose
-  `ed25519-dalek`'s `hazmat` two-pass streaming (PureEdDSA hashes the message twice), so no algorithm
-  makes a contiguous to-be-signed copy. Its correctness is pinned by byte-identity with the standard
-  `sign` for every vector and a range of payload sizes, and by the same strict-verify and tamper tests
-  as the other algorithms.
+  compute over the MAC/Sig structure incrementally. So does Ed25519, using the two-pass PureEdDSA
+  streaming in `ed25519-dalek`'s `MultipartSigner` (maintainer, 2026-09-25). That is the same
+  computation as the `hazmat` module's streaming API, but dalek expands the key itself, which avoids
+  the key-leak misuse `hazmat` warns about. No algorithm makes a contiguous to-be-signed copy.
+  Streamed signatures are byte-identical to the standard `sign` for every vector and a range of
+  payload sizes. **The streamed verify is as strict as `verify_strict`:** dalek's streaming verify
+  does not check that R decompresses, that R is not small-order, or that the public key is not weak,
+  so cratestack adds those checks itself, and tests prove each one matters.
 - **A response binds the kind of request it answers (§4).** The response AAD carries
   `request_kind`: `0` means the request was unsigned and its digest is `SHA-256(nonce ‖ payload)`;
   `1` means it was signed and its digest is `SHA-256(request COSE bytes)`. Without it, the two digest
@@ -320,9 +323,13 @@ pub struct Binding<'a> {
     pub query: Option<&'a str>,            // canonical_query()
     pub schema_sha: &'a [u8; 32],
     pub payload_media_type: &'a str,       // "application/cbor"
-    pub request_kind: Option<RequestKind>, // responses only: unsigned (0) or signed (1) request
-    pub request_digest: Option<[u8; 32]>,  // responses only
-    pub status: Option<u16>,               // responses only
+    pub response: Option<ResponseBinding>, // responses only; None on requests
+}
+
+/// All three travel together: a half-built response binding does not compile.
+pub struct ResponseBinding {
+    pub request: RequestDigest,            // { kind: Unsigned (0) | Signed (1), digest: [u8; 32] }
+    pub status: u16,
 }
 ```
 
