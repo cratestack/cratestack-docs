@@ -114,6 +114,53 @@ named below.
     reject every signed client. #1006/#1007 settle what the AAD binds before `Required` mode ships
     (tracked as a follow-up).
 
+**Decisions from the P0 security review** (maintainer, 2026-09-24, on
+[cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)). They amend §1, §4 and §10.
+
+- **The AAD binds the recipient (§4).** A new `audience` element carries a configured logical
+  service identifier, not the Host header, which gateways rewrite. Without it:
+  - one signed request opens at any two services that share a schema and a route, each with its own
+    nonce store;
+  - in Mac0 mode, a service's own outgoing request is a valid incoming request to itself.
+- **Signed responses to bodiless requests are fresh (§4).** A GET has no body, so its request digest
+  used to be `SHA-256("")` every time, and a year-old signed response still verified for a new GET of
+  the same URL. The client now sends `Cratestack-Nonce`: 16 random bytes, base64url without padding,
+  on every request it wants a verified response to, which in `Required` mode is all of them. For an
+  unsigned request, `request_digest = SHA-256(nonce ‖ payload)`. Each signed response is then bound
+  to exactly one request, with no server state.
+- **Encode in place stays (§1), through an additive hook.** `CratestackCodec` gains a provided
+  `encode_into` and `CratestackEnvelope` a provided `seal_value`. The COSE envelope overrides
+  `seal_value` to encode straight into its output buffer, so neither trait merged in
+  [cratestack#1066](https://github.com/cratestack/cratestack/pull/1066) breaks. HMAC and ES256
+  compute over the MAC/Sig structure incrementally. So does Ed25519, using the two-pass PureEdDSA
+  streaming in `ed25519-dalek`'s `MultipartSigner` (maintainer, 2026-09-25). That is the same
+  computation as the `hazmat` module's streaming API, but dalek expands the key itself, which avoids
+  the key-leak misuse `hazmat` warns about. No algorithm makes a contiguous to-be-signed copy.
+  Streamed signatures are byte-identical to the standard `sign` for every vector and a range of
+  payload sizes. **The streamed verify is as strict as `verify_strict`:** dalek's streaming verify
+  does not check that R decompresses, that R is not small-order, or that the public key is not weak,
+  so cratestack adds those checks itself, and tests prove each one matters.
+- **A response binds the kind of request it answers (§4).** The response AAD carries
+  `request_kind`: `0` means the request was unsigned and its digest is `SHA-256(nonce ‖ payload)`;
+  `1` means it was signed and its digest is `SHA-256(request COSE bytes)`. Without it, the two digest
+  forms could collide: a signed request `C` re-presented as an unsigned twin with nonce `C[..16]` and
+  body `C[16..]` produced a server response that verified as the answer to `C`. A response carries
+  `request_kind`, `request_digest` and `status` together; a request carries none of them.
+- **An empty `audience` is misuse** (a `500`), because it silently gives up the protection. A
+  service's inbound audience must differ from the audience it uses when sending to peers: a shared
+  name such as `internal` defeats reflection protection.
+- **Kept as specified:** the replay store is keyed by `(kid, cti)`. Two keys that share an 8-byte kid
+  could interfere, but targeting that costs about 2⁶⁴ work and only causes a denial of service. The
+  Mac0 `KeyProvider` adapter refuses an empty id list, a repeated id, and two ids that resolve to the
+  same secret; it reads the keys once at load, so a rotation means a rebuild.
+- **Security hardening, found by the same review and implemented in #1005:**
+  - the verified principal is the thumbprint of the key that actually verified, and that key's `kid`
+    must match the header;
+  - an HMAC key is bound to exactly one of alg 4 or 5, so a 256/256 deployment never accepts a 64-bit
+    tag;
+  - ESP256 signatures are low-S only, which keeps "one message, one encoding";
+  - the skew bound is validated when the envelope is built.
+
 ## Context
 
 ### What exists today
@@ -239,7 +286,9 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 ```
 
 The payload `bstr` **is** the codec output, byte for byte. The sealer encodes straight into the COSE
-buffer: it reserves up to 9 bytes for the `bstr` head, encodes, then patches the head. The verifier
+buffer: it reserves up to 9 bytes for the `bstr` head, encodes, then patches the head. The call path
+is the provided `CratestackEnvelope::seal_value` over `CratestackCodec::encode_into` (see "Decisions
+from the P0 security review"); `seal(payload)` remains for callers that already hold encoded bytes. The verifier
 checks those bytes and hands the same slice to `CborCodec::decode`. Nothing is re-serialized.
 
 The envelope is not a new `CratestackCodec` implementation. Signing needs a key, request context
@@ -267,14 +316,20 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
 
 /// Everything that goes into external_aad. Built by router/client, never sent (§4).
 pub struct Binding<'a> {
+    pub audience: &'a str,                 // configured logical service identifier (the recipient)
     pub method: &'a str,
     pub route: &'a str,                    // op_id for RPC; route template for REST
     pub path_params: &'a [&'a str],        // REST: matched values in template order; RPC: empty
     pub query: Option<&'a str>,            // canonical_query()
     pub schema_sha: &'a [u8; 32],
     pub payload_media_type: &'a str,       // "application/cbor"
-    pub request_digest: Option<[u8; 32]>,  // responses only
-    pub status: Option<u16>,               // responses only
+    pub response: Option<ResponseBinding>, // responses only; None on requests
+}
+
+/// All three travel together: a half-built response binding does not compile.
+pub struct ResponseBinding {
+    pub request: RequestDigest,            // { kind: Unsigned (0) | Signed (1), digest: [u8; 32] }
+    pub status: u16,
 }
 ```
 
@@ -350,23 +405,37 @@ payload     = bstr .cbor Body
 ```cddl
 external_aad = bstr .cbor [
   1,                        ; binding version
+  audience: tstr,           ; the recipient: a configured logical service id, never the Host header
   method: tstr,
   route: tstr,              ; RPC op_id (stable across prefix rewrites); REST route template
   path_params: [* tstr],    ; REST: matched path parameter values in template order; RPC: []
   query: tstr / null,       ; canonical_query()
   schema_sha: bstr .size 32,
   payload_type: tstr,       ; "application/cbor"
-  ? request_digest: bstr .size 32,  ; responses: SHA-256 over the request's COSE bytes (or payload if unsigned)
+  ? request_kind: uint,             ; responses: 0 = unsigned request, 1 = signed request
+  ? request_digest: bstr .size 32,  ; responses: kind 1 → SHA-256 over the request's COSE bytes;
+                                    ; kind 0 → SHA-256(Cratestack-Nonce ‖ payload)
   ? status: uint,                   ; responses
 ]
 ```
+
+**Binding version 1 is not frozen yet.** Nothing that encodes this AAD has been released:
+`cratestack-cose` lands in P0 (cratestack#1005). Every shape change before that first release,
+namely `path_params`, `audience` and the nonce-based unsigned digest, is part of version 1. From that
+release on, any change to the element list or to how an element is derived bumps the version, and
+verifiers reject versions they do not know.
 
 Both sides rebuild this from context they already have, so it **costs 0 bytes on the wire**. It
 defeats:
 
 - **cross-endpoint replay:** a body signed for `payment.create` fails on `payment.refund`;
 - **response swapping:** a response is bound to its request and its status code;
-- **schema drift:** a client built against another `.cstack` fails closed.
+- **schema drift:** a client built against another `.cstack` fails closed;
+- **cross-service replay and reflection:** the `audience` names the recipient;
+- **stale responses:** an unsigned request's digest includes the client's `Cratestack-Nonce`, so a
+  signed response answers exactly one request;
+- **digest-form confusion:** `request_kind` keeps a response to an unsigned request from verifying as
+  the response to a signed one.
 
 Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The same fact made
 `Router::nest` break descriptor lookup in cratestack#877.)
