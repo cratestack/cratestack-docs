@@ -54,6 +54,7 @@
               "guides/computed-fields",
               "guides/prepared-statements-and-caching",
               "guides/rpc-transport",
+              "guides/mcp",
               "guides/no-database-procedures"
             ]
           },
