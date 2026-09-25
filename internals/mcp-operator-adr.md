@@ -1,16 +1,22 @@
 ---
 title: "ADR 0002: Optional MCP Operator Surface"
-description: An opt-in, schema-generated Model Context Protocol server that exposes explicitly annotated procedures as MCP tools and models as MCP resources, over the same policy-enforcing call path as REST and RPC. Proposed; revised 2026-09-24.
+description: An opt-in, schema-generated Model Context Protocol server that exposes explicitly annotated procedures as MCP tools and models as MCP resources, over the same policy-enforcing call path as REST and RPC. Accepted 2026-09-25.
 ---
 
 # ADR 0002: Optional MCP Operator Surface
 
 ## Status
 
-**Proposed**, revised 2026-09-24. Nothing here is implemented. There is no
-`cratestack-mcp` crate. The parser accepts a bare `mcp { ... }` block
-(`cratestack-parser/src/parse/mod.rs`), keeps its body as raw text lines in
-`Schema.config_blocks`, and nothing validates or reads it.
+**Accepted**, 2026-09-25. It is implemented on `main`, in phases 0–6 of epic
+[cratestack#1033](https://github.com/cratestack/cratestack/issues/1033):
+[#1034](https://github.com/cratestack/cratestack/pull/1034),
+[#1052](https://github.com/cratestack/cratestack/pull/1052),
+[#1056](https://github.com/cratestack/cratestack/pull/1056),
+[#1063](https://github.com/cratestack/cratestack/pull/1063),
+[#1067](https://github.com/cratestack/cratestack/pull/1067),
+[#1068](https://github.com/cratestack/cratestack/pull/1068) and
+[#1071](https://github.com/cratestack/cratestack/pull/1071). It is not in a
+published release yet. The user guide is [MCP](/guides/mcp).
 
 The first version of this ADR (2026-04-26) was written before the RPC transport,
 the layer model (ADR 0011, ADR 0014), facade disjointness (ADR 0013), the L3
@@ -21,12 +27,13 @@ this file's git history.
 The maintainer settled every question in the table below on 2026-09-24: D1–D4
 by choosing among options, D5, D6, Q1–Q5 and Q8 by taking the recommendation,
 and Q6 and Q7 by choosing against it.
-The ADR itself stays **Proposed** until the maintainer accepts it.
+The maintainer accepted the ADR on 2026-09-25, after phase 6 landed.
 
 ## Date
 
 - 2026-04-26: proposed
 - 2026-09-24: revised against current architecture; D1–D6 and Q1–Q8 decided
+- 2026-09-25: accepted, after phases 0–6 were merged
 
 ## Decisions for the maintainer
 
