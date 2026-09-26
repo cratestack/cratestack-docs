@@ -417,12 +417,27 @@ external_aad = bstr .cbor [
   query: tstr / null,       ; canonical_query()
   schema_sha: bstr .size 32,
   payload_type: tstr,       ; "application/cbor"
+  bound_headers: [          ; request headers with semantics, exactly as sent (UTF-8, untrimmed)
+    idempotency_key: tstr / null,
+    if_match: tstr / null,
+  ],
   ? request_kind: uint,             ; responses: 0 = unsigned request, 1 = signed request
   ? request_digest: bstr .size 32,  ; responses: kind 1 → SHA-256 over the request's COSE bytes;
                                     ; kind 0 → SHA-256(Cratestack-Nonce ‖ payload)
   ? status: uint,                   ; responses
 ]
 ```
+
+**`bound_headers`** (added 2026-09-26, cratestack#1006, inside version 1 before the freeze).
+- A request binding has 9 elements and a response binding 12. `bound_headers` is always present:
+  `[null, null]` when a request carries neither header, and a response repeats its request's values.
+- A request that carries either header twice, or a value that is not UTF-8, is refused with an
+  unsigned `400` before anything is bound.
+- An empty value binds as `""`, not `null`.
+- It defeats an on-path party that strips `Idempotency-Key` from a re-sealed retry (the operation
+  would run twice), or that strips or changes `If-Match` (a conditional update would become a blind
+  one).
+- Response headers (`ETag`, `Retry-After`) remain unauthenticated.
 
 **Binding version 1 is not frozen yet.** It freezes at the first release in which generated
 routers and clients put the envelope on the wire: cratestack#1006 (server layer) and cratestack#1007
@@ -442,6 +457,7 @@ defeats:
 - **response swapping:** a response is bound to its request and its status code;
 - **schema drift:** a client built against another `.cstack` fails closed;
 - **cross-service replay and reflection:** the `audience` names the recipient;
+- **header stripping:** `bound_headers` covers `Idempotency-Key` and `If-Match`;
 - **stale responses:** an unsigned request's digest includes the client's `Cratestack-Nonce`, so a
   signed response answers exactly one request;
 - **digest-form confusion:** `request_kind` keeps a response to an unsigned request from verifying as
