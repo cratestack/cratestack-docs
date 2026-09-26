@@ -12,7 +12,7 @@ decisions below ([cratestack#1003](https://github.com/cratestack/cratestack/issu
 **P0's envelope is implemented** in the `cratestack-cose` crate
 ([cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)): unary Mac0/Sign1, the
 external AAD, `nonce` replay and the shared test vectors, plus the `auth` feature's adapters. The
-server layer that calls it from the generated routers is cratestack#1006 (unreleased; see
+server layer that calls it from the generated routers is cratestack#1006 (shipped in 0.13.1; see
 [Signed transport](/guides/signed-transport)); the Rust client is cratestack#1007. A proof of concept exists outside this repository (maintainer, 2026-09-24). The design and
 the measurements below come from that work; the proof of concept's fixture was reconstructed for
 the vectors because its script was not available.

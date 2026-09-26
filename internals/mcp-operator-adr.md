@@ -15,8 +15,8 @@ description: An opt-in, schema-generated Model Context Protocol server that expo
 [#1063](https://github.com/cratestack/cratestack/pull/1063),
 [#1067](https://github.com/cratestack/cratestack/pull/1067),
 [#1068](https://github.com/cratestack/cratestack/pull/1068) and
-[#1071](https://github.com/cratestack/cratestack/pull/1071). It is not in a
-published release yet. The user guide is [MCP](/guides/mcp).
+[#1071](https://github.com/cratestack/cratestack/pull/1071). It shipped in CrateStack 0.13.0, and
+the follow-up decisions F1, F2 and F5 below shipped in 0.13.1. The user guide is [MCP](/guides/mcp).
 
 The first version of this ADR (2026-04-26) was written before the RPC transport,
 the layer model (ADR 0011, ADR 0014), facade disjointness (ADR 0013), the L3

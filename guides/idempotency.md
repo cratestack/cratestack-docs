@@ -161,7 +161,7 @@ fingerprint takes the first of these the request carries:
 
 | Request carries | Fingerprint |
 | --- | --- |
-| a `VerifiedPrincipal` extension *(unreleased, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))* | `princ:<sha256 hex of the principal>` |
+| a `VerifiedPrincipal` extension *(since 0.13.1, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))* | `princ:<sha256 hex of the principal>` |
 | an `Authorization` header | the SHA-256 hex of the header |
 | a `ConnectInfo<SocketAddr>` peer | the peer's IP address |
 | none of these | refused, `412` ([cratestack#416](https://github.com/cratestack/cratestack/issues/416)) |
@@ -186,7 +186,7 @@ shared fallback like the `"anonymous"` above.
 
 ### Upgrading to the `VerifiedPrincipal` default
 
-*(unreleased, cratestack#1006)* The `VerifiedPrincipal` row is new. An
+*(since 0.13.1, cratestack#1006)* The `VerifiedPrincipal` row is new. An
 application that already inserts `VerifiedPrincipal` in front of the
 idempotency layer (its own middleware, or the envelope layer) moves to the
 `princ:` namespace on upgrade: an `Idempotency-Key` whose first attempt
@@ -204,7 +204,7 @@ Custom fingerprints are unaffected.
 
 ### Retries under the envelope layer
 
-*(unreleased, cratestack#1006)* Behind the [envelope layer](./signed-transport),
+*(since 0.13.1, cratestack#1006)* Behind the [envelope layer](./signed-transport),
 this layer sees the **opened** request: the request hash covers the plain
 CBOR payload, not the COSE bytes. A client that re-seals its retry (a fresh
 `cti`, so it passes replay protection) under the same `Idempotency-Key`
