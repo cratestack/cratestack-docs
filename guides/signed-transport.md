@@ -6,8 +6,8 @@ description: Open signed requests and seal every response of a generated REST or
 # Signed transport (COSE envelope layer)
 
 <Warning>
-**Unreleased** ([cratestack#1006](https://github.com/cratestack/cratestack/issues/1006)). The
-server layer is on `main` and in no published release yet. The design is
+**Since CrateStack 0.13.1** ([cratestack#1006](https://github.com/cratestack/cratestack/issues/1006)).
+The design is
 [ADR 0006](/internals/cose-envelope-adr). The generated Rust client does not sign requests yet
 (cratestack#1007), and the wire format (binding v1, including the AAD) may still change until
 both sides have shipped (cratestack#1082).

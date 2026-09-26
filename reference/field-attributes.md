@@ -94,7 +94,7 @@ surfaces.
 A procedure argument can name a model directly (`procedure p(account: Account)`)
 or through a `type` that embeds one. A `@server_only` field in that argument is
 never read from the request: the implementation always sees the field's default,
-whatever the client sent, on both transports. Until cratestack#1051 (unreleased)
+whatever the client sent, on both transports. Before 0.13.0 (cratestack#1051)
 the field was only skipped on output, so a client could set it this way. If a
 procedure took a `@server_only` value from its argument, treat that value as
 client-controlled and derive it on the server instead.

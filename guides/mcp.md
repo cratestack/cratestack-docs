@@ -5,11 +5,12 @@ description: Serve selected procedures as MCP tools and selected models as read-
 
 # MCP: tools and resources for agents
 
-<Warning>
-**Unreleased.** The MCP operator is on `main` and in no published release yet. The design is
+<Note>
+**Since CrateStack 0.13.0.** Before 0.13.0 there is no MCP runtime. A few behaviours changed in
+0.13.1 and are marked *(since 0.13.1)* below. The design is
 [ADR 0002](/internals/mcp-operator-adr); the tracking epic is
 [cratestack#1033](https://github.com/cratestack/cratestack/issues/1033).
-</Warning>
+</Note>
 
 CrateStack can serve parts of a schema to AI agents over the
 [Model Context Protocol](https://modelcontextprotocol.io), revision `2026-07-28`. Procedures you
@@ -27,7 +28,7 @@ Turn on the `mcp` feature of the facade you already use. Tools work on `cratesta
 embedded role enforces no policy), and `cratestack-client` serves nothing.
 
 ```toml
-cratestack = { package = "cratestack-pg", version = "0.12", features = ["mcp"] }
+cratestack = { package = "cratestack-pg", version = "0.13", features = ["mcp"] }
 ```
 
 Then declare what to expose:
@@ -85,8 +86,9 @@ type with no faithful JSON Schema: `Json`, `FindMany`, `Vector`, `Geography` and
 
 The schema macro generates `cratestack_schema::mcp`. Its `tools(db, registry, resolvers)` value is
 the tool table. Over stdio you name the caller explicitly. There is no default identity, and an
-anonymous context is refused: `StdioServer::new` returns `StdioConfigError::AnonymousContext` for a
-context that isn't authenticated, the same rule the HTTP guard applies to your `AuthProvider`.
+anonymous context is refused *(since 0.13.1)*: `StdioServer::new` returns
+`StdioConfigError::AnonymousContext` for a context that isn't authenticated, the same rule the HTTP
+guard applies to your `AuthProvider`. On 0.13.0 it accepted one and served every call as nobody.
 
 ```rust
 let ctx = cratestack::SystemContext::for_service("support-agent").into_context();
@@ -143,6 +145,9 @@ audience check.
    one, nothing is reserved. A failing rate-limit store follows the `StoreErrorPolicy` you pass to
    `with_store_error_policy`, the same type `RateLimitLayer` uses on HTTP. The budget is per
    caller and per transport: a caller's MCP calls and its REST calls are counted separately.
+   *(since 0.13.1)* The MCP key holds a SHA-256 of the caller's id, not the id itself. After
+   upgrading from 0.13.0 with a shared store, MCP idempotency records written by 0.13.0 no longer
+   replay and MCP rate-limit buckets start fresh.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
    then your implementation. Its ORM calls carry `@@allow` in their SQL.
 

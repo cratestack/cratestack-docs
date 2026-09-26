@@ -89,7 +89,7 @@ The `Authorization` header is **unverified** here, since this layer runs
 before authentication; the budgets and their fallbacks are in the
 [`cratestack-axum` README](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-axum#rate-limiting).
 
-*(unreleased, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))*
+*(since 0.13.1, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))*
 The [signed transport](./signed-transport) envelope layer is what produces a
 `VerifiedPrincipal` for signed traffic (`cose:<hex thumbprint>` by default),
 so a signed client is charged to its own `princ:` bucket with no
