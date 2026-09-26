@@ -84,7 +84,9 @@ type with no faithful JSON Schema: `Json`, `FindMany`, `Vector`, `Geography` and
 ## Serve it over stdio
 
 The schema macro generates `cratestack_schema::mcp`. Its `tools(db, registry, resolvers)` value is
-the tool table. Over stdio you name the caller explicitly. There is no default identity.
+the tool table. Over stdio you name the caller explicitly. There is no default identity, and an
+anonymous context is refused: `StdioServer::new` returns `StdioConfigError::AnonymousContext` for a
+context that isn't authenticated, the same rule the HTTP guard applies to your `AuthProvider`.
 
 ```rust
 let ctx = cratestack::SystemContext::for_service("support-agent").into_context();
@@ -139,7 +141,8 @@ audience check.
 3. If you passed an `OpExecutor` with `with_executor`, L3 admission runs: rate limiting, then
    idempotency. An idempotency key travels in `_meta["dev.cratestack/idempotencyKey"]`; without
    one, nothing is reserved. A failing rate-limit store follows the `StoreErrorPolicy` you pass to
-   `with_store_error_policy`, the same type `RateLimitLayer` uses on HTTP.
+   `with_store_error_policy`, the same type `RateLimitLayer` uses on HTTP. The budget is per
+   caller and per transport: a caller's MCP calls and its REST calls are counted separately.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
    then your implementation. Its ORM calls carry `@@allow` in their SQL.
 

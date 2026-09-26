@@ -34,6 +34,7 @@ The maintainer accepted the ADR on 2026-09-25, after phase 6 landed.
 - 2026-04-26: proposed
 - 2026-09-24: revised against current architecture; D1–D6 and Q1–Q8 decided
 - 2026-09-25: accepted, after phases 0–6 were merged
+- 2026-09-26: five follow-up questions from phases 5 and 6 decided (F1–F5, below)
 
 ## Decisions for the maintainer
 
@@ -53,6 +54,22 @@ The maintainer accepted the ADR on 2026-09-25, after phase 6 landed.
 | Q6 | MCP has no idempotency-key slot. How do mutation tools behave on retry? | No key in v1, documented. | **Optional key via `_meta`** (2026-09-24): a call carrying `_meta["dev.cratestack/idempotencyKey"]` is reserved through L3 exactly like an `Idempotency-Key` header; without it, no reservation is made (same as REST without the header). |
 | Q7 | Output types with `@computed` fields: refuse, or resolve? | Refuse for v1. | **Resolve like REST/RPC** (2026-09-24): the tool result runs the same computed-field resolution as the REST/RPC response path, and the output schema advertises those fields. |
 | Q8 | `@stream` procedures as tools? | Refuse. | **Refused** (2026-09-24): `@mcp(tool)` on a `@stream` procedure is a compile error; MCP tool results are single responses. |
+
+### Follow-up decisions (2026-09-26)
+
+Questions the implementation raised after acceptance, in
+[cratestack#1068](https://github.com/cratestack/cratestack/pull/1068) and
+[cratestack#1071](https://github.com/cratestack/cratestack/pull/1071). The
+maintainer took the recommendation on each, recorded on
+[cratestack#1033](https://github.com/cratestack/cratestack/issues/1033).
+
+| # | Question | Decision |
+|---|---|---|
+| F1 | Should one caller's REST and MCP calls share a rate-limit budget, and should MCP hash the id in its admission key? | **Separate budgets; the id is hashed** ([cratestack#1085](https://github.com/cratestack/cratestack/pull/1085)). Requirement 13 asks for the same admission, not the same bucket, and REST's default key (the unverified `Authorization` header, taken before authentication) could not be matched by MCP in general. The idempotency namespace and rate-limit bucket are `mcp:<sha256 hex of id>` for a user and `mcp-system:<sha256 hex of id>` for a system caller, so an identifier never lands in a store key verbatim, as on REST. |
+| F2 | Should the stdio server refuse an anonymous `CratestackContext`? | **Refused at construction** ([cratestack#1084](https://github.com/cratestack/cratestack/pull/1084)). `StdioServer::new` and `McpServer::new` return `StdioConfigError::AnonymousContext` for a context that is not authenticated, the rule the Streamable HTTP guard applies to an `AuthProvider`'s answer. This tightens Q1. |
+| F3 | The conformance client installs with npm in a pnpm repository. Keep it? | **Moved to pnpm** ([cratestack#1088](https://github.com/cratestack/cratestack/pull/1088)), pinned to the repository's pnpm version and installed from a frozen lockfile. |
+| F4 | Should the conformance CI job skip docs-only pull requests? | **Yes, as it does today** ([cratestack#1088](https://github.com/cratestack/cratestack/pull/1088)), through the workflow's own `docs/**` filter. It runs on every other change, because conformance depends on nearly every framework crate. |
+| F5 | Should a legacy `initialize` resolve the guard's caller before `rmcp` answers `-32022`? Is it acceptable that an id that parses as a URI segment but not as the key type is charged, while a NUL, a raw non-URI character or an unknown URI is not? | **`initialize` checks the caller first; the charges stay** ([cratestack#1087](https://github.com/cratestack/cratestack/pull/1087)). Below the guard a legacy `initialize` now fails closed with `-32603` like every other method, so widening the supported versions later cannot expose `serverInfo` to an unauthenticated request. The charging rule reveals only the id's type, never whether a row exists, and is pinned by a test. |
 
 ## Context
 
@@ -371,7 +388,8 @@ Neither transport assumes the caller is trusted. Each builds a
   it builds the stdio server (Q1): for example
   `CratestackContext::authenticated(...)` built from a verified token in the
   environment, or `SystemContext::for_service(...)` for a deliberate service
-  identity. There is no default identity.
+  identity. There is no default identity, and an anonymous context is refused
+  when the server is built (F2).
 
 ## Crate layout and layering
 
@@ -430,7 +448,9 @@ itself, so it doesn't read as an oversight.
     re-exports it, so existing `use cratestack_axum::ratelimit::StoreErrorPolicy`
     imports keep working. The application passes the policy to each transport;
     with `Deny`, an unavailable or slow store (500 ms timeout) refuses the call
-    on MCP exactly as on HTTP (maintainer, 2026-09-24).
+    on MCP exactly as on HTTP (maintainer, 2026-09-24). The same admission does
+    not mean the same bucket: a caller's MCP budget is separate from its REST
+    budget, and MCP's key hashes the principal id (F1).
 
 ## Consequences
 
