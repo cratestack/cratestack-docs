@@ -424,11 +424,16 @@ external_aad = bstr .cbor [
 ]
 ```
 
-**Binding version 1 is not frozen yet.** Nothing that encodes this AAD has been released:
-`cratestack-cose` lands in P0 (cratestack#1005). Every shape change before that first release,
-namely `path_params`, `audience` and the nonce-based unsigned digest, is part of version 1. From that
-release on, any change to the element list or to how an element is derived bumps the version, and
-verifiers reject versions they do not know.
+**Binding version 1 is not frozen yet.** It freezes at the first release in which generated
+routers and clients put the envelope on the wire: cratestack#1006 (server layer) and cratestack#1007
+(Rust client). It does not freeze at the first release of `cratestack-cose` itself. v0.13.0 publishes
+the crate before either consumer exists, so no deployed peer can depend on version 1 yet. The crate
+says so ("wire-format preview", cratestack#1082) and tells direct users to pin an exact version.
+Every change before the freeze is part of version 1: `path_params`, `audience`, the nonce-based
+unsigned digest, and cratestack#1065's schema identity. From the freezing release on, any change to
+the element list or to how an element is derived bumps the version, and verifiers reject versions they
+do not know. (Decision 2026-09-26, taken when v0.13.0 was cut: tying the freeze to the crate's first
+release would have forced version 2 for #1065 with no peer to be compatible with.)
 
 Both sides rebuild this from context they already have, so it **costs 0 bytes on the wire**. It
 defeats:
