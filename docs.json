@@ -70,6 +70,7 @@
             "group": "Banking Readiness",
             "pages": [
               "guides/idempotency",
+              "guides/signed-transport",
               "guides/upsert",
               "guides/batches",
               "guides/optimistic-locking",

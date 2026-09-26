@@ -76,8 +76,31 @@ buffer-limit errors.
 
 ## Key function
 
-The default fingerprint matches the idempotency layer's. Banks running
-tenant-scoped budgeting override it:
+The default key takes the first of these the request carries:
+
+| Request carries | Bucket key |
+| --- | --- |
+| a `VerifiedPrincipal` extension | `princ:<sha256>`, no cardinality budget |
+| an `Authorization` header | `auth:<sha256>`, counted against a per-peer (or global) budget |
+| a `ConnectInfo<SocketAddr>` peer only | `ip:<addr>` (an IPv6 peer's /64) |
+| none of these | refused, `412` |
+
+The `Authorization` header is **unverified** here, since this layer runs
+before authentication; the budgets and their fallbacks are in the
+[`cratestack-axum` README](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-axum#rate-limiting).
+
+*(unreleased, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))*
+The [signed transport](./signed-transport) envelope layer is what produces a
+`VerifiedPrincipal` for signed traffic (`cose:<hex thumbprint>` by default),
+so a signed client is charged to its own `princ:` bucket with no
+`Authorization` header or `ConnectInfo`. That only works with the envelope
+**outside** this layer (its last `.layer(..)`), and it means signature
+verification, with its key and nonce lookups, runs **before** the rate
+limit. Put an IP-level limiter outside the envelope layer to bound what an
+unauthenticated flood can cost. The `429` this layer answers a signed
+request with is sealed by the envelope like any other response.
+
+Banks running tenant-scoped budgeting override the default:
 
 ```rust
 RateLimitLayer::new(store, config).with_key_fn(|req| {
