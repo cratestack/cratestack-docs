@@ -117,13 +117,14 @@ The server's router, the route descriptor in `ROUTE_TRANSPORTS`, the
 generated Rust, TypeScript and Dart clients, and `cratestack generate-wiremock`
 all derive this path from one function,
 `cratestack_core::procedure_route::procedure_rest_route_path`. So the path a
-generated client calls is the path the server mounts. Before
-[cratestack/cratestack#1079](https://github.com/cratestack/cratestack/pull/1079)
-(unreleased) the clients and stubs called the unversioned `/$procs/<name>`, and every call
-to a versioned procedure returned `404`. `ROUTE_TRANSPORTS` also named the
+generated client calls is the path the server mounts. This holds since
+CrateStack 0.13.0
+([cratestack/cratestack#1079](https://github.com/cratestack/cratestack/pull/1079)).
+Before 0.13.0 the clients and stubs called the unversioned `/$procs/<name>`, and
+every call to a versioned procedure returned `404`. `ROUTE_TRANSPORTS` also named the
 unversioned path, so the REST idempotency and rate-limit resolvers never
 matched a versioned procedure, and its `@no_idempotency` / `@no_rate_limit`
-opt-outs were ignored. Regenerate clients and stubs built before that fix.
+opt-outs were ignored. Regenerate clients and stubs built before 0.13.0.
 
 On `transport rpc`, `@api_version` does not change the address. A procedure is
 always `POST /rpc/procedure.<name>`, on the server and in every generated
