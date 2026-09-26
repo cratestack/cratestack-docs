@@ -11,9 +11,9 @@ description: A signing envelope over the existing CBOR codec — COSE_Mac0, COSE
 decisions below ([cratestack#1003](https://github.com/cratestack/cratestack/issues/1003)).
 **P0's envelope is implemented** in the `cratestack-cose` crate
 ([cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)): unary Mac0/Sign1, the
-external AAD, `nonce` replay and the shared test vectors, plus the `auth` feature's adapters. No
-router or client calls it yet; that wiring is cratestack#1006 (server) and cratestack#1007 (Rust
-client). A proof of concept exists outside this repository (maintainer, 2026-09-24). The design and
+external AAD, `nonce` replay and the shared test vectors, plus the `auth` feature's adapters. The
+server layer that calls it from the generated routers is cratestack#1006 (unreleased; see
+[Signed transport](/guides/signed-transport)); the Rust client is cratestack#1007. A proof of concept exists outside this repository (maintainer, 2026-09-24). The design and
 the measurements below come from that work; the proof of concept's fixture was reconstructed for
 the vectors because its script was not available.
 

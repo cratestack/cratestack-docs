@@ -157,8 +157,22 @@ wiping the captured response.
 
 The layer derives a principal fingerprint from the request. Two callers
 sharing a key under different principals do **not** collide. The default
-fingerprint is a SHA-256 of the `Authorization` header; services running
-mTLS or session cookies override it:
+fingerprint takes the first of these the request carries:
+
+| Request carries | Fingerprint |
+| --- | --- |
+| a `VerifiedPrincipal` extension *(unreleased, [cratestack#1006](https://github.com/cratestack/cratestack/issues/1006))* | `princ:<sha256 hex of the principal>` |
+| an `Authorization` header | the SHA-256 hex of the header |
+| a `ConnectInfo<SocketAddr>` peer | the peer's IP address |
+| none of these | refused, `412` ([cratestack#416](https://github.com/cratestack/cratestack/issues/416)) |
+
+`VerifiedPrincipal` is inserted by a layer in front of this one that
+verified the caller, such as the [signed transport](./signed-transport)
+envelope layer (`cose:<hex thumbprint>` for a signed request); the rate
+limiter's default key reads it the same way. `ConnectInfo` is only present
+when the server is served through
+`into_make_service_with_connect_info::<SocketAddr>()`. Services keying on
+something else (mTLS, session cookies, a tenant) override the default:
 
 ```rust
 IdempotencyLayer::new(store, ttl)
@@ -166,6 +180,38 @@ IdempotencyLayer::new(store, ttl)
         req.extensions().get::<TenantId>().map(|t| t.to_string()).unwrap_or_else(|| "anonymous".to_owned())
     })
 ```
+
+A custom fingerprint takes responsibility for its namespace, including a
+shared fallback like the `"anonymous"` above.
+
+### Upgrading to the `VerifiedPrincipal` default
+
+*(unreleased, cratestack#1006)* The `VerifiedPrincipal` row is new. An
+application that already inserts `VerifiedPrincipal` in front of the
+idempotency layer (its own middleware, or the envelope layer) moves to the
+`princ:` namespace on upgrade: an `Idempotency-Key` whose first attempt
+landed before the deploy and whose retry lands after it runs again. Keep
+the old namespace for the deploy, and drop the call once the idempotency
+TTL has passed:
+
+```rust
+let idempotency = IdempotencyLayer::new(store, ttl).with_legacy_principal_fingerprint();
+// or compose it in your own fingerprint (it returns `Result<String, CratestackError>`):
+// cratestack::idempotency::legacy_principal_fingerprint(&request)
+```
+
+Custom fingerprints are unaffected.
+
+### Retries under the envelope layer
+
+*(unreleased, cratestack#1006)* Behind the [envelope layer](./signed-transport),
+this layer sees the **opened** request: the request hash covers the plain
+CBOR payload, not the COSE bytes. A client that re-seals its retry (a fresh
+`cti`, so it passes replay protection) under the same `Idempotency-Key`
+therefore gets the stored response, sealed afresh for the new request. The
+envelope binds `Idempotency-Key` exactly as sent, so a proxy that strips it
+from the retry (which would then run twice) breaks the signature; the
+client must include the key in what it signs.
 
 ## Persistence
 
