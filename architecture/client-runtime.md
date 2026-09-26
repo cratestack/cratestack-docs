@@ -630,7 +630,7 @@ let result = payment
     .await?;
 ```
 
-The generated facade still uses the canonical HTTP contract underneath: model clients call generated REST CRUD routes, procedure clients call `/$procs/{procedureName}`, and projection helpers lower selected reads into `fields`, `include`, and `includeFields[path]` query params. OAuth2 protocol endpoints are intentionally outside `.cstack` and should remain handwritten protocol integrations rather than generated CrateStack clients.
+The generated facade still uses the canonical HTTP contract underneath: model clients call generated REST CRUD routes, procedure clients call `/$procs/{procedureName}`, or `/{version}/$procs/{procedureName}` for a procedure declared `@api_version("{version}")` (the same path the server mounts; see [Procedure routes](/architecture/http-transport-contract#procedure-routes)), and projection helpers lower selected reads into `fields`, `include`, and `includeFields[path]` query params. OAuth2 protocol endpoints are intentionally outside `.cstack` and should remain handwritten protocol integrations rather than generated CrateStack clients.
 
 JSON transport fallback with no envelope:
 

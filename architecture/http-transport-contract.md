@@ -90,6 +90,46 @@ Current implemented and planned transport features:
 | streaming sequence decode API | Implemented | `RpcClient::call_streaming` and `CratestackClient::post_list_streamed` yield a bounded `tokio::sync::mpsc::Receiver` (16 in-flight items) with item-at-a-time decode as bytes arrive — no full-body buffering. See `./client-runtime.md`'s "Streaming surfaces" section for the Flutter/dio equivalents. |
 | COSE envelope support | Not implemented | Reserved future seam only. |
 
+## Procedure routes
+
+On `transport rest` a procedure is served at `POST /$procs/<name>`, with the
+schema's procedure name verbatim (not snake-cased). A procedure that declares
+`@api_version("v2")` is served at `POST /v2/$procs/<name>` instead, so one
+schema can run two versions of an operation side by side as two differently
+named procedures:
+
+```cstack
+procedure createPayment(args: CreatePaymentArgs): Payment
+  @api_version("v1")
+
+procedure createPaymentV2(args: CreatePaymentV2Args): Payment
+  @api_version("v2")
+```
+
+This serves `POST /v1/$procs/createPayment` and
+`POST /v2/$procs/createPaymentV2`. A procedure has at most one `@api_version`.
+Its value must be non-empty and use only ASCII letters, digits, `.`, `-` and
+`_`. Paths are relative to wherever you mount the router, so under
+`Router::nest("/api", router)` the second one is
+`/api/v2/$procs/createPaymentV2`.
+
+The server's router, the route descriptor in `ROUTE_TRANSPORTS`, the
+generated Rust, TypeScript and Dart clients, and `cratestack generate-wiremock`
+all derive this path from one function,
+`cratestack_core::procedure_route::procedure_rest_route_path`. So the path a
+generated client calls is the path the server mounts. Before
+[cratestack/cratestack#1079](https://github.com/cratestack/cratestack/pull/1079)
+(unreleased) the clients and stubs called the unversioned `/$procs/<name>`, and every call
+to a versioned procedure returned `404`. `ROUTE_TRANSPORTS` also named the
+unversioned path, so the REST idempotency and rate-limit resolvers never
+matched a versioned procedure, and its `@no_idempotency` / `@no_rate_limit`
+opt-outs were ignored. Regenerate clients and stubs built before that fix.
+
+On `transport rpc`, `@api_version` does not change the address. A procedure is
+always `POST /rpc/procedure.<name>`, on the server and in every generated
+client, because procedure names are unique per schema. To version an RPC
+operation, give the new version its own procedure name.
+
 ## Request Contract
 
 ### Requests without bodies
