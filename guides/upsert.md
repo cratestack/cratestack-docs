@@ -234,21 +234,32 @@ rusqlite mirror trivial. Upsert is not a hot read path; callers who need
 raw insert/update throughput should use `.create(...)` / `.update(...)`
 directly.
 
-### Policies: both must allow
+### Policies: create on every call, update on an existing row
 
-Upsert evaluates **both** create and update policies at call time, before
-the runtime knows which branch will actually fire. This is stricter than
-"evaluate the path that runs," but it's the only choice we can make
-without leaking row existence to the caller (pre-flighting a read just to
-pick the policy slot would tell denied callers whether the row exists).
+The **create** policy is checked on every call, before the probe. The
+**update** policy is checked only when the locked probe finds a live row,
+against that row; a denial is `Forbidden` with the message
+`"update policy denied this upsert"`. (A source comment in
+`cratestack-sqlx` says both are evaluated up front; the code does not do
+that.)
 
-In practice this means:
+Measured on 0.14.0 against Postgres, for a model with `@@allow("create", …)`
+and no `update` policy at all:
+
+| Call | Result |
+| --- | --- |
+| upsert a new key | `Ok` — the row is inserted |
+| upsert a key that already exists | `Forbidden("update policy denied this upsert")` |
+
+So a caller with create but not update permission learns whether a key
+exists: success for a new one, `403` for an existing one. In practice:
 
 1. write `@@allow(create, …)` and `@@allow(update, …)` so the intersection
    of permitted callers is exactly the set you want to be able to upsert
 2. don't reach for `.upsert(...)` on models where create and update
    audiences are deliberately disjoint — that's a sign the operation
-   wants to be split into separate create / update routes
+   wants to be split into separate create / update routes, and the `403`
+   above tells a create-only caller which keys exist
 
 ### `@version` is bumped, but `if_match` isn't honored
 
@@ -271,11 +282,11 @@ what makes "return what the probe found, untouched" safe without a second statem
 1. **Create policy still gates the insert branch unconditionally**, same as `.create()` and the DO
    UPDATE path — `.do_nothing()` still performs a real `INSERT` when no conflicting row exists.
 2. **The update policy is still evaluated against an existing row, even though it's never mutated.**
-   Skipping this check would let a caller with only create authorization use `.do_nothing()` to probe
-   for a row's existence and read its current contents — exactly the leak the DO UPDATE path's
-   "both policies must allow" rule already exists to close (see
-   [Policies: both must allow](#policies-both-must-allow) above). Denial surfaces the identical
-   `"update policy denied this upsert"` error either way.
+   Skipping this check would let a caller with only create authorization use `.do_nothing()` to read
+   an existing row's current contents. As on the DO UPDATE path (see
+   [Policies](#policies-create-on-every-call-update-on-an-existing-row) above), denial is the same
+   `"update policy denied this upsert"` error — which withholds the row, but still tells a
+   create-authorized caller that the key exists.
 3. **Only the `Inserted` branch emits anything.** A `Created` event and audit entry fire exactly like
    `.create(...)`'s. `Existing` emits neither — the row genuinely didn't change, so there's nothing to
    record.
@@ -293,26 +304,33 @@ Models with `@@soft_delete` treat tombstoned rows as "not present" for
 the probe step, and the two upsert paths diverge from there.
 
 <Warning>
-**The `DO UPDATE` path revives a tombstone and reports it as a create.**
-Because `select_for_update_by_conflict_target` deliberately treats a
-tombstone as "no row", a tombstone at the conflict target is invisible to
-**both** probes — the initial one and the re-probe in step 9 — so the
-`DO UPDATE` un-deletes that row and returns `UpsertOutcome::Inserted`,
-with a `Created` event and `AuditOperation::Create`. This is the second
-bullet of step 9: `before` is `None`, so the runtime reports an insert
-and the update policy gate does not run. This is a known defect, recorded in
-`upsert_resolve.rs` at the branch where it surfaces. It was explicitly
-left alone by [#745](https://github.com/cratestack/cratestack/issues/745),
-whose fix was scoped to the race path only; correcting it here would
-change behaviour off that path.
+**The `DO UPDATE` path overwrites a tombstone, reports it as a create, and
+leaves it hidden.** Because `select_for_update_by_conflict_target`
+deliberately treats a tombstone as "no row", a tombstone at the conflict
+target is invisible to **both** probes — the initial one and the re-probe
+in step 9 — so the `DO UPDATE` writes the new values over that row and the
+runtime classifies the write as an insert, with a `Created` event and
+`AuditOperation::Create`. This is the second bullet of step 9: `before` is
+`None`, so the update policy gate does not run. But `deleted_at` is not in
+the `DO UPDATE`'s `SET` list, so **the row stays tombstoned**: the call
+returns the new values, and a `find_unique` of the same key right after it
+returns `None`. (Source comments call this "revives"; measured on 0.14.0
+against Postgres, the row is overwritten and stays deleted.) This is a
+known defect, recorded in `upsert_resolve.rs` at the branch where it
+surfaces. It was explicitly left alone by
+[#745](https://github.com/cratestack/cratestack/issues/745), whose fix was
+scoped to the race path only; correcting it here would change behaviour off
+that path.
 
 `.do_nothing()` does **not** share the defect — it surfaces a `Conflict`
 for the same shape.
 
 If a model uses `@@soft_delete` and you upsert on a conflict target that
-tombstones can occupy, don't rely on the outcome flag to mean "this row
-is new". Issue an explicit update setting `deleted_at = NULL` when you
-genuinely want revive-on-upsert semantics.
+tombstones can occupy, a successful upsert does not mean the row is
+readable afterwards. When you genuinely want revive-on-upsert semantics,
+clear the tombstone yourself first (`UPDATE … SET deleted_at = NULL` in
+SQL; unless the model declares a `deleted_at` field, the generated
+`.update(...)` cannot set it).
 </Warning>
 
 ### Auth-derived defaults are insert-only
