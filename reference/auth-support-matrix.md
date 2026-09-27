@@ -134,11 +134,13 @@ Refused anywhere in attribute text, strings and SQL bodies included, on field, `
 query attributes:
 
 * every Unicode `Default_Ignorable_Code_Point` (zero-width space, joiner and non-joiner, word
-  joiner, byte-order mark, soft hyphen, direction marks, tag characters, and others), plus a few
-  blank-drawing characters that property leaves out (the Braille pattern blank, U+2800, among
-  them) and the control characters that are not whitespace
-* a variation selector anywhere in a policy attribute; elsewhere only right after a visible
-  non-ASCII character, where it picks a presentation (an emoji, a CJK variant)
+  joiner, byte-order mark, soft hyphen, direction marks, tag characters, and others), plus the
+  few invisible characters that property leaves out (the Braille pattern blank U+2800, U+1D159,
+  and the format controls U+FFF9–U+FFFB and U+13430–U+1343F) and the control characters that
+  are not whitespace
+* a variation selector anywhere in a policy attribute; elsewhere, any variation selector that
+  does not directly follow a visible non-ASCII character (right after one, where it picks a
+  presentation such as an emoji or a CJK variant, it is allowed)
 
 Refused anywhere, comments included: bidirectional text controls (U+202A–U+202E,
 U+2066–U+2069), ESC and U+009B. A character shown as a line break but not parsed as one (a lone

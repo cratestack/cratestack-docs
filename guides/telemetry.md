@@ -74,8 +74,9 @@ from 1). An exhausted retry budget ends in the usual `warn` failure event with
 `cratestack_error = "TRANSACTION_ABORTED"`. When a response answers someone else's
 `TRANSACTION_ABORTED` as `INTERNAL_ERROR` instead (see
 [Retries exhausted](./transaction-isolation#retries-exhausted)), a `warn` event records the
-original code and `cratestack_detail` (which names the SQLSTATE); on REST and RPC it also carries
-`cratestack_sqlstate`.
+original code and a `cratestack_detail` that names the SQLSTATE; on REST and RPC it also carries
+`cratestack_sqlstate`. An MCP resource read logs only its usual failure event, whose detail is the
+fixed abort message.
 
 ## Generated Model List Telemetry
 

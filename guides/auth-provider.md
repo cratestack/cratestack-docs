@@ -109,7 +109,8 @@ organizationId String? @default(auth().organization.id)
 Write each rule exactly in this form, one per line: `@@allow` / `@@deny`, then `(`, a quoted
 action, a comma and the expression, and nothing after the `)` but an optional `// comment`.
 Through 0.14.0 any other spelling (`@@deny ("read", …)`, `@@Deny(…)`, a trailing `;`, a typo in
-the action) checked as `schema OK` and was skipped, leaving the model more permissive than
+the action), and even the exact form followed by a `// comment`, checked as `schema OK` and was
+skipped, leaving the model more permissive than
 written; on `main` (unreleased) it is refused. See
 [Policy attribute spelling](../reference/auth-support-matrix#policy-attribute-spelling).
 
