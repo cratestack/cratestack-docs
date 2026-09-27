@@ -29,25 +29,26 @@ Auth-defaulted columns are limited to `String`/`Cuid`, `Int`, and
 `Boolean` and act as **fallbacks**: they fill the field only when the
 create input omits it. They are not enforcement.
 
-**"Exactly one `@id`" is not actually enforced for field-level `@id`.**
-The parser only checks that a model has *at least one* — nothing rejects
-two (or more) fields each carrying a bare `@id`. That's a different gap
-from `@@id([...])`, which the parser and `cratestack-macros` do reject
-outright (see [composite keys](./composite-keys)): two field-level `@id`
-attributes silently bypass that guard, because it only looks for the
-`@@id(` model-level attribute, not a duplicate field-level one.
-`cratestack-migrate` then marks every `@id`-tagged column
-`primary_key = true` and joins all of them into one multi-column
-`PRIMARY KEY` constraint — an accidental composite key with none of the
-authoring safeguards `@@id([...])` gets. Stick to exactly one `@id`
-field per model; don't rely on the parser to catch a second one for you.
-Tracked as [issue #536](https://github.com/cratestack/cratestack/issues/536).
+**Exactly one field-level `@id` per model.** A second one is refused
+("model `…` declares more than one field-level `@id`"), so an accidental
+composite key can't slip through; use [`@@id([...])`](./composite-keys) when
+you mean one. It used to be accepted and silently joined into one multi-column
+`PRIMARY KEY` ([issue #536](https://github.com/cratestack/cratestack/issues/536)).
+
+**`@id` is matched exactly** *(since 0.14.0,
+[cratestack#1074](https://github.com/cratestack/cratestack/issues/1074))*. Only
+a bare `@id` makes a field the primary key. `@identity`, `@idx` and `@id_foo`
+are not keys: a model keyed only by one of them reports a missing `@id`, and
+`@idx` gets a "did you mean `@id`?" error. `@id(...)` is refused ("`@id` takes
+no arguments — write `@id`"). Before 0.14.0 any attribute starting with `@id`
+counted as the key everywhere except `cratestack-migrate`, so the two could
+disagree.
 
 ## Relations
 
 | Attribute                                    | Behaviour                                                                                        |
 |-----------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `@relation(fields:[...], references:[...])`  | Declares a relation. Required on **both** sides — the owning (single-model) side and the `Model[]` inverse side. Only the owning side emits a real `FOREIGN KEY` constraint in generated migrations. |
+| `@relation(fields:[...], references:[...])`  | Declares a relation. Required on **both** sides — the owning (single-model) side and the `Model[]` inverse side. Only the owning side emits a real `FOREIGN KEY` constraint in generated migrations. At most one `@relation` per field *(since 0.14.0)*; a second is refused. |
 | `@relation(..., onDelete: <Action>)`         | Referential action on delete. Optional; defaults to `NoAction`.                                   |
 | `@relation(..., onUpdate: <Action>)`         | Referential action on update. Optional; defaults to `NoAction`.                                   |
 
