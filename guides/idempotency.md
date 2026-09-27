@@ -92,7 +92,7 @@ For each request the store atomically returns one of:
 1. **Reserved** — fresh claim. The handler runs and the response is persisted on completion.
 2. **Replay** — a prior execution under the same key + request hash has completed. The cached response is returned with `Idempotency-Replayed: true`.
 3. **InFlight** — another caller still holds the reservation. The layer returns `409 Conflict` with `Retry-After: 1`.
-4. **Conflict** — the same key arrived with a different request body. The layer returns `422` with `idempotency_key_conflict`, per the IETF draft.
+4. **Conflict** — the same key arrived with a different request body. The layer returns `422`, per the IETF draft. The error code is the ordinary `VALIDATION_ERROR`; the message is `idempotency_key_conflict: key reused with a different request body`, so match on the message prefix, not on the code.
 
 *(Unreleased, on `main`.)* One response is not persisted: the `409 TRANSACTION_ABORTED` (RPC
 `aborted`) of an [`@isolation`](./transaction-isolation#retries-exhausted) procedure whose own

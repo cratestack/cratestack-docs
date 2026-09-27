@@ -121,10 +121,12 @@ Before any MCP handling:
 | Request | Answer |
 |---|---|
 | A foreign `Origin` | 403 |
-| `GET` or `DELETE` | 405 |
+| Any method but `POST` (`GET`, `DELETE`, …) | 405 |
 | A token in the query string (`?access_token=`) | 400 `invalid_request` |
 | Two `Authorization` headers, or `Bearer` with no token | 400 `invalid_request` |
 | No token, or a token your provider rejects | 401 with `WWW-Authenticate: Bearer resource_metadata="…"` |
+| A token your provider answers `Forbidden` for | 403 with `WWW-Authenticate: Bearer error="insufficient_scope", …` |
+| Your provider fails to decide (a JWKS endpoint down, say) | its own error status, not a 401 |
 | A body over 4 MiB | 413 |
 
 The token is removed from the request once your provider has run. Every call then runs under the
