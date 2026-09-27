@@ -74,7 +74,7 @@ procedure ping(args: PingArgs): PingReply
 <Note>
 Procedure-level `@allow` / `@deny` policies never depended on a database connection to evaluate — they check `auth()` and argument shape, both of which exist independent of `provider`. They keep working unchanged on `provider = "none"` schemas.
 
-*(Unreleased, on `main`.)* Procedure attributes are a closed list, each in one exact spelling
+*(Since 0.14.1.)* Procedure attributes are a closed list, each in one exact spelling
 (`@allow`, `@deny`, `@authorize`, `@api_version`, `@status`, `@deprecated`, `@stream`,
 `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp`), and they are the lines under the
 signature up to the first blank line. Through 0.14.0 a misspelled or oddly spaced `@deny` was

@@ -90,7 +90,7 @@ Use `@readonly` for columns the server writes but clients may read (audit
 timestamps, computed totals). Use `@server_only` for columns clients
 should never see (internal risk scores, raw token blobs). `@server_only`
 applies only to a stored scalar column of a model; see
-[where it is refused](#where-server-only-is-refused) (unreleased). Use `@pii` or
+[where it is refused](#where-server-only-is-refused) (since 0.14.1). Use `@pii` or
 `@sensitive` to control audit redaction without changing input/output
 surfaces.
 
@@ -358,12 +358,13 @@ The macro applies them in this evaluation order:
 ## Spelling and placement
 
 <Warning>
-**Unreleased.** The rules in this section are on `main` and in no published release yet (framework
-[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## Unreleased`:
+**Since 0.14.1.** The rules in this section shipped in 0.14.1 (framework
+[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## 0.14.1`:
 "Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)" and
 "`@server_only` is refused where it has no effect, and attributes in spellings no generator reads").
-Both are breaking. Through 0.14.0 most spellings refused below pass `cratestack check` with
-`schema OK` and have **no effect**.
+Both are breaking, and 0.14.1 is a patch release, so `cargo update` from 0.14.0 brings them in:
+run `cratestack check` on your schemas before you take it. Through 0.14.0 most spellings refused
+below pass `cratestack check` with `schema OK` and have **no effect**.
 </Warning>
 
 Generators recognise most attributes by their exact text, so an attribute written any other way

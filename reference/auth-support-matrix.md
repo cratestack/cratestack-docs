@@ -64,9 +64,11 @@ Auth-derived defaults:
 ## Policy attribute spelling
 
 <Warning>
-**Unreleased.** These rules are on `main` and in no published release yet (framework
-[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## Unreleased`,
+**Since 0.14.1.** These rules shipped in 0.14.1 (framework
+[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## 0.14.1`,
 "Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)", breaking).
+0.14.1 is a patch release, so `cargo update` from 0.14.0 brings these refusals in: run
+`cratestack check` on your schemas before you take it.
 **Affected:** procedure `@allow` / `@deny` / `@authorize` and model `@@allow` / `@@deny` in every
 release 0.2.0–0.14.0, view `@@allow` / `@@deny` from 0.4.2, and `query` `@allow` / `@deny` in
 0.11.0–0.14.0.

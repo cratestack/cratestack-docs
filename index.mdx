@@ -70,7 +70,7 @@ CrateStack is built for teams that want framework leverage without giving up Rus
 4. generated policy enforcement for the supported subset (server only — embedded runtime is unauthenticated by design; clients are untrusted)
 5. generated Rust, Dart, and TypeScript client surfaces
 6. reusable schema mixins for shared field sets
-7. banking-grade primitives: idempotency, optimistic locking, transactional audit, explicit transaction isolation (`run_in_isolated_tx`; the `@isolation` procedure attribute is ignored through 0.14.0 and enforced only on unreleased `main`, see [Transaction isolation](/guides/transaction-isolation#procedure-level-isolation)), soft delete, rate limiting, validators, Decimal scalar, forward-only migrations
+7. banking-grade primitives: idempotency, optimistic locking, transactional audit, explicit transaction isolation (`run_in_isolated_tx`; the `@isolation` procedure attribute is ignored through 0.14.0 and enforced since 0.14.1, see [Transaction isolation](/guides/transaction-isolation#procedure-level-isolation)), soft delete, rate limiting, validators, Decimal scalar, forward-only migrations
 8. embedded SQLite backend (`cratestack-rusqlite`) — sync API, bundled SQLite, exact-precision `Decimal` round-trip; works on **native** (mobile, desktop) and **`wasm32-unknown-unknown`** (browser, OPFS-backed) from the same source
 
 <Warning>

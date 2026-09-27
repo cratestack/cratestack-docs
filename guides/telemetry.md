@@ -64,7 +64,7 @@ Procedure invocation spans are named:
 1. `cratestack_procedure_invoke`
 2. `cratestack_procedure_invoke_with_db`
 
-*(Unreleased, on `main`.)* For a procedure that declares
+*(Since 0.14.1.)* For a procedure that declares
 [`@isolation`](./transaction-isolation#procedure-level-isolation), the
 `cratestack_procedure_invoke_with_db` span also carries `cratestack_isolation`, the level as SQL
 (`SERIALIZABLE`, `REPEATABLE READ`, `READ COMMITTED`). Each retry after a serialization failure or
@@ -111,9 +111,9 @@ Current generated fields include:
 | `cratestack_total_count`   | Total result count recorded for paged list responses                                    |
 | `cratestack_detail`        | `CratestackError::detail()` on route-level `warn` events — preflight, auth, query-parsing, and selection-validation failures |
 | `cratestack_request_id`    | Request id from `CratestackContext`, recorded on procedure route completion/failure events and on model list completion/failure events |
-| `cratestack_isolation`     | *(unreleased)* Declared `@isolation` level, as SQL, on the `invoke_with_db` span and on the retry `debug` event |
-| `cratestack_sqlstate`      | SQLSTATE of a database error on the `query`-block `warn` event; *(unreleased)* also the SQLSTATE that caused an `@isolation` retry, and of a disowned `TRANSACTION_ABORTED` on REST/RPC |
-| `cratestack_attempt`       | *(unreleased)* Attempt number that failed and is being retried, on the `@isolation` retry event |
+| `cratestack_isolation`     | *(since 0.14.1)* Declared `@isolation` level, as SQL, on the `invoke_with_db` span and on the retry `debug` event |
+| `cratestack_sqlstate`      | SQLSTATE of a database error on the `query`-block `warn` event; *(since 0.14.1)* also the SQLSTATE that caused an `@isolation` retry, and of a disowned `TRANSACTION_ABORTED` on REST/RPC |
+| `cratestack_attempt`       | *(since 0.14.1)* Attempt number that failed and is being retried, on the `@isolation` retry event |
 
 All current generated events use the `cratestack` tracing target.
 

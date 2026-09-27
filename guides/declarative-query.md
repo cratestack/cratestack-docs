@@ -43,7 +43,7 @@ rejected on a `query`, because a query is Postgres-only.
 
 `@allow` and `@deny` are the only other attributes a query understands.
 
-*(Unreleased, on `main`.)* Each is accepted only in the exact spelling the generator reads, and
+*(Since 0.14.1.)* Each is accepted only in the exact spelling the generator reads, and
 anything else is refused rather than skipped: through 0.14.0, a `@deny (…)` with a space, a
 `@Deny(…)`, or a `@deny(…)` followed by text on its line checked as `schema OK` and was dropped,
 so the query returned rows to the callers the rule named. `@@sql ("…")` with a space before `(`

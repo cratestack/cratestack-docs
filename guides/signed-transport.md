@@ -39,8 +39,7 @@ The server facades carry two features, both off by default:
 | `cose` | `envelope`, plus the COSE envelope: `cratestack::cose` is a re-export of `cratestack-cose`, and `CoseEnvelope` is the default `ServerEnvelope`. |
 
 ```toml
-# Until the next release, from git:
-cratestack = { package = "cratestack-pg", git = "https://github.com/cratestack/cratestack", features = ["cose"] }
+cratestack = { package = "cratestack-pg", version = "0.14", features = ["cose"] }
 # or `package = "cratestack-api"` for a `db = None` service
 ```
 
