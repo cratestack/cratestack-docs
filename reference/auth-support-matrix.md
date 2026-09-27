@@ -61,6 +61,57 @@ Auth-derived defaults:
 * nested auth paths like `auth().organization.id` are supported
 * defaults still do not allow arbitrary expressions or function calls
 
+## Relation filters and sorts
+
+*(since 0.13.0, server role)* A relation filter or relation sort reads the related table in a
+correlated subquery. That subquery now applies the related model's **read** policy (its
+`@@allow` / `@@deny` for `read` and `list`, the same scope `find_many` applies to that model) and
+its `@@soft_delete` filter. This covers REST list parameters (`?author.email=`), `where=`, `or=`
+and `sort=`; RPC `model.<M>.list` (`filters`, `where`, `or`, `sort`); `@@paged` `totalCount`; the
+typed Rust builder (`post::author().email().eq(..)`, `.asc()` / `.desc()`); to-one paths, to-many
+`some` / `every` / `none`, multi-hop paths (each hop applies its own model's scope), and every
+operator. In-process `update_many` and `delete_many` apply the related model's read scope in their
+relation subqueries too.
+
+**A related row the caller cannot read behaves as if it did not exist**, matching `?include=`,
+which already returned such a row as `null`:
+
+* a to-one filter never matches it, `ne` and `isNull` included
+* `none` and `every` over only hidden children are vacuously true
+* a relation sort key through it reads as `NULL`, sorted last
+* **a related model with no read `@@allow` matches nothing**: it is default-deny for direct reads,
+  and now for relation paths too. If you filter or sort through such a model, add the
+  `@@allow("read", ...)` that describes who may see it
+
+From 0.2.0 through 0.12.0 the subquery applied neither the policy nor the soft-delete filter, so a
+caller could test, and order by, column values of related rows they could not read, including
+tombstoned rows, and with `startsWith` recover a hidden string one character at a time
+(GHSA-p55v-6xv5-93p3, see the 0.13.0 section of the
+[framework CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md)). Clients
+that relied on filtering through rows they cannot read see fewer results after upgrading; that is
+the fix.
+
+**Self-relations** (`manager User? @relation(fields:[managerId], references:[id])`) used to render
+uncorrelated, so relation filters and sorts over them, **and read policies that traverse one**
+(`@@allow("read", manager.name == ...)`), matched every row or none. On the server role they now
+correlate through the outer row. Audit any policy that traverses a self-relation: on 0.12.0 and
+earlier it may have admitted rows it should not have.
+
+**Hand-built relation filters and sorts** take the related model's scope explicitly. Every public
+constructor of a relation hop (`FilterExpr::relation`, `relation_some`, `relation_every`,
+`relation_none`, `RelationFilter::new`, `RelationHop::new`, and `OrderClause::relation_scalar`)
+takes a `RelatedReadScope`, with no default. Pass `<RELATED>_MODEL.related_read_scope()`.
+`RelatedReadScope::Unscoped` is the named escape hatch for trusted server code that deliberately
+reads the raw related table; never use it for a filter or sort whose values a caller controls.
+`OrderClause::relation_scalar` now takes the terminal column instead of a pre-rendered SQL string,
+and multi-hop sorts use `OrderClause::relation_path(&hops, column, direction)`. `order_value_sql`
+renders no scope: do not build a server-side sort from it.
+
+Unchanged: `@@internal("read")` removes only a model's own routes, so relation paths and
+`?include=` through an internal model are still governed by its read policy. The embedded role
+enforces no policy by design; its relation subqueries ignore the scope, still see tombstoned
+related rows, and still render self-relations uncorrelated.
+
 ## Matrix
 
 | Capability                                  | ZenStack-style expectation                     | CrateStack 2026 status | Notes                                                                                                                   |
@@ -83,6 +134,7 @@ Auth-derived defaults:
 | `auth().field != literal`                   | Supported                                      | Supported             | Model and procedure subset                                                                                              |
 | `&&` / `\|\|` grouping                      | Supported                                      | Supported             | Parenthesized grouping supported in parser/lowering                                                                     |
 | Row-level read scoping                      | Supported                                      | Supported             | SQL-scoped on `find_many` / `find_unique`                                                                               |
+| Related-model read scope in relation filters and sorts | Supported                           | Supported             | Since 0.13.0, server role; see [Relation filters and sorts](#relation-filters-and-sorts)                                 |
 | Row-level update scoping                    | Supported                                      | Supported             | SQL-scoped                                                                                                              |
 | Row-level delete scoping                    | Supported                                      | Supported             | SQL-scoped                                                                                                              |
 | Create-time policy checks                   | Supported                                      | Partial               | Scalar/auth checks run in-memory; relation checks use DB lookups when join columns are present in create input/defaults |

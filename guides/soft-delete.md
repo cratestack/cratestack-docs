@@ -45,6 +45,18 @@ For a soft-delete model:
 2. if the model also declares `@version`, the same statement bumps the version column
 3. `find_unique`, `find_many`, `update`, and `delete` all add `deleted_at IS NULL` to their predicates
 4. `delete` against an already-tombstoned row matches zero rows and surfaces as `not found`
+5. *(since 0.13.0, server role)* a relation filter or relation sort that reaches the model from
+   another one skips tombstoned rows too: REST `?customer.email=` or `sort=customer.email` on a
+   model related to `Customer`, `some` / `every` / `none` over a to-many relation, RPC
+   `model.<M>.list`, and the typed Rust builder alike.
+   A tombstoned related row behaves as if it did not exist, as it already did under `?include=`:
+   a to-one filter does not match it and a relation sort key through it reads as `NULL`. From
+   0.2.0 through 0.12.0 these subqueries ignored the soft-delete column, so a caller could still
+   filter and sort by values of tombstoned related rows. See
+   [Relation filters and sorts](../reference/auth-support-matrix#relation-filters-and-sorts)
+
+On the embedded role (`include_embedded_schema!`), `find_*` hides tombstoned rows, but relation
+filters and sorts still see tombstoned related rows.
 
 The tombstoned row remains visible in raw SQL queries — banks running
 forensic recovery or compliance review read the table directly.

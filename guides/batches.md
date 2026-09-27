@@ -88,6 +88,18 @@ In a flat single-transaction batch, a per-item constraint violation aborts the t
 
 Savepoints solve this exactly. `ROLLBACK TO SAVEPOINT` returns the outer transaction to a usable state without losing earlier work. The outer commit then writes only the successful items, atomically together with their audit and outbox rows.
 
+### Inside an isolated procedure
+
+*(Unreleased, on `main`.)* Called through the `IsolatedCratestack` handle of an
+[`@isolation`](./transaction-isolation#procedure-level-isolation) procedure, a batch primitive does
+not begin a transaction of its own: its outer "transaction" is a savepoint of the procedure's
+transaction, at the declared level, and it commits only when the procedure's attempt commits. Its
+create-policy checks (with their relation lookups), `@version` probes and upsert update-policy
+checks read through that transaction too, so they see the procedure's earlier writes and take no
+second pooled connection. A retried attempt runs the batch again from scratch. Called anywhere
+else, a batch primitive behaves as described above and reads those policies on the pool, as
+before.
+
 ## Size cap and duplicate handling
 
 ```rust

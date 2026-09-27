@@ -115,6 +115,21 @@ resolver that fails on a create returns an error response for a row that exists.
 Keep resolvers side-effect free and treat their failure as a rendering failure,
 not a transaction failure.
 
+**Exception: the output of an `@isolation` procedure** *(unreleased, on `main`)*. For a procedure
+that declares [`@isolation`](./transaction-isolation#procedure-level-isolation), the output's
+computed fields are resolved inside the procedure's transaction, after its body and before
+`COMMIT`. The resolver's `db` is the same type as before but bound to that attempt, so its model
+reads see the body's writes; a resolver error rolls the whole attempt back; and on a serialization
+failure or deadlock the attempt, resolvers included, runs again. Such resolvers must be safe to run
+more than once. Their `db.pool()`, `views()`, `queries()` and `events()` still run on the pool,
+outside the transaction.
+
+**`@server_only` fields stay out of procedure outputs** *(since 0.13.0)*. A procedure output is
+composed field by field rather than through serde, and from v0.8.11 through v0.12.0 that
+composition sent the `@server_only` fields of any model with a computed field
+([GHSA-ch54-jqw2-vpp5](https://github.com/cratestack/cratestack/security/advisories/GHSA-ch54-jqw2-vpp5),
+see [Field attributes](../reference/field-attributes#exposure-controls)).
+
 ### Field selection skips resolvers
 
 `?fields=` is honoured before the resolver is called, not after:

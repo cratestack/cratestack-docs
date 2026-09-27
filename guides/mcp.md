@@ -151,6 +151,13 @@ audience check.
    replay and MCP rate-limit buckets start fresh.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
    then your implementation. Its ORM calls carry `@@allow` in their SQL.
+   *(Unreleased, on `main`.)* For a procedure that declares
+   [`@isolation`](/guides/transaction-isolation#procedure-level-isolation), all of this runs in
+   one transaction at the declared level and is retried on a serialization failure or deadlock,
+   as on REST and RPC. When the retries run out, the result is an `isError` result with code
+   `TRANSACTION_ABORTED`, and the idempotency reservation is released rather than recorded, so
+   the same key runs the call again. In 0.14.0 and earlier, `@isolation` has no effect on MCP
+   either.
 
 Errors are `isError: true` results whose text is REST's error envelope (`code`, `message`), so MCP
 reveals nothing REST doesn't.

@@ -29,7 +29,8 @@ npx skills add cratestack/cratestack-skills --skill cratestack --skill cratestac
 Most of what an agent needs to know about CrateStack is not inferable from the
 code in front of it. That a denied model read returns **404 and not 403**, that
 the embedded backend parses policies and deliberately does not enforce them, that
-`@isolation` is validated and then discarded, that re-layering `DefaultBodyLimit`
+`@isolation` is validated and then discarded in every release through 0.14.0
+(enforced only on unreleased `main`), that re-layering `DefaultBodyLimit`
 on the generated router does nothing in either direction — these are conventions
 and decisions, not patterns visible in a file.
 

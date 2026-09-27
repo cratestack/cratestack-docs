@@ -82,7 +82,7 @@ for the generated DDL and naming convention.
 | Attribute       | Effect on input        | Effect on output                   | Effect on audit                |
 |-----------------|------------------------|------------------------------------|--------------------------------|
 | `@readonly`     | Excluded from Create + Update inputs | Visible in responses | Visible in `before`/`after`    |
-| `@server_only`  | Excluded from Create + Update inputs; ignored in procedure arguments | Stripped from responses | Omitted entirely from snapshots |
+| `@server_only`  | Excluded from Create + Update inputs; ignored in procedure arguments; refused as a filter or sort key (since 0.13.0) | Stripped from responses, procedure outputs included (since 0.13.0) | Omitted entirely from snapshots |
 | `@pii`          | No effect              | No effect                          | Redacted as `"[redacted-pii]"` |
 | `@sensitive`    | No effect              | No effect                          | Redacted as `"[redacted-sensitive]"` |
 
@@ -99,6 +99,39 @@ whatever the client sent, on both transports. Before 0.13.0 (cratestack#1051)
 the field was only skipped on output, so a client could set it this way. If a
 procedure took a `@server_only` value from its argument, treat that value as
 client-controlled and derive it on the server instead.
+
+Since 0.13.0 ([GHSA-ch54-jqw2-vpp5](https://github.com/cratestack/cratestack/security/advisories/GHSA-ch54-jqw2-vpp5)),
+two more paths hold:
+
+1. **A procedure output never carries the field.** A procedure whose output is, or contains, a
+   model with a `@computed` field used to send that model's `@server_only` fields, over REST and
+   RPC (`/rpc/batch` included), from v0.8.11 through v0.12.0. The output was composed field by
+   field, so the serde skip never ran. This covered the model itself, `T?`, `T[]`, `Page<T>`, and
+   a `type` that embeds the model. Model get and list responses, `?fields=`, `?include=`, MCP
+   resources and `@@subscribe` events never sent it.
+2. **A request cannot filter or sort by the field.** From v0.2.0 through v0.12.0 any caller who
+   could list a model could test a `@server_only` value (`?secret=HUNTER2`), rebuild it one
+   character at a time (`?secret__startsWith=H`), or order rows by it (`?sort=secret`), through
+   every operator, the `where=` and `or=` grammars, relation paths (`?owner.secret=`,
+   `?pets.some.token=`, `?sort=owner.secret`), RPC `model.<Model>.list`, and a `FindMany<Model>`
+   procedure argument. Such a key is now refused exactly like a field the model does not declare,
+   so the refusal does not reveal that the field exists: `400 unsupported query filter`,
+   `422 unsupported sort field`, a `FindMany` `where` key that is ignored, and a `FindMany` sort
+   field that does not decode. `includeFields[<relation>]` naming a `@server_only` field is
+   refused too, as `?fields=` already was.
+
+The generated `<Model>Where` and `<Model>SortField` have no member for a `@server_only` field, in
+Rust (server and client role) and in the Dart client; the TypeScript client never had one. Server
+code that needs to filter or sort by the field, such as a lookup by a hashed token, keeps the typed
+builders, which read no request: `<model>::<field>().eq(..)` and
+`.order_by(<model>::<field>().asc())`.
+
+If you ran an affected version, treat as disclosed every `@server_only` value reachable through
+either path, and rotate credentials, tokens and hashes stored in such fields. The generated Dart
+model class declares and decodes `@server_only` fields, so a value an affected server sent may also
+sit in client-side state or logs. A response
+`IdempotencyLayer` stored before the upgrade is replayed as stored until its record expires; clear
+the idempotency store or wait out its TTL. The advisory has the full guidance.
 
 ## Route suppression
 

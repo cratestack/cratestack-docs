@@ -197,6 +197,15 @@ let pinned_first = notes
 
 `where_expr`, `and`, `or`, and relation filters from `cratestack-sql` all work here.
 
+Relation filters and sorts here read the raw related table. On the server role they apply the
+related model's read policy and `@@soft_delete` filter *(since 0.13.0)*; the embedded role enforces
+no policy by design, so it ignores that scope, sees tombstoned related rows, and evaluates a
+filter or sort over a self-relation (a model related to its own table) uncorrelated, as before.
+A hand-built relation filter or sort still has to pass a `RelatedReadScope`, which every
+relation-hop constructor takes since 0.13.0: `<RELATED>_MODEL.related_read_scope()` or
+`RelatedReadScope::Unscoped`. The embedded backend ignores it either way. See
+[Relation filters and sorts](/reference/auth-support-matrix#relation-filters-and-sorts).
+
 ## Storage Class Choices
 
 Embedded apps live or die by data fidelity, so the binding layer commits to canonical representations rather than relying on SQLite's loose typing:
@@ -221,7 +230,7 @@ Because columns use BLOB affinity, integer primary keys do **not** alias the SQL
 
 ## Soft Delete and Audit
 
-`@@soft_delete` works embedded: `DELETE` calls become `UPDATE` of the soft-delete column, and every `find_*` automatically filters rows where the soft-delete column is non-null. `@@audit` and `@@emit` are currently **no-ops** in `include_embedded_schema!` — the local-journal / local-event-bus implementations land in a follow-up release (they need a sync-engine design pass first).
+`@@soft_delete` works embedded: `DELETE` calls become `UPDATE` of the soft-delete column, and every `find_*` automatically filters rows where the soft-delete column is non-null. Relation filters and sorts do not: they still see tombstoned related rows. `@@audit` and `@@emit` are currently **no-ops** in `include_embedded_schema!` — the local-journal / local-event-bus implementations land in a follow-up release (they need a sync-engine design pass first).
 
 ## The FFI Boundary
 
