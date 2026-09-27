@@ -652,6 +652,79 @@ let config = RuntimeConfigWire {
 };
 ```
 
+### Rust Client In The Browser (`wasm32-unknown-unknown`)
+
+*(Since 0.14.1, [cratestack#1104](https://github.com/cratestack/cratestack/issues/1104).)*
+`include_client_schema!` builds for `wasm32-unknown-unknown`, through the `cratestack-client`
+facade or through `cratestack-sqlite`'s `client_rust` re-export, on top of the browser's `fetch`.
+Through 0.14.0 it did not: the re-export was missing (``cannot find `client_rust` in
+`cratestack` ``) and `cratestack-client-rust` itself failed to compile (``Only features
+sync,macros,io-util,rt,time are supported on wasm``). Native builds are unchanged.
+
+What differs on wasm32:
+
+1. **Use the async client.** `RuntimeHandle` does not exist on wasm32: it `block_on`s each request,
+   and a `fetch` future cannot resolve while the only thread is blocked.
+2. **Futures are not `Send`.** A streamed response (`post_list_streamed`,
+   `RpcClient::call_streaming`) is pumped with `wasm_bindgen_futures::spawn_local`, and
+   `BatchableCall` resolves to a non-`Send` future.
+3. **No `rustls`.** The browser does TLS; `ensure_crypto_provider()` is a no-op kept so shared code
+   compiles for both targets.
+
+**`RequestAuthorizer` is target-split** *(since 0.14.2,
+[cratestack#1108](https://github.com/cratestack/cratestack/pull/1108))*. Natively it is
+`Send + Sync` with a `Send` future, as before. On wasm32 it has neither, so an authorizer can await
+a `fetch` of its own, such as a token refresh. In 0.14.1 such an authorizer did not compile for
+wasm32 (``future cannot be sent between threads safely``). One implementation that builds for both
+targets uses the same split:
+
+```toml
+[dependencies]
+cratestack = { package = "cratestack-client", version = "0.14.2" }
+serde = { version = "1", features = ["derive"] }
+async-trait = "0.1"
+url = "2"
+```
+
+```rust
+use std::sync::Arc;
+
+use cratestack::client_rust::{
+    AuthorizationRequest, CborCodec, ClientConfig, ClientError, CratestackClient,
+    RequestAuthorizer,
+};
+
+cratestack::include_client_schema!("schema.cstack");
+
+pub struct BearerAuthorizer {
+    token: String,
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+impl RequestAuthorizer for BearerAuthorizer {
+    async fn authorize(
+        &self,
+        _request: &AuthorizationRequest,
+    ) -> Result<Vec<(String, String)>, ClientError> {
+        Ok(vec![("authorization".to_owned(), format!("Bearer {}", self.token))])
+    }
+}
+
+// One thread in a browser: on wasm32 the `Arc` only satisfies the method's type.
+#[allow(clippy::arc_with_non_send_sync)]
+pub fn build_client(base_url: url::Url, token: String) -> cratestack_schema::client::Client {
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
+        .with_request_authorizer(Arc::new(BearerAuthorizer { token }));
+    cratestack_schema::client::Client::new(runtime)
+}
+```
+
+An impl written with a plain `#[async_trait]` still compiles natively; on wasm32 it fails with
+`E0053` (incompatible type for trait). The framework's `examples/client-only-verification` carries a
+wasm32-only authorizer that holds a non-`Send` value across an `await`, compiled for that target in
+CI.
+
 ### Dropping JSON On CBOR-Only Backends
 
 Both facade crates (`cratestack-pg`, `cratestack-sqlite`) and the underlying `cratestack-client-rust` and `cratestack-client-flutter` crates expose a `codec-json` Cargo feature. It is **on by default**, so existing setups keep both CBOR and JSON. Backend services that have standardized on CBOR can opt out with:
