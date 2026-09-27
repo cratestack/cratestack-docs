@@ -87,7 +87,8 @@ The wrapper retries automatically:
 3. when a statement inside the body fails with `40001` or `40P01`
 4. when `tx.commit()` itself fails with one of them: SSI can defer the conflict to commit time (write-skew)
 
-Every other error is returned on the first attempt. After exhausting
+On `main` (unreleased), every other error is returned on the first attempt; in 0.14.0 and
+earlier the helper also retried errors whose *text* looked like one of these (see below). After exhausting
 retries, the last error is returned as is. For a `40001` mapped with
 `cratestack_error_from_sqlx` that is a `DatabaseTyped` error, which a
 handler answers as 500 `DATABASE_ERROR`, not the `409 TRANSACTION_ABORTED`
@@ -223,7 +224,7 @@ one at a time: a concurrent call (`tokio::join!` of two operations) or a re-entr
 `.run(ctx)` inside `db.transaction(..)`, where `tx` already holds the connection) fails with
 `INTERNAL_ERROR` instead of deadlocking. Inside `db.transaction`, use `run_in_tx(tx, ctx)`.
 
-For this schema:
+For this schema fragment (alongside your `datasource` and `auth` blocks):
 
 ```cstack
 model Account {
@@ -293,7 +294,9 @@ impl p::ProcedureRegistry for Procedures {
 A raw-SQL `db.transaction(..)` that leaves the transaction aborted (a failed statement whose error
 the closure does not return) or ends it, or that is cancelled or panics before it finishes, fails
 the whole attempt with `INTERNAL_ERROR` even if the body then returns `Ok`. Never issue `COMMIT`,
-`ROLLBACK` or `END` through `tx`: what ran before a raw `COMMIT` stays committed.
+`ROLLBACK` or `END` through `tx`: what ran before a raw `COMMIT` stays committed, and if the same
+attempt had also swallowed a serialization failure it is retried rather than failed, so that
+work is committed again.
 
 ### Retries exhausted
 

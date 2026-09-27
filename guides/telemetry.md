@@ -74,7 +74,8 @@ from 1). An exhausted retry budget ends in the usual `warn` failure event with
 `cratestack_error = "TRANSACTION_ABORTED"`. When a response answers someone else's
 `TRANSACTION_ABORTED` as `INTERNAL_ERROR` instead (see
 [Retries exhausted](./transaction-isolation#retries-exhausted)), a `warn` event records the
-original code, `cratestack_sqlstate` and `cratestack_detail`.
+original code and `cratestack_detail` (which names the SQLSTATE); on REST and RPC it also carries
+`cratestack_sqlstate`.
 
 ## Generated Model List Telemetry
 
@@ -110,7 +111,7 @@ Current generated fields include:
 | `cratestack_detail`        | `CratestackError::detail()` on route-level `warn` events — preflight, auth, query-parsing, and selection-validation failures |
 | `cratestack_request_id`    | Request id from `CratestackContext`, recorded on procedure route completion/failure events and on model list completion/failure events |
 | `cratestack_isolation`     | *(unreleased)* Declared `@isolation` level, as SQL, on the `invoke_with_db` span and on the retry `debug` event |
-| `cratestack_sqlstate`      | *(unreleased)* SQLSTATE that caused an `@isolation` retry, or of a disowned `TRANSACTION_ABORTED` |
+| `cratestack_sqlstate`      | SQLSTATE of a database error on the `query`-block `warn` event; *(unreleased)* also the SQLSTATE that caused an `@isolation` retry, and of a disowned `TRANSACTION_ABORTED` on REST/RPC |
 | `cratestack_attempt`       | *(unreleased)* Attempt number that failed and is being retried, on the `@isolation` retry event |
 
 All current generated events use the `cratestack` tracing target.

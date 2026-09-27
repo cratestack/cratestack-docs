@@ -183,6 +183,20 @@ Without the marker, the same situation produces `DROP TABLE categorys`
 followed by `CREATE TABLE categories` — a migration that, if applied
 against a real deployment, **destroys the table's data**.
 
+A column is renamed the same way, with `@rename(from = "<old_column>")` on the field.
+
+**Write the marker exactly as shown.** `cratestack migrate` reads only
+`@@rename(from = "…")` and `@rename(from = "…")`, and only the first
+marker of each kind. Through 0.14.0 any other form, such as
+`@@rename(from: "documents")`, `@@rename("documents")` or
+`@rename(from: "name")`, passed `cratestack check` and was read as no
+marker at all, so the generated migration dropped and re-created the table
+or column. On `main` (unreleased) other forms are refused, as are a second
+marker on the same model or field and a `@rename` on a field of a `view`,
+`type` or `auth` block or on a relation field. If you generated migrations
+with a marker in another form, check them for a `DROP TABLE` or
+`DROP COLUMN` of the old name before applying them.
+
 ### Why this matters right now: the `y -> ies` pluralization fix
 
 A model's table name is derived by pluralizing its snake_cased name.

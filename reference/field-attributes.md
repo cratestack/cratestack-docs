@@ -88,7 +88,9 @@ for the generated DDL and naming convention.
 
 Use `@readonly` for columns the server writes but clients may read (audit
 timestamps, computed totals). Use `@server_only` for columns clients
-should never see (internal risk scores, raw token blobs). Use `@pii` or
+should never see (internal risk scores, raw token blobs). `@server_only`
+applies only to a stored scalar column of a model; see
+[where it is refused](#where-server-only-is-refused) (unreleased). Use `@pii` or
 `@sensitive` to control audit redaction without changing input/output
 surfaces.
 
@@ -352,3 +354,92 @@ The macro applies them in this evaluation order:
 4. SQL execution
 5. response projection (server_only stripped here)
 6. audit snapshot (pii / sensitive redacted here)
+
+## Spelling and placement
+
+<Warning>
+**Unreleased.** The rules in this section are on `main` and in no published release yet (framework
+[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## Unreleased`:
+"Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)" and
+"`@server_only` is refused where it has no effect, and attributes in spellings no generator reads").
+Both are breaking. Through 0.14.0 most spellings refused below pass `cratestack check` with
+`schema OK` and have **no effect**.
+</Warning>
+
+Generators recognise most attributes by their exact text, so an attribute written any other way
+used to be skipped silently. A schema is now refused, with an error that names the attribute,
+when it relies on such a spelling.
+
+### Trailing comments
+
+A trailing `// comment` on a field line or a `@@` line is a comment, and is dropped before
+anything reads the attribute. `//` inside a string literal (`"http://…"`, SQL in `"…"` or
+`"""…"""`) is not a comment. Two consequences, neither of which raises an error:
+
+1. **An attribute named inside a comment no longer applies.** Through 0.14.0,
+   `secret String // was @server_only` kept `secret` off the wire; from this change it is an
+   ordinary field, returned to clients. The same holds for `@readonly` (the field becomes
+   writable), `@pii` / `@sensitive` (no longer redacted in the audit log), `@id` and every other
+   field attribute. Write the attribute outside the comment before upgrading if the field relied
+   on it.
+2. **An attribute followed by a comment now takes effect.** `@@audit // …` starts writing audit
+   rows, `@@soft_delete // …` makes deletes soft, and `@@allow(…) // …` grants what it says,
+   where through 0.14.0 each was skipped. Confirm each such `@@allow` grants what you intend.
+
+### Attributes that take no arguments
+
+`@server_only`, `@readonly`, `@version`, `@pii`, `@sensitive`, `@db_enforce`, `@email`, `@uri`,
+`@iso4217` and `@unique` are written bare (`@id(...)` is refused since 0.14.0). An argument list or stray punctuation
+(`@readonly()`, `@server_only(true)`, `@version()`, `@readonly,`) is refused: through 0.14.0,
+`@readonly()` left the field settable through the generated create input and `@version()` left
+the model without a version field. Two attributes need a space between them:
+`@server_only@unique` is refused. An `@` inside a string argument (`@default("a@b.c")`) is not
+affected. A longer name such as `@unique_per_tenant` is a different attribute.
+
+### Where server-only is refused
+
+`@server_only` keeps a stored scalar column of a model out of every generated input and output.
+It is a schema error in the five positions where it did nothing:
+
+| Position | What to do instead |
+| --- | --- |
+| a field of a `type` block | leave the value out of the type |
+| a relation field (to-one or to-many) | mark the related model's individual fields |
+| a relation key: a scalar in an `@relation`'s `fields: [...]`, or in the `references: [...]` of a relation that targets its model (both ends, self-relations and mixin fields included) | replace it with `@readonly`, which keeps the key out of the create and update inputs as `@server_only` did; removing it outright makes the key settable by clients |
+| a `@version` field | none: clients need the version for conditional writes |
+| a field of the `auth` block | none: no generator reads attributes there |
+
+### Block attributes are a closed list
+
+Only models and views take `@@` attributes, each from its own list, spelled exactly, with an
+argument list exactly when the name takes one and nothing after the closing `)`:
+
+- **model:** `@@allow`, `@@deny`, `@@emit`, `@@paged`, `@@audit`, `@@soft_delete`, `@@retain`,
+  `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal`, `@@rename` (and `@@mcp`)
+- **view:** see [Views](./views#parse-time-validation-summary)
+
+Any other `@@` name is refused, with a suggestion when one is close: a typo, a Prisma habit such
+as `@@map(…)`, `@@check(…)` (never implemented), or a view-only attribute on a model. So are
+whitespace before `(`, an empty argument list, and two block attributes on one line
+(`@@audit @@soft_delete`). The `@@allow` / `@@deny` spelling rules are in the
+[auth support matrix](./auth-support-matrix#policy-attribute-spelling).
+
+### Rename markers
+
+`@@rename` on a model takes exactly `@@rename(from = "<old_table>")`, and a field's `@rename`
+exactly `@rename(from = "<old_column>")`: the only forms `cratestack migrate` reads. Through
+0.14.0 any other form (`@@rename(from: "documents")`, `@rename(from: "name")`) passed `cratestack check`
+and was read as no marker, so the next migration **dropped** the old table or column and created
+a new one instead of renaming it. Other forms are now refused, and so are a second marker on the
+same model or field and a `@rename` on a field of a `view`, `type` or `auth` block or on a
+relation field, where the migrator never read it. If you ran `migrate diff` with a refused
+marker, check the generated migrations for a `DROP TABLE` or `DROP COLUMN` of the old name. See
+[Migrations](../guides/migrations).
+
+### Invisible characters
+
+An invisible character is refused anywhere in attribute text, strings and SQL bodies included:
+zero-width spaces and joiners, the byte-order mark, bidirectional text controls, non-whitespace
+control characters and similar code points. See the
+[auth support matrix](./auth-support-matrix#policy-attribute-spelling) for why, and for the one
+place variation selectors are allowed.

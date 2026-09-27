@@ -74,8 +74,8 @@ let visible_posts = cool
 
 A relation filter or sort such as `author()` reads the related model's rows through that model's
 own read policy and `@@soft_delete` filter *(since 0.13.0)*: an author the caller may not read
-behaves as if it did not exist. If the related model declares no `@@allow("read", ...)`, the
-filter matches nothing. See
+behaves as if it did not exist. If the related model declares no rule that allows reading it
+(`@@allow` for `read`, `list` or `all`), the filter matches nothing. See
 [Relation filters and sorts](../reference/auth-support-matrix#relation-filters-and-sorts).
 
 ## 4. Optionally Bind Auth For Internal Callers
