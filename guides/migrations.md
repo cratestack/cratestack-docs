@@ -191,7 +191,7 @@ marker of each kind. Through 0.14.0 any other form, such as
 `@@rename(from: "documents")`, `@@rename("documents")` or
 `@rename(from: "name")`, passed `cratestack check` and was read as no
 marker at all, so the generated migration dropped and re-created the table
-or column. On `main` (unreleased) other forms are refused, as are a second
+or column. Since 0.14.1 other forms are refused, as are a second
 marker on the same model or field and a `@rename` on a field of a `view`,
 `type` or `auth` block or on a relation field. If you generated migrations
 with a marker in another form, check them for a `DROP TABLE` or

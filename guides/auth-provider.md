@@ -110,7 +110,7 @@ Write each rule exactly in this form, one per line: `@@allow` / `@@deny`, then `
 action, a comma and the expression, with nothing after the `)`. Through 0.14.0 a rule written any
 other way (`@@deny ("read", …)`, `@@Deny(…)`, a trailing `;`, a misspelt action) still checked as
 `schema OK` but was skipped, and so was the exact form followed by a `// comment`; either way the
-model was more permissive than written. On `main` (unreleased) such a rule is refused, and a
+model was more permissive than written. Since 0.14.1 such a rule is refused, and a
 trailing `// comment` is stripped, so the commented form works. See
 [Policy attribute spelling](../reference/auth-support-matrix#policy-attribute-spelling).
 

@@ -90,7 +90,7 @@ Savepoints solve this exactly. `ROLLBACK TO SAVEPOINT` returns the outer transac
 
 ### Inside an isolated procedure
 
-*(Unreleased, on `main`.)* Called through the `IsolatedCratestack` handle of an
+*(Since 0.14.1.)* Called through the `IsolatedCratestack` handle of an
 [`@isolation`](./transaction-isolation#procedure-level-isolation) procedure, a batch primitive does
 not begin a transaction of its own: its outer "transaction" is a savepoint of the procedure's
 transaction, at the declared level, and it commits only when the procedure's attempt commits. Its

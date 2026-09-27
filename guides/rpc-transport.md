@@ -179,7 +179,7 @@ Three deliberate behaviors:
 2. **No transactional mode, no in-batch dependencies.** Each frame runs in its own transaction. A batch like `[create A, update B referencing A.id]` is not supported — use two roundtrips or a single `@procedure` that owns the composite operation.
 3. **Per-frame idempotency only.** Send `idem` on each `RpcRequest`. The `Idempotency-Key` HTTP header is rejected on `/rpc/batch` as ambiguous.
 
-*(Unreleased, on `main`.)* A frame that calls an [`@isolation`](./transaction-isolation#procedure-level-isolation) procedure runs that procedure in its own transaction at the declared level, with its own retries; the batch as a whole is still not atomic. A frame whose retries run out answers `aborted`.
+*(Since 0.14.1.)* A frame that calls an [`@isolation`](./transaction-isolation#procedure-level-isolation) procedure runs that procedure in its own transaction at the declared level, with its own retries; the batch as a whole is still not atomic. A frame whose retries run out answers `aborted`.
 
 A malformed batch envelope (body that isn't a sequence of frames) returns `400`.
 
@@ -387,13 +387,13 @@ Every error on the RPC binding — whether raised inside the dispatcher (decode 
 }
 ```
 
-The `code` field uses **gRPC-style lowercase strings**: `not_found`, `invalid_argument`, `permission_denied`, `failed_precondition`, `conflict`, `aborted` (unreleased), `unauthenticated`, `resource_exhausted`, `unavailable`, `internal`. Never the REST binding's `SCREAMING_CASE` (`NOT_FOUND`, `FORBIDDEN`, …).
+The `code` field uses **gRPC-style lowercase strings**: `not_found`, `invalid_argument`, `permission_denied`, `failed_precondition`, `conflict`, `aborted` (since 0.14.1), `unauthenticated`, `resource_exhausted`, `unavailable`, `internal`. Never the REST binding's `SCREAMING_CASE` (`NOT_FOUND`, `FORBIDDEN`, …).
 
 HTTP status codes match the error category. Clients that catch by status work unchanged from REST; clients that parse the body get a stable string vocabulary.
 
 `resource_exhausted` (REST `TOO_MANY_REQUESTS`, HTTP 429) and `unavailable` (REST `UNAVAILABLE`, HTTP 503) arrived in 0.11.0 alongside the additive `CratestackError::TooManyRequests` variant ([#846](https://github.com/cratestack/cratestack/issues/846)). This matters most for `/rpc/batch`: that response is always HTTP 200 and the per-frame status is synthesized from the code, so before the arm existed a throttled frame surfaced as a synthetic 500. `@cratestack/link-batch`'s `errorStatus` now maps `resource_exhausted` to 429.
 
-`aborted` (REST `TRANSACTION_ABORTED`, HTTP 409) is on `main` and unreleased. It means an [`@isolation`](./transaction-isolation#retries-exhausted) procedure ran out of retries after serialization failures or deadlocks: nothing was committed, and sending the same request again (for a unary call, under the same `Idempotency-Key`, which `IdempotencyLayer` released) is expected to succeed. `conflict` keeps its meaning (a retry repeats it). Only that procedure answers `aborted`; a caller that propagates another procedure's abort answers `internal`. `@cratestack/link-batch`'s `errorStatus` maps `aborted` to 409, the Rust client does the same for a batch frame, and the TypeScript and Dart RPC runtimes list the code.
+`aborted` (REST `TRANSACTION_ABORTED`, HTTP 409) is new in 0.14.1. It means an [`@isolation`](./transaction-isolation#retries-exhausted) procedure ran out of retries after serialization failures or deadlocks: nothing was committed, and sending the same request again (for a unary call, under the same `Idempotency-Key`, which `IdempotencyLayer` released) is expected to succeed. `conflict` keeps its meaning (a retry repeats it). Only that procedure answers `aborted`; a caller that propagates another procedure's abort answers `internal`. `@cratestack/link-batch`'s `errorStatus` maps `aborted` to 409, the Rust client does the same for a batch frame, and the TypeScript and Dart RPC runtimes list the code.
 
 The two tower middleware layers participate in this vocabulary too: every response they emit themselves is now the codec-negotiated envelope — `RpcErrorBody` on `/rpc/*` paths, `CratestackErrorResponse` elsewhere — rather than a bare `text/plain` string. See [rate limiting](./rate-limiting#request-flow).
 

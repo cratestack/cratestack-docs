@@ -115,7 +115,7 @@ resolver that fails on a create returns an error response for a row that exists.
 Keep resolvers side-effect free and treat their failure as a rendering failure,
 not a transaction failure.
 
-**Exception: the output of an `@isolation` procedure** *(unreleased, on `main`)*. For a procedure
+**Exception: the output of an `@isolation` procedure** *(since 0.14.1)*. For a procedure
 that declares [`@isolation`](./transaction-isolation#procedure-level-isolation), the output's
 computed fields are resolved inside the procedure's transaction, after its body and before
 `COMMIT`. The resolver's `db` is the same type as before but bound to that attempt, so its model

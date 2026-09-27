@@ -94,7 +94,7 @@ For each request the store atomically returns one of:
 3. **InFlight** — another caller still holds the reservation. The layer returns `409 Conflict` with `Retry-After: 1`.
 4. **Conflict** — the same key arrived with a different request body. The layer returns `422`, per the IETF draft. The error code is the ordinary `VALIDATION_ERROR`; the message is `idempotency_key_conflict: key reused with a different request body`, so match on the message prefix, not on the code.
 
-*(Unreleased, on `main`.)* One response is not persisted: the `409 TRANSACTION_ABORTED` (RPC
+*(Since 0.14.1.)* One response is not persisted: the `409 TRANSACTION_ABORTED` (RPC
 `aborted`) of an [`@isolation`](./transaction-isolation#retries-exhausted) procedure whose own
 retries ran out. Nothing was committed, so the layer releases the reservation instead, and the
 same key runs the call again. Every other response, errors included, is persisted as before. An

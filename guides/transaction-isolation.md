@@ -1,6 +1,6 @@
 ---
 title: Transaction Isolation
-description: Explicit isolation levels and retry-on-serialization-failure semantics through `run_in_isolated_tx`, and the `@isolation` procedure attribute (enforced on `main`, unreleased; ignored through 0.14.0).
+description: Explicit isolation levels and retry-on-serialization-failure semantics through `run_in_isolated_tx`, and the `@isolation` procedure attribute (enforced since 0.14.1; ignored through 0.14.0).
 ---
 
 # Transaction Isolation
@@ -12,7 +12,7 @@ this requires: explicit per-transaction isolation levels and a retry
 loop for serialization failures. `run_in_isolated_tx` is the hand-rolled
 form for code that owns a pool, and works in every release. The
 [`@isolation`](#procedure-level-isolation) procedure attribute does the
-same from the schema, but only on `main` (unreleased): through 0.14.0 it
+same from the schema since 0.14.1: through 0.14.0 it
 is ignored.
 
 ## `run_in_isolated_tx`
@@ -87,7 +87,7 @@ The wrapper retries automatically:
 3. when a statement inside the body fails with `40001` or `40P01`
 4. when `tx.commit()` itself fails with one of them: SSI can defer the conflict to commit time (write-skew)
 
-On `main` (unreleased), every other error is returned on the first attempt; in 0.14.0 and
+Since 0.14.1, every other error is returned on the first attempt; in 0.14.0 and
 earlier the helper also retried errors whose *text* looked like one of these (see below). After exhausting
 retries, the last error is returned as is. For a `40001` mapped with
 `cratestack_error_from_sqlx` that is a `DatabaseTyped` error, which a
@@ -96,7 +96,7 @@ that [`@isolation`](#procedure-level-isolation) answers with. Banks running
 heavily contended workloads tune the retry budget up; CAS-style
 fast-fail flows tune it down to 1.
 
-**Only database errors are retried** *(unreleased, on `main`)*. A typed
+**Only database errors are retried** *(since 0.14.1)*. A typed
 database error (`DatabaseTyped`, as `cratestack_error_from_sqlx` builds
 it) is retried if and only if its SQLSTATE is `40001` or `40P01`; its
 message is never read. Only the untyped `CratestackError::Database(String)`,
@@ -137,16 +137,16 @@ statement:
 2. **Predicate-lock contention.** A long-running SELECT participates in
    conflicts that aren't visible until the transaction tries to land.
 
-The retry loop catches both, in `run_in_isolated_tx` and (unreleased) in `@isolation`
+The retry loop catches both, in `run_in_isolated_tx` and (since 0.14.1) in `@isolation`
 dispatch. Without commit-time retry, callers would observe a transient
 40001 despite the API advertising automatic retries.
 
 ## Procedure-level isolation
 
 <Warning>
-**Unreleased.** Enforcement of `@isolation` is on `main` and in no published release yet
+**Since 0.14.1.** Enforcement of `@isolation` shipped in 0.14.1
 ([GHSA-r67q-4qqq-g9gm](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md),
-see the `## Unreleased` section of the framework CHANGELOG). **In every release from 0.2.0 through
+see the `## 0.14.1` section of the framework CHANGELOG). **In every release from 0.2.0 through
 0.14.0 the attribute is validated and then ignored:** the procedure runs on the pool at the server
 default, normally `READ COMMITTED`, on REST, RPC (including `/rpc/batch`) and MCP. Two concurrent
 declared-serializable withdrawals of 100 from a balance of 100 both succeeded. Earlier versions of
@@ -168,10 +168,10 @@ Constraints enforced at parse time:
 1. one `@isolation` attribute per procedure
 2. the level argument is a quoted string: `"serializable"`, `"repeatable_read"`, or `"read_committed"`
    (case-insensitive; `"repeatable read"` with a space is accepted too)
-3. *(unreleased)* not on a `@stream` procedure: a streamed response is produced after the
+3. *(since 0.14.1)* not on a `@stream` procedure: a streamed response is produced after the
    procedure returns, so there is no point at which to commit, and a partly sent stream cannot be
    retried
-4. *(unreleased)* not in a `datasource { provider = "none" }` schema; and
+4. *(since 0.14.1)* not in a `datasource { provider = "none" }` schema; and
    `include_server_schema!(.., db = None)` refuses it with a compile error
 
 The embedded role generates no procedures, and the client role only calls them, so neither is
