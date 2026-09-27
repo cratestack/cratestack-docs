@@ -11,7 +11,7 @@ CrateStack's embedded backend, `cratestack-sqlite` (backed by the `cratestack-ru
 - **Native desktop** (Windows, macOS, Linux)
 - **Browser** via `wasm32-unknown-unknown` with **OPFS-backed persistence**
 
-The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.39`.
+The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.40`.
 
 <Info>
 The architecture is **"Rust as real frontend, UI as UI-only"**: Rust owns state, persistence, and business logic on the device or in the browser tab; the UI (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`. The same `.cstack` schema definition compiles to both the server (Postgres via `cratestack-pg`) and the embedded target (SQLite via `cratestack-sqlite`, implemented on top of `cratestack-rusqlite`).
@@ -34,25 +34,29 @@ The shared dialect-agnostic primitives (filter AST, order AST, value types, `Mod
 
 ## Add the Dependency
 
-The bare `cratestack` crate on crates.io is a documentation-only landing page with no exports — it does **not** provide `RusqliteRuntime`, DDL helpers, or anything else you need. The schema macros hardcode `::cratestack::*` paths in their generated code, so embedded consumers must rename the `cratestack-sqlite` facade crate to `cratestack` via Cargo's `package =` field. Depend on all three of the following:
+The bare `cratestack` crate on crates.io is a documentation-only landing page with no exports — it does **not** provide `RusqliteRuntime`, DDL helpers, or anything else you need. The schema macros hardcode `::cratestack::*` paths in their generated code, so embedded consumers must rename the `cratestack-sqlite` facade crate to `cratestack` via Cargo's `package =` field. Depend on all of the following:
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-sqlite", version = "0.11", features = ["decimal-rust-decimal"] }
-cratestack-macros = "0.11"
-cratestack-rusqlite = "0.11"
+cratestack = { package = "cratestack-sqlite", version = "0.14", features = ["decimal-rust-decimal"] }
+cratestack-macros = "0.14"
+cratestack-rusqlite = "0.14"
+serde = { version = "1", features = ["derive"] }
+# Used by the examples below to build a `Uuid` id and a `DateTime` timestamp.
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
 ```
 
-The `0.11` requirements float across the whole `0.11.x` line rather than pinning a patch — every
+The `0.14` requirements float across the whole `0.14.x` line rather than pinning a patch — every
 cratestack crate is released in lockstep off one workspace version, so mixing patch levels is never
 what you want, and a pinned patch here goes stale on the next release. Pin exactly only if you have
 a specific reason to.
 
-`cratestack-macros` and `cratestack-rusqlite` are the crates you import from directly (schema macro and runtime/delegate types, respectively); the `cratestack = { package = "cratestack-sqlite", ... }` line exists purely so the macro-generated `::cratestack::*` paths resolve — it isn't optional, even though you won't `use cratestack::...` anywhere in your own code.
+`cratestack-macros` and `cratestack-rusqlite` are the crates you import from directly (schema macro and runtime/delegate types, respectively); the `cratestack = { package = "cratestack-sqlite", ... }` line exists purely so the macro-generated `::cratestack::*` paths resolve — it isn't optional, even though you won't `use cratestack::...` anywhere in your own code. `serde` is required for the same reason: the generated code names `serde` directly, so without it the build fails with ``cannot find module or crate `serde` ``.
 
 ### Browser-specific build prerequisites
 
-`sqlite-wasm-rs` (used by `rusqlite 0.39` on wasm32) compiles SQLite's C source to WebAssembly via `cc-rs`. That requires a **wasm-capable clang** on `PATH` — Apple's stock Xcode clang does **not** include the wasm32 backend.
+`sqlite-wasm-rs` (used by `rusqlite 0.40` on wasm32) compiles SQLite's C source to WebAssembly via `cc-rs`. That requires a **wasm-capable clang** on `PATH` — Apple's stock Xcode clang does **not** include the wasm32 backend.
 
 <Tabs>
   <Tab title="macOS">
