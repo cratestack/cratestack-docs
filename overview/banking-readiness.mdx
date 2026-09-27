@@ -17,9 +17,9 @@ The current banking-grade slice covers:
 1. duplicate-execution protection via `IdempotencyLayer` backed by `SqlxIdempotencyStore` (Postgres) or `RedisIdempotencyStore` (Redis)
 2. optimistic concurrency via `@version` + `If-Match` / `ETag` round-tripping
 3. transactional audit log via `@@audit` + `cratestack_audit` + pluggable `AuditSink`
-4. explicit transaction isolation via `run_in_isolated_tx` + `@isolation`
+4. explicit transaction isolation via `run_in_isolated_tx`. The `@isolation` procedure attribute is **enforced only on `main` (unreleased)**: in every release through 0.14.0 it is validated and then ignored, so a declared-serializable procedure runs at `READ COMMITTED` ([GHSA-r67q-4qqq-g9gm](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), see [Transaction isolation](../guides/transaction-isolation#procedure-level-isolation))
 5. per-principal rate limiting via `RateLimitLayer` + `InMemoryRateLimitStore` (single-replica) or `RedisRateLimitStore` (multi-replica, via `cratestack-redis`)
-6. soft-delete via `@@soft_delete`
+6. soft-delete via `@@soft_delete`, which since 0.13.0 also hides tombstoned rows from relation filters and relation sorts on the server role
 7. forward-only migrations via `Migration` + `apply_pending` with checksum drift detection
 8. runtime validators (`@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217`) with PII-safe error messages
 9. Decimal scalar with a choice of two implemented backends — `rust_decimal` (default, fixed-precision) or `bigdecimal` (arbitrary precision) — additive as of 0.8.0, so different dependents in the same build can each pick their own; see [Scalars](../reference/scalars#backend-selection)
@@ -42,7 +42,7 @@ Banks typically adopt these in the order risk dictates. A realistic path:
 1. start with `@@audit` on every mutating model — gets you the forensic trail before anything else
 2. add `@version` to balances, ledger entries, transfers — protects against lost updates
 3. wrap mutating routes with `IdempotencyLayer` — protects against duplicate execution under client retries
-4. switch transfer/settlement procedures to `@isolation("serializable")` — closes the read-write skew window
+4. run transfer/settlement procedures at `SERIALIZABLE` — closes the read-write skew window. On 0.14.0 and earlier, wrap the body in `run_in_isolated_tx` yourself: `@isolation("serializable")` has no effect there. Once the enforcement ships (unreleased, on `main`), declare `@isolation("serializable")` and drop the wrapper
 5. add `RateLimitLayer` per principal — caps abuse without code changes per route
 6. switch hard delete to `@@soft_delete` where retention rules require it
 
@@ -53,7 +53,7 @@ Each step is independent and can be reviewed in isolation. A FIPS-validated cryp
 1. [Idempotency](../guides/idempotency) for the duplicate-execution guarantee
 2. [Optimistic locking](../guides/optimistic-locking) for `@version` + ETag flow
 3. [Audit log](../guides/audit-log) for `@@audit` and the transactional outbox
-4. [Transaction isolation](../guides/transaction-isolation) for `run_in_isolated_tx` and the retry policy
+4. [Transaction isolation](../guides/transaction-isolation) for `run_in_isolated_tx`, the retry policy, and `@isolation` enforcement (unreleased)
 5. [Rate limiting](../guides/rate-limiting) for the per-principal token bucket
 6. [Soft delete](../guides/soft-delete) for `@@soft_delete` semantics
 7. [Migrations](../guides/migrations) for the forward-only runner

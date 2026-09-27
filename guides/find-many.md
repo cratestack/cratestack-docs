@@ -46,12 +46,22 @@ generates four things:
 - **`<Model>Where`** — one optional filter per filterable scalar field.
   `PostWhere { id: Option<FieldFilterInput<i64>>, title: Option<FieldFilterInput<String>>, ... }`
 - **`<Model>SortField`** — an enum with one variant per scalar field
-  (every scalar field is sortable; unlike filtering, ordering has no
-  type restriction).
+  (unlike filtering, ordering has no type restriction).
 - **`<Model>OrderByClause`** — `{ field: <Model>SortField, direction: SortDirection }`.
 - **`<Model>FindManyInput`** — `{ where: Option<<Model>Where>, orderBy: Option<Vec<<Model>OrderByClause>> }`, what the `FindMany<Model>` argument actually decodes into, plus a
   `build_<model>_query_from_find_many(db, input)` function that turns a
   decoded input into a ready-to-run query builder.
+
+`<Model>Where` and `<Model>SortField` have no member for a `@server_only`
+field *(since 0.13.0)*. Both are
+decoded from the caller's request, and from v0.7.0 through v0.12.0 a
+`FindMany` argument let any caller test and sort by a `@server_only` value
+([GHSA-ch54-jqw2-vpp5](https://github.com/cratestack/cratestack/security/advisories/GHSA-ch54-jqw2-vpp5)).
+Now a `where` key naming one is ignored like any unknown key, and an
+`orderBy` field naming one does not decode. Server code that must filter
+or sort by such a field uses the typed builders directly
+(`<model>::<field>().eq(..)`, `.order_by(<model>::<field>().asc())`), which
+read no request.
 
 None of this duplicates the REST list route's filter grammar or
 field-name validation — `<Model>Where::to_filters()` calls straight
@@ -301,9 +311,9 @@ final results = await client.procedures.searchPosts(
    list routes. `FindMany<Model>` is specifically for procedures that
    want the same capability as a typed argument.
 4. **not free of the same validation the list route already runs** — a
-   filter that references a field outside `allowed_fields()` (a
-   `@server_only` field, for instance) simply isn't representable:
-   `<Model>Where` has no field for it, so there's nothing to reject at
+   filter that references a field the list route refuses (a `@server_only`
+   field, since 0.13.0) simply isn't representable: `<Model>Where` and
+   `<Model>SortField` have no member for it, so there's nothing to reject at
    runtime.
 
 ## Read Next

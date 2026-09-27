@@ -61,6 +61,174 @@ Auth-derived defaults:
 * nested auth paths like `auth().organization.id` are supported
 * defaults still do not allow arbitrary expressions or function calls
 
+## Policy attribute spelling
+
+<Warning>
+**Unreleased.** These rules are on `main` and in no published release yet (framework
+[CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## Unreleased`,
+"Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)", breaking).
+**Affected:** procedure `@allow` / `@deny` / `@authorize` and model `@@allow` / `@@deny` in every
+release 0.2.0–0.14.0, view `@@allow` / `@@deny` from 0.4.2, and `query` `@allow` / `@deny` in
+0.11.0–0.14.0.
+</Warning>
+
+Through 0.14.0 the generator applied a policy attribute only when its text was exactly the
+documented form and **silently skipped** anything else, while `cratestack check` reported
+`schema OK`. A skipped `@deny` or `@@deny` makes a declaration more permissive than written: a
+procedure with `@deny(hasRole("banned")) // note` answered `200 OK` to a `banned` caller, and a
+skipped `@authorize` let the check pass without consulting the database. The skipped spellings
+were:
+
+* a space or tab before `(` (`@deny (…)`), a space after `@`, another case (`@Deny`, `@@DENY`)
+  or a typo (`@deyn`, `@authorise`, `@@deyn`)
+* an invisible character in the name, such as a zero-width space inside `@deny`
+* anything after the closing `)`: a `// comment`, `;`, `,`, a word
+* the attribute after another one on the same line (`@no_idempotency @deny(…)`)
+* `@deny` with no argument list
+* a model rule naming an action no slot generates (`@@deny("raed", …)`,
+  `@@deny("read,update", …)`), or a view `@@deny` naming anything but `read` or `all`
+* a `@deny(…)` written above a procedure's or query's signature after a blank line: it attached
+  to the declaration *before* it
+
+A rule could also be applied but never match: an invisible character inside its string
+(`hasRole("ban` + a zero-width space + `ned")`) compares against a role no caller has.
+
+Each of these is now a schema error that names the declaration and the attribute, and the
+generator re-checks every attribute whose name reads as `allow`, `deny` or `authorize`: if one
+did not become a rule, `include_*_schema!` fails with a `compile_error!`.
+
+### The accepted forms
+
+| Where | Form |
+| --- | --- |
+| model | `@@allow("action", expression)`, `@@deny("action", expression)`; either quote; action one of `all`, `read`, `list`, `detail`, `create`, `update`, `delete` |
+| view | `@@allow("read", expression)`; `@@deny("read" or "all", expression)`; either quote (a single-quoted view `@@allow`, refused through 0.14.0, is accepted) |
+| procedure | `@allow(expression)`, `@deny(expression)`, `@authorize(Model, action, args.path)` with exactly three arguments and an action of `detail`, `read`, `update` or `delete` |
+| query | `@allow(expression)`, `@deny(expression)` |
+
+The line ends at the closing `)`, apart from a trailing `// comment`, which is dropped before
+anything reads the attribute (`//` inside a string literal is not a comment).
+
+A procedure accepts only `@allow`, `@deny`, `@authorize`, `@api_version`, `@status`,
+`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation` and `@mcp`; a query
+only `@@sql`, `@allow` and `@deny`. Any other name, case or typo is refused with a suggestion, and
+so are whitespace before `(`, anything after the closing `)`, a missing argument list where one
+is required, and an argument list on `@stream`, `@no_idempotency` or `@no_rate_limit`. Several
+attributes on one procedure or query line are each read (`@no_idempotency @deny(…)`); attributes
+run together with no space (`@deny(x)@allow(y)`) are refused.
+
+### Which declaration an attribute belongs to
+
+Procedure and query attributes sit under the signature with no braces, so layout decides:
+
+1. **The attributes of a declaration are the lines under its signature, up to the first blank
+   line.** A blank line between the signature and its attributes, or among them, is refused.
+2. A `//` or `///` comment line does not end the run: it may stand between the signature and its
+   first attribute, or between two attributes (refused through 0.14.0).
+3. **A run may not lead straight into the next declaration.** Leave a blank line after the last
+   attribute (and any comment lines after it), or the schema is refused.
+
+### Invisible and look-alike characters
+
+Refused anywhere in attribute text, strings and SQL bodies included, on field, `@@`, procedure and
+query attributes:
+
+* every Unicode `Default_Ignorable_Code_Point` (zero-width space, joiner and non-joiner, word
+  joiner, byte-order mark, soft hyphen, direction marks, tag characters, and others), plus the
+  few invisible characters that property leaves out (the Braille pattern blank U+2800, U+1D159,
+  and the format controls U+FFF9–U+FFFB and U+13430–U+1343F) and the control characters that
+  are not whitespace
+* a variation selector anywhere in a policy attribute; elsewhere, any variation selector that
+  does not directly follow a visible non-ASCII character (right after one, where it picks a
+  presentation such as an emoji or a CJK variant, it is allowed)
+
+Refused anywhere, comments included: bidirectional text controls (U+202A–U+202E,
+U+2066–U+2069), ESC and U+009B. A character shown as a line break but not parsed as one (a lone
+carriage return, vertical tab, form feed, NEL, U+2028, U+2029) is refused when text follows it
+on the line. `\r\n` line endings are unaffected, and so is visible non-ASCII text. Some ordinary
+text is refused too, even inside a string: an emoji built with a zero-width joiner or tag
+characters, a keycap emoji, and words spelled with a zero-width joiner or non-joiner.
+
+### Upgrading
+
+Some schemas that still check behave differently, **with no error**. Review these before
+deploying:
+
+* **An `@allow(…)` or `@@allow(…)` with a trailing comment, or sharing a procedure line with
+  another attribute, now applies.** Through 0.14.0 it was skipped, which left that declaration
+  or action closed by default, so this is the one change that widens access with no error.
+  Confirm each such rule grants what it says. The same applies to `@no_rate_limit`,
+  `@no_idempotency`, `@stream`, `@deprecated`, `@@soft_delete`, `@@audit` and `@@subscribe`.
+* **An attribute named inside a field's `// comment` no longer applies.** See
+  [Field attributes](./field-attributes#trailing-comments).
+
+Run `cratestack check` from this release over every schema, including ones consumed only through
+`include_client_schema!`. Each refusal names an attribute that was not enforced (or, with an
+invisible character inside its string, never matched) on an affected release: treat that
+declaration as having run without it, and review its access history for the callers the rule
+names. The framework CHANGELOG entry lists `grep` commands for finding candidates before
+upgrading; a misspelled name or one hiding an invisible character does not match them, so only
+`cratestack check` finds those.
+
+## Relation filters and sorts
+
+*(since 0.13.0, server role)* A relation filter or relation sort reads the related table in a
+correlated subquery. That subquery now applies the related model's **read** policy (its
+`@@allow` / `@@deny` for `read` and `list`, the same scope `find_many` applies to that model) and
+its `@@soft_delete` filter. This covers REST list parameters (`?author.email=`), `where=`, `or=`
+and `sort=`; RPC `model.<M>.list` (`filters`, `where`, `or`, `sort`); `@@paged` `totalCount`; the
+typed Rust builder (`post::author().email().eq(..)`, `.asc()` / `.desc()`); to-one paths, to-many
+`some` / `every` / `none`, multi-hop paths (each hop applies its own model's scope), and every
+operator. In-process `update_many` and `delete_many` apply the related model's read scope in their
+relation subqueries too.
+
+**A related row the caller cannot read behaves as if it did not exist**, matching `?include=`,
+which already returned such a row as `null`:
+
+* a to-one filter never matches it, `ne` and `isNull` included
+* `none` and `every` over only hidden children are vacuously true
+* a relation sort key through it reads as `NULL`, sorted last
+* **a related model with no `@@allow` for `read`, `list` or `all` matches nothing**: it is default-deny for direct reads,
+  and now for relation paths too. If you filter or sort through such a model, add the
+  `@@allow("read", ...)` that describes who may see it
+
+From 0.2.0 through 0.12.0 the subquery applied neither the policy nor the soft-delete filter, so a
+caller could test, and order by, column values of related rows they could not read, including
+tombstoned rows, and with `startsWith` recover a hidden string one character at a time
+(GHSA-p55v-6xv5-93p3, see the 0.13.0 section of the
+[framework CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md)). Clients
+that relied on filtering through rows they cannot read see fewer results after upgrading; that is
+the fix.
+
+**Self-relations** (`manager User? @relation(fields:[managerId], references:[id])`) used to render
+uncorrelated, so relation filters and sorts over them, **and read policies that traverse one**
+(`@@allow("read", manager.name == ...)`), matched every row or none. On the server role they now
+correlate through the outer row. Audit any policy that traverses a self-relation: on 0.12.0 and
+earlier it may have admitted rows it should not have.
+
+**Hand-built relation filters and sorts** take the related model's scope explicitly. Every public
+constructor of a relation hop (`FilterExpr::relation`, `relation_some`, `relation_every`,
+`relation_none`, `RelationFilter::new`, `RelationHop::new`, and `OrderClause::relation_scalar`)
+takes a `RelatedReadScope`, with no default. Pass `<RELATED>_MODEL.related_read_scope()`.
+`RelatedReadScope::Unscoped` is the named escape hatch for trusted server code that deliberately
+reads the raw related table; never use it for a filter or sort whose values a caller controls.
+The new `scope` field on `RelationFilter` and `RelationHop` is public, so struct literals must set
+it too. `OrderClause::relation_scalar` now takes the terminal column instead of a pre-rendered SQL
+string, multi-hop sorts use `OrderClause::relation_path(&hops, column, direction)`, and
+`OrderTarget::RelationScalar` is now `{ hops, column }`. `order_value_sql` renders no scope: do
+not build a server-side sort from it. `preview_scoped_sql` renders the related scope it executes;
+`preview_sql` (without a context) renders no authorization scope at all.
+
+To check exposure on an affected version, search access logs for list requests with dotted filter
+or sort keys (`?author.email=`, `where=`, `sort=author.`) against models whose related models have
+row-level read policies or `@@soft_delete`. RPC `model.<M>.list` carries the same keys in its POST
+body, which access logs usually do not record.
+
+Unchanged: `@@internal("read")` removes only a model's own routes, so relation paths and
+`?include=` through an internal model are still governed by its read policy. The embedded role
+enforces no policy by design; its relation subqueries ignore the scope, still see tombstoned
+related rows, and still render self-relations uncorrelated.
+
 ## Matrix
 
 | Capability                                  | ZenStack-style expectation                     | CrateStack 2026 status | Notes                                                                                                                   |
@@ -83,6 +251,7 @@ Auth-derived defaults:
 | `auth().field != literal`                   | Supported                                      | Supported             | Model and procedure subset                                                                                              |
 | `&&` / `\|\|` grouping                      | Supported                                      | Supported             | Parenthesized grouping supported in parser/lowering                                                                     |
 | Row-level read scoping                      | Supported                                      | Supported             | SQL-scoped on `find_many` / `find_unique`                                                                               |
+| Related-model read scope in relation filters and sorts | Supported                           | Supported             | Since 0.13.0, server role; see [Relation filters and sorts](#relation-filters-and-sorts)                                 |
 | Row-level update scoping                    | Supported                                      | Supported             | SQL-scoped                                                                                                              |
 | Row-level delete scoping                    | Supported                                      | Supported             | SQL-scoped                                                                                                              |
 | Create-time policy checks                   | Supported                                      | Partial               | Scalar/auth checks run in-memory; relation checks use DB lookups when join columns are present in create input/defaults |

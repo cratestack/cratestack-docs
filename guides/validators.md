@@ -108,7 +108,7 @@ model Member {
 
 Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@db_enforce` to a non-eligible validator is currently silently skipped by the migration converter, not a parse-time error (a stricter parser-level check that promotes this to a build-time error may come later).
 
-When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion-db_enforce)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. Subsequent validator changes flow through the diff engine:
+When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. Subsequent validator changes flow through the diff engine:
 
 * **Loosening** the rule (widening a range, dropping the attribute) — safe.
 * **Tightening** the rule (narrowing a range) — lossy if existing rows fall outside the new bound; requires `--allow-destructive` or a hand-written `up.pre.sql` that resolves violators first.
@@ -142,4 +142,4 @@ Skip validators when:
 
 1. [Field attributes](../reference/field-attributes) — the broader attribute surface
 2. [Auth provider](./auth-provider) — policies run after validators
-3. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr#validator-promotion-db_enforce) — how `@db_enforce` flows through migration generation
+3. [ADR 0004: Schema diff and migration generation](../internals/schema-diff-adr#validator-promotion) — how `@db_enforce` flows through migration generation

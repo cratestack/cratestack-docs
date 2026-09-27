@@ -109,6 +109,12 @@ Same authorization machinery as models, but **only the `"read"` action is suppor
 
 Multiple `@@allow("read", …)` rules combine with OR, same as on models.
 
+`@@deny` works as on models, with the action `"read"` or `"all"`: a view generates only the read
+slot, so a deny naming `list`, `detail` or a write action was never applied. *(Unreleased, on
+`main`.)* Such a `@@deny` is now refused, and a single-quoted `@@allow('read', …)`, refused
+through 0.14.0, is accepted. The exact-spelling rules for both are in the
+[auth support matrix](./auth-support-matrix#policy-attribute-spelling).
+
 **No `@@allow` means no rows visible.** Views inherit the same default-deny posture models have: a view with no `@@allow("read", …)` rule declared produces an implicit `WHERE FALSE` in every read query. This is intentional — it forces explicit authorisation rather than allowing accidental data exposure. Use `@@allow("read", auth() != null)` for a "any authenticated caller can read" stance.
 
 ## `@@materialized` (server-only)
@@ -184,6 +190,9 @@ Views never expose `insert`, `update`, or `delete`. This is enforced **at the ty
 | Exactly one `@id` field, or `@@no_unique` | Parse error |
 | At least one of `@@server_sql` / `@@embedded_sql` / `@@sql` | Parse error |
 | `@@allow` action is `"read"` | Parse error otherwise |
+| `@@deny` action is `"read"` or `"all"` *(unreleased)* | Parse error otherwise |
+| Every `@@` attribute is one of `@@allow`, `@@deny`, `@@server_sql`, `@@embedded_sql`, `@@sql`, `@@materialized`, `@@no_unique`, spelled exactly, one per line, with nothing after its `)` *(unreleased)* | Parse error otherwise (through 0.14.0 an unknown one was accepted and ignored) |
+| `@@materialized` and `@@no_unique` take no argument list *(unreleased)* | Parse error otherwise (through 0.14.0 it was accepted and ignored) |
 | `@@materialized` + `@@no_unique` | Parse error |
 | `@@materialized` requires `@@server_sql` **or** `@@sql` (either satisfies it) | Parse error |
 | `@@materialized` + embedded build target | Compile error referencing [ADR 0003](../internals/views-adr) |

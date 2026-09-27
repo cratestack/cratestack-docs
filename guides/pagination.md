@@ -89,7 +89,11 @@ identical list path, so the envelope below is transport-independent.
 Canonical shape: `cratestack_core::page::{Page, PageInfo}`.
 
 - `totalCount` — total rows matching the read policy and any `where`
-  filter, ignoring `limit`/`offset`. Computed by re-running the same
+  filter, ignoring `limit`/`offset`. A relation filter in that `where`
+  applies the related model's read policy and `@@soft_delete` filter
+  *(since 0.13.0)*, for the count as for the items. Before 0.13.0 both
+  could be used to probe related rows the caller could not read (see
+  [Relation filters and sorts](../reference/auth-support-matrix#relation-filters-and-sorts)). Computed by re-running the same
   filtered `FindMany` query with no `limit`/`offset` and taking the
   length of the resulting row set — **not** a lightweight SQL
   `COUNT(*)`. The second query fetches and deserializes every matching

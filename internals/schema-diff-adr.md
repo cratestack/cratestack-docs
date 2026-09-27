@@ -7,7 +7,7 @@ description: State-based migration generation from .cstack vs a committed schema
 
 ## Status
 
-Proposed. Most of the design below has since shipped in `cratestack-migrate`: schema snapshotting, the diff engine and IR, both SQL emitters, `@@db_enforce` → `AddCheck`/`DropCheck` promotion, `@relation` → `AddForeignKey`/`DropForeignKey` promotion, enum IR ops, and view/materialized-view IR ops are all implemented and driven by the `cratestack migrate diff` CLI command today. `cratestack migrate verify` and `cratestack migrate drift` (shipping-order items 6–7 below) remain unimplemented — see `crates/cratestack-migrate/README.md`'s own "Not yet implemented" section in the source repo.
+Proposed. Most of the design below has since shipped in `cratestack-migrate`: schema snapshotting, the diff engine and IR, both SQL emitters, `@db_enforce` → `AddCheck`/`DropCheck` promotion, `@relation` → `AddForeignKey`/`DropForeignKey` promotion, enum IR ops, and view/materialized-view IR ops are all implemented and driven by the `cratestack migrate diff` CLI command today. `cratestack migrate verify` and `cratestack migrate drift` (shipping-order items 6–7 below) remain unimplemented — see `crates/cratestack-migrate/README.md`'s own "Not yet implemented" section in the source repo.
 
 ## Date
 
@@ -90,7 +90,7 @@ CreateMaterializedView, DropMaterializedView
 CreateEnum, AlterEnumAddVariant, RenameEnumVariant, DropEnumVariant, DropEnum
 ```
 
-Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers both hand-written `@@check` constraints and `@@db_enforce`-promoted validators (see "Validator promotion" below). `AddForeignKey` / `DropForeignKey` covers foreign keys promoted from `@relation` (see "Foreign-key promotion" below).
+Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers `@db_enforce`-promoted validators (see "Validator promotion" below) and the CHECK constraint of an `enum`-typed field. A hand-written `@@check` attribute was never implemented: through 0.14.0 it parsed and did nothing, and on `main` (unreleased) it is refused as an unknown block attribute. `AddForeignKey` / `DropForeignKey` covers foreign keys promoted from `@relation` (see "Foreign-key promotion" below).
 
 Each op carries a **destructiveness class**:
 
@@ -163,21 +163,21 @@ This has two consequences worth being explicit about:
 
 A schema with enums is therefore *fully portable* between backends without per-backend syntax — the divergence is in the emitted DDL, not the schema source.
 
-### Validator promotion (`@@db_enforce`)
+### Validator promotion
 
 Validators ([guides/validators](../guides/validators)) are **app-level by default** — they run in `validate(&self)` at the framework boundary and the database has no record of them. That is the correct default for rich validators (`@email`, `@uri`, complex `@regex`) that rely on host-language parsers and cannot be expressed in pure SQL without semantic drift.
 
-For validators whose semantics translate cleanly to SQL, an opt-in `@@db_enforce` attribute promotes them to database-level CHECK constraints, emitted as `AddCheck` / `DropCheck` IR ops:
+For validators whose semantics translate cleanly to SQL, an opt-in `@db_enforce` attribute promotes them to database-level CHECK constraints, emitted as `AddCheck` / `DropCheck` IR ops:
 
 ```cstack
 model Member {
-  amount   Decimal @range(min: 0, max: 1000000) @@db_enforce
-  currency String  @iso4217                     @@db_enforce
+  amount   Decimal @range(min: 0, max: 1000000) @db_enforce
+  currency String  @iso4217                     @db_enforce
   email    String  @email @length(min: 3, max: 254)   // app-only
 }
 ```
 
-**Translatable validators** (eligible for `@@db_enforce`):
+**Translatable validators** (eligible for `@db_enforce`):
 
 | Validator | Postgres CHECK | SQLite CHECK |
 | --- | --- | --- |
@@ -185,7 +185,7 @@ model Member {
 | `@length(min, max)` | `length(col) BETWEEN min AND max` | same |
 | `@iso4217` | `col ~ '^[A-Z]{3}$'` | `col GLOB '[A-Z][A-Z][A-Z]'` |
 
-**Non-translatable validators** (`@@db_enforce` is a parse-time error on these):
+**Non-translatable validators** (as implemented, `@db_enforce` on these is skipped silently, not a parse-time error; see [Validators](../guides/validators)):
 
 * `@email` — host-language email parsing
 * `@uri` — `url::Url::parse` semantics
@@ -195,11 +195,11 @@ The generator emits CHECK constraints with stable, predictable names — `<table
 
 **Destructiveness for validator changes:**
 
-* **Loosening** a `@@db_enforce` validator (widening a range, dropping the attribute, lowering a length min) — safe.
-* **Tightening** a `@@db_enforce` validator (narrowing a range, raising a length min) — **lossy** unless data already conforms. The generator emits the change behind `--allow-destructive`, and the developer is expected to either resolve violators in `up.pre.sql` or use the application's normal data-migration path before applying.
-* **Adding `@@db_enforce` to an existing field** — treated as a tightening, since data written before the attribute existed may not conform. Same opt-in posture.
+* **Loosening** a `@db_enforce` validator (widening a range, dropping the attribute, lowering a length min) — safe.
+* **Tightening** a `@db_enforce` validator (narrowing a range, raising a length min) — **lossy** unless data already conforms. The generator emits the change behind `--allow-destructive`, and the developer is expected to either resolve violators in `up.pre.sql` or use the application's normal data-migration path before applying.
+* **Adding `@db_enforce` to an existing field** — treated as a tightening, since data written before the attribute existed may not conform. Same opt-in posture.
 
-Validator changes without `@@db_enforce` produce **no migration** — they are pure app-level behavior changes and the database stays exactly as it was.
+Validator changes without `@db_enforce` produce **no migration** — they are pure app-level behavior changes and the database stays exactly as it was.
 
 ### Foreign-key promotion (`@relation`)
 
@@ -225,7 +225,7 @@ ALTER TABLE applications
   FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
 ```
 
-**SQLite (embedded target):** SQLite has no `ALTER TABLE ADD/DROP CONSTRAINT` at all — a foreign key can only be declared inline at `CREATE TABLE` time, which a diff against an existing table never re-runs. Rather than staying silent, the generator emits a marker comment naming the constraint that would otherwise not exist, matching the same posture as `@@db_enforce` CHECK constraints on SQLite (see "Validator promotion" below):
+**SQLite (embedded target):** SQLite has no `ALTER TABLE ADD/DROP CONSTRAINT` at all — a foreign key can only be declared inline at `CREATE TABLE` time, which a diff against an existing table never re-runs. Rather than staying silent, the generator emits a marker comment naming the constraint that would otherwise not exist, matching the same posture as `@db_enforce` CHECK constraints on SQLite (see "Validator promotion" below):
 
 ```sql
 -- SQLite: ADD CONSTRAINT applications_tenant_id_fkey FOREIGN KEY (tenant_id)
@@ -295,7 +295,7 @@ This is the only step that catches snapshot tampering. It must be required in CI
 8. `AlterColumnType`, `AlterColumnNullability`, `AlterColumnDefault`.
 9. `@rename` support.
 10. Enum IR ops (Postgres emitter only; SQLite emits TEXT and ignores enum changes).
-11. `@@db_enforce` for validators — `AddCheck` / `DropCheck` emission for the translatable subset.
+11. `@db_enforce` for validators — `AddCheck` / `DropCheck` emission for the translatable subset.
 12. View IR ops (`CreateView`, `ReplaceView`, `DropView`).
 13. Materialized view IR ops.
 14. `AddForeignKey` / `DropForeignKey` — foreign-key promotion from `@relation`, including `onDelete` / `onUpdate` referential actions.
