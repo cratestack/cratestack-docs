@@ -7,8 +7,9 @@ description: Serve selected procedures as MCP tools and selected models as read-
 
 <Note>
 **Since CrateStack 0.13.0.** Before 0.13.0 there is no MCP runtime. A few behaviours changed in
-0.13.1 and are marked *(since 0.13.1)* below. The design is
-[ADR 0002](/internals/mcp-operator-adr); the tracking epic is
+0.14.0 and are marked *(since 0.14.0)* below. 0.13.x is yanked on crates.io, deprecated on npm and
+retracted on pub.dev: 0.13.1 shipped breaking changes as a patch release, and 0.14.0 carries them.
+Install 0.14 or later. The design is [ADR 0002](/internals/mcp-operator-adr); the tracking epic is
 [cratestack#1033](https://github.com/cratestack/cratestack/issues/1033).
 </Note>
 
@@ -28,7 +29,7 @@ Turn on the `mcp` feature of the facade you already use. Tools work on `cratesta
 embedded role enforces no policy), and `cratestack-client` serves nothing.
 
 ```toml
-cratestack = { package = "cratestack-pg", version = "0.13", features = ["mcp"] }
+cratestack = { package = "cratestack-pg", version = "0.14", features = ["mcp"] }
 ```
 
 Then declare what to expose:
@@ -86,7 +87,7 @@ type with no faithful JSON Schema: `Json`, `FindMany`, `Vector`, `Geography` and
 
 The schema macro generates `cratestack_schema::mcp`. Its `tools(db, registry, resolvers)` value is
 the tool table. Over stdio you name the caller explicitly. There is no default identity, and an
-anonymous context is refused *(since 0.13.1)*: `StdioServer::new` returns
+anonymous context is refused *(since 0.14.0)*: `StdioServer::new` returns
 `StdioConfigError::AnonymousContext` for a context that isn't authenticated, the same rule the HTTP
 guard applies to your `AuthProvider`. On 0.13.0 it accepted one and served every call as nobody.
 
@@ -145,7 +146,7 @@ audience check.
    one, nothing is reserved. A failing rate-limit store follows the `StoreErrorPolicy` you pass to
    `with_store_error_policy`, the same type `RateLimitLayer` uses on HTTP. The budget is per
    caller and per transport: a caller's MCP calls and its REST calls are counted separately.
-   *(since 0.13.1)* The MCP key holds a SHA-256 of the caller's id, not the id itself. After
+   *(since 0.14.0)* The MCP key holds a SHA-256 of the caller's id, not the id itself. After
    upgrading from 0.13.0 with a shared store, MCP idempotency records written by 0.13.0 no longer
    replay and MCP rate-limit buckets start fresh.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
