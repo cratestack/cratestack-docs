@@ -363,9 +363,11 @@ application uses: the rate limiter and the idempotency layer see only the string
   a longer one becomes a sealed `500`. The payload is copied once into the sealed message; the
   zero-copy API is cratestack#1076.
 - **The schema digest covers the whole parsed schema**, not its text (cratestack#1065). Comments,
-  `///` docs, whitespace and declaration order do not change it, but a server-only edit (a policy,
-  an index, a view's SQL) does, and a client built before that edit is refused. Regenerate and
-  redeploy clients with the server.
+  `///` docs, whitespace outside string literals (including `"""` SQL bodies, whose contents stay
+  verbatim) and declaration order do not change it, but a server-only edit (a policy, an index, a
+  view's SQL) does, and a client built before that edit is refused. So do reordering attributes, a
+  trailing comma in `[...]` and `- 1` versus `-1`: the digest fails loudly on those, which is
+  accepted. Regenerate and redeploy clients with the server.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The generated Rust client does not sign yet** (cratestack#1007), and binding v1 is not

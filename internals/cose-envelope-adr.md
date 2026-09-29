@@ -470,17 +470,20 @@ Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The
 `.cstack` text. It is `SHA-256(b"cratestack/schema-identity/v1\0" ‖ canonical JSON)`, computed by
 `cratestack_core::schema_digest` over the parsed schema, and every producer calls that one function:
 the three `include_*_schema!` macros and the CLI that bakes the constant into generated Dart and
-TypeScript clients. The macros used to hash the source bytes twice, once in the macros crate and
-once in the CLI.
+TypeScript clients. The digest used to be computed twice, over the source bytes, once in the macros
+crate and once in the CLI.
 
-- **Excluded:** source spans, `///` docs, and the whitespace of attribute text outside quoted string
-  literals (`@default( false )` is `@default(false)`). Comments never reach the parser's output. The
-  contents of string literals stay verbatim, because `@@sql("...")` bodies and regexes carry
-  meaning in their whitespace.
+- **Excluded:** source spans, `///` docs, and the whitespace of attribute text outside string
+  literals, including `"""` SQL bodies (`@default( false )` is `@default(false)`). Comments never
+  reach the parser's output. The contents of `"..."`, `'...'` and `"""..."""` literals stay
+  verbatim, because `@@sql("...")` bodies and regexes carry meaning in their whitespace. Still
+  digest-changing, by design (fail-loud): reordering attributes, a trailing comma in `[...]`, and
+  `- 1` versus `-1`.
 - **Sorted by name:** top-level declarations (models, types, enums, mixins, procedures, views,
   queries) and the fields of models, types, mixins and views, so moving a declaration is not a
-  contract change. The positional P3 codec (§9) takes its ids from `@wire(n)` or the lockfile, and
-  those attributes are hashed, so sorting fields costs it nothing.
+  contract change. When the positional P3 codec (§9) lands, whatever assigns its ids (declared in
+  the schema or kept in a lockfile) must enter the identity, or the domain tag must move to `/v2`;
+  field order is sorted away today, so ids cannot ride on it.
 - **Declared order kept:** enum variants, attribute lists and procedure arguments. No codec encodes a
   variant by its index (enums travel by name), but the first variant is the type's `Default` and
   Postgres orders an enum by declaration, so the order is part of the contract.
