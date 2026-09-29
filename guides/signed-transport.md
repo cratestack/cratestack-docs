@@ -25,9 +25,9 @@ mode) are P1, so a signed request never gets a stream (see [Limits](#limits)).
 
 Use it when a TLS terminator, a proxy or a message queue sits between the client and the
 service and must not be able to alter or replay a request: payments, device commands,
-service-to-service calls across a trust boundary. The layer is opt-in per op, and
-`Required` itself is opt-in until the schema digest stops changing on comment-only edits
-(cratestack#1065, see [Limits](#limits)).
+service-to-service calls across a trust boundary. The layer is opt-in per op. The schema digest a
+signed request binds is the schema's canonical identity, so comment, whitespace and
+declaration-order edits do not change it (cratestack#1065, see [Limits](#limits)).
 
 ## Enable it
 
@@ -362,8 +362,10 @@ application uses: the rate limiter and the idempotency layer see only the string
 - **Responses are re-buffered** to be sealed, up to `MAX_RESPONSE_REBUFFER_BYTES` (8 MiB);
   a longer one becomes a sealed `500`. The payload is copied once into the sealed message; the
   zero-copy API is cratestack#1076.
-- **The schema digest hashes the raw `.cstack` text**, so a comment-only edit changes it and
-  breaks every signed client (cratestack#1065). `Required` is opt-in until that is settled.
+- **The schema digest covers the whole parsed schema**, not its text (cratestack#1065). Comments,
+  `///` docs, whitespace and declaration order do not change it, but a server-only edit (a policy,
+  an index, a view's SQL) does, and a client built before that edit is refused. Regenerate and
+  redeploy clients with the server.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The generated Rust client does not sign yet** (cratestack#1007), and binding v1 is not
