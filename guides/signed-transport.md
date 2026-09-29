@@ -26,8 +26,9 @@ mode) are P1, so a signed request never gets a stream (see [Limits](#limits)).
 Use it when a TLS terminator, a proxy or a message queue sits between the client and the
 service and must not be able to alter or replay a request: payments, device commands,
 service-to-service calls across a trust boundary. The layer is opt-in per op. The schema digest a
-signed request binds is the schema's canonical identity, so comment, whitespace and
-declaration-order edits do not change it (cratestack#1065, see [Limits](#limits)).
+signed request binds is the schema's canonical identity, so comment and whitespace edits, moving
+a declaration and reordering a model's fields do not change it (cratestack#1065, see
+[Limits](#limits)).
 
 ## Enable it
 
@@ -364,10 +365,11 @@ application uses: the rate limiter and the idempotency layer see only the string
   zero-copy API is cratestack#1076.
 - **The schema digest covers the whole parsed schema**, not its text (cratestack#1065). Comments,
   `///` docs, whitespace outside string literals (including `"""` SQL bodies, whose contents stay
-  verbatim) and declaration order do not change it, but a server-only edit (a policy, an index, a
-  view's SQL) does, and a client built before that edit is refused. So do reordering attributes, a
-  trailing comma in `[...]` and `- 1` versus `-1`: the digest fails loudly on those, which is
-  accepted. Regenerate and redeploy clients with the server.
+  verbatim), moving a top-level declaration and reordering a model's, type's, mixin's or view's
+  fields do not change it. A server-only edit (a policy, an index, a view's SQL) does, and a client
+  built before that edit is refused. So do reordering enum variants (the first is the `Default`, and
+  Postgres orders an enum by declaration), attributes or procedure arguments, a trailing comma in
+  `[...]` and `- 1` versus `-1`: the digest fails loudly on those, which is accepted. Regenerate and redeploy clients with the server.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The generated Rust client does not sign yet** (cratestack#1007), and binding v1 is not
