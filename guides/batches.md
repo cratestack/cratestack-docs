@@ -96,9 +96,12 @@ not begin a transaction of its own: its outer "transaction" is a savepoint of th
 transaction, at the declared level, and it commits only when the procedure's attempt commits. Its
 create-policy checks (with their relation lookups), `@version` probes and upsert update-policy
 checks read through that transaction too, so they see the procedure's earlier writes and take no
-second pooled connection. A retried attempt runs the batch again from scratch. Called anywhere
-else, a batch primitive behaves as described above and reads those policies on the pool, as
-before.
+second pooled connection. A retried attempt runs the batch again from scratch.
+
+*(Unreleased, [cratestack#1117](https://github.com/cratestack/cratestack/issues/1117).)* Called
+anywhere else, a batch primitive reads those policies on the batch's own transaction too, so a later
+item is authorised by an earlier one and no second pooled connection is taken. Through 0.14.2 that
+read went to the pool.
 
 ## Size cap and duplicate handling
 
