@@ -115,9 +115,9 @@ named below.
     thumbprints can be precomputed, and secrets shorter than 32 bytes are rejected.
   - Errors, per §10: every failed check is the same coarse `401`; a backend outage (key resolver or
     nonce store) is a `500`.
-  - The schema SHA currently hashes the raw `.cstack` text, so a comment-only schema edit would
-    reject every signed client. #1006/#1007 settle what the AAD binds before `Required` mode ships
-    (tracked as a follow-up).
+  - The schema SHA first hashed the raw `.cstack` text, so a comment-only schema edit would
+    reject every signed client. cratestack#1065 replaced it with a canonical schema identity (§4,
+    "Schema identity (#1065)").
 
 **Decisions from the P0 security review** (maintainer, 2026-09-24, on
 [cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)). They amend §1, §4 and §10.
@@ -465,6 +465,39 @@ defeats:
 
 Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The same fact made
 `Router::nest` break descriptor lookup in cratestack#877.)
+
+**Schema identity (#1065).** `schema_sha` is the schema's canonical identity, not a hash of the
+`.cstack` text. It is `SHA-256(b"cratestack/schema-identity/v1\0" ‖ canonical JSON)`, computed by
+`cratestack_core::schema_digest` over the parsed schema, and every producer calls that one function:
+the three `include_*_schema!` macros and the CLI that bakes the constant into generated Dart and
+TypeScript clients. The digest used to be computed twice, over the source bytes, once in the macros
+crate and once in the CLI.
+
+- **Excluded:** source spans, `///` docs, and the whitespace of attribute text outside string
+  literals, including `"""` SQL bodies (`@default( false )` is `@default(false)`). Comments never
+  reach the parser's output. The contents of `"..."`, `'...'` and `"""..."""` literals stay
+  verbatim, because `@@sql("...")` bodies and regexes carry meaning in their whitespace. Still
+  digest-changing, by design (fail-loud): reordering attributes, a trailing comma in `[...]`, and
+  `- 1` versus `-1`.
+- **Sorted by name:** top-level declarations (models, types, enums, mixins, procedures, views,
+  queries) and the fields of models, types, mixins and views, so moving a declaration is not a
+  contract change. When the positional P3 codec (§9) lands, whatever assigns its ids (declared in
+  the schema or kept in a lockfile) must enter the identity, or the domain tag must move to `/v2`;
+  field order is sorted away today, so ids cannot ride on it.
+- **Declared order kept:** enum variants, attribute lists and procedure arguments. No codec encodes a
+  variant by its index (enums travel by name), but the first variant is the type's `Default` and
+  Postgres orders an enum by declaration, so the order is part of the contract.
+- **Built by hand, versioned by tag.** The canonical form is written node by node rather than by
+  serialising the IR, so a new IR field enters the digest by a deliberate edit and never through a
+  `#[serde(default)]`. A golden digest test pins it; the `/v1` tag makes any later change to the
+  form a new identity on purpose.
+- **Cost:** the whole IR is hashed, not only the wire surface, so a server-only edit (a policy, an
+  `@@index`, a view's SQL) also changes the digest, and a client built before the edit is refused.
+  That fails loud at deploy, which is preferred to a wire mismatch that slips through. A follow-up
+  could let a server accept several previous digests.
+
+This is inside version 1: it lands before the freeze above, so no deployed peer sees the old
+digest, and every existing `SCHEMA_SHA256` changes once.
 
 ### 5. Freshness and replay, offline-aware
 
