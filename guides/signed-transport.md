@@ -406,6 +406,11 @@ client you supply with `with_http_client` or `with_middleware_client` **must not
 either**; if it does, the answer from a URL other than the sealed one is `Unverified`, which
 catches the plain `GET`, but not a hop that already received the sealed bytes.
 
+**On `wasm32` (a browser) the redirect is followed for you.** `fetch` follows it before the client
+sees the response, and reqwest 0.13's wasm client cannot set `redirect: "error"`. The client then
+detects the redirect (`Unverified`) only after the redirected request was sent, so the sealed bytes
+have already reached the `Location`. Keep redirecting hops out of the path of a browser client.
+
 **A router mounted under path parameters.** When the server nests the router under a prefix with
 parameters (`Router::nest("/t/{tenant}", ..)` and `.mount_prefix("/t/{tenant}")` on the layer), the
 seal binds those values ahead of the route's own, so a request signed for one tenant cannot be
