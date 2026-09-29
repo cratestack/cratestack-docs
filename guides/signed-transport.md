@@ -9,9 +9,11 @@ description: Open signed requests and seal every response of a generated REST or
 **Since CrateStack 0.14.0** ([cratestack#1006](https://github.com/cratestack/cratestack/issues/1006));
 it was first published as 0.13.1, which is yanked because it made breaking changes in a patch release.
 The design is
-[ADR 0006](/internals/cose-envelope-adr). The generated Rust client does not sign requests yet
-(cratestack#1007), and the wire format (binding v1, including the AAD) may still change until
-both sides have shipped (cratestack#1082).
+[ADR 0006](/internals/cose-envelope-adr). The generated Rust client signs from the first
+release after 0.14.2 ([cratestack#1007](https://github.com/cratestack/cratestack/issues/1007),
+see [The Rust client](#the-rust-client)); binding v1, including the AAD, freezes in that release
+(cratestack#1082), so until then the wire format may still change. The schema-identity change
+(cratestack#1065) has already landed.
 </Warning>
 
 `EnvelopeLayer` is a tower layer for the generated REST and RPC routers. It opens
@@ -354,6 +356,82 @@ application uses: the rate limiter and the idempotency layer see only the string
 - A `Sealed` whose media type is not `application/cose` or one the envelope claims is never
   sent.
 
+## The Rust client
+
+Turn on the `cose` feature of the facade the client crate uses (`cratestack-client`,
+`cratestack-pg` or `cratestack-api`; it is off by default and pulls `cratestack-cose`, never
+`axum`), build a client-role `CoseEnvelope`, and give it to the client:
+
+```rust
+use std::sync::Arc;
+use cratestack::client_rust::{CborCodec, ClientConfig, ClientEnvelope, CratestackClient};
+use cratestack::cose::{CoseEnvelope, CoseMode, Ed25519Signer, StaticVerifierResolver};
+
+// Our signing key, and the server key we pinned at enrolment.
+let envelope = CoseEnvelope::client(
+    CoseMode::Sign1,
+    Arc::new(our_signer),
+    Arc::new(StaticVerifierResolver::new().with_key(server_verify_key)),
+)
+.build()?;
+
+let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec)
+    // "payments" is the server's configured audience, never its host name.
+    .with_envelope(ClientEnvelope::new(envelope, "payments")?)?;
+let client = cratestack_schema::client::Client::new(runtime); // REST or RPC alike
+```
+
+A client with an envelope is a `Required` client. Every request is sealed (a bodiless one seals
+an empty payload), every response must be a sealed answer to that request, and nothing falls back
+to plain:
+
+| The response | The call returns |
+|---|---|
+| Sealed for this request, route, status and headers | the decoded value, or the usual `Remote` error for a sealed error |
+| Sealed, but for another request, or with its status or a bound header changed | `ClientError::Envelope(EnvelopeError::Unverified)` |
+| Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or schema digest is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read |
+| A stream, a `@stream` op or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent |
+
+The generated code tells the client which route each call is for, so a REST call binds the
+template (`/widgets/{id}`) and the values (`7`), and an RPC call its op id (`batch` for
+`/rpc/batch`). `Idempotency-Key` and `If-Match` are bound as you pass them. A request authorizer
+still runs, over the plain payload with `Content-Type: application/cbor`, which is what the
+server's `AuthProvider` sees once it has opened the seal.
+
+**A key in a platform keystore.** Android Keystore and iOS `SecKey` sign through an async call
+and answer with a DER signature. `ExternalSigner::esp256` takes the public key and an async
+callback that receives the full to-be-signed bytes (the keystore hashes them itself, as
+`SHA256withECDSA`), works out the `kid` from the key, and converts a DER answer to the 64-byte
+form the envelope needs; a raw `r || s` answer is accepted too:
+
+```rust
+let signer = ExternalSigner::esp256(&public_key_sec1, move |tbs| {
+    let keystore = keystore.clone();
+    async move { keystore.sign(tbs).await } // DER or raw, as the keystore returns it
+})?;
+```
+
+On `wasm32-unknown-unknown` the signer and its future need not be `Send` (a `JsFuture` is
+not): `CoseSigner` and `CoseVerifierResolver` follow `RequestAuthorizer`'s target split.
+A signer that builds for both targets uses
+`#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]` and
+`#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]`.
+
+**Retries.** Each sealed request carries a fresh `cti`, and the server answers a replayed one
+with an unsigned `401`. So the client marks sealed requests non-idempotent for
+`reqwest-middleware` (`RequestIdempotency::new(false)`, whatever the method), and a retry layer
+has to send the call again through the client, which reseals it, instead of replaying the
+bytes.
+
+**The FFI runtime.** `RuntimeHandle::with_envelope(config, envelope, schema_sha)` takes the
+envelope out of band, because keys cannot travel in `RuntimeConfigWire`; the config names it with
+`RuntimeEnvelopeConfig::CoseSign1` or `CoseMac0`, and `RuntimeHandle::new` refuses those with a
+`BadInput` that says so. A raw request over the bridge must be an RPC one (`/rpc/{op_id}` or
+`/rpc/batch`): a raw REST path carries no route template to bind. A failure reaches the host as
+one of the existing error codes with an `envelope_*` `remote_code`
+(`envelope_unsigned`, `envelope_unverified`, `envelope_seal`, `envelope_open`,
+`envelope_streams_unsupported`).
+
 ## Limits
 
 - **Streams cannot be sealed** until ADR 0006 P1 (`chain` mode). A signed request gets
@@ -372,8 +450,13 @@ application uses: the rate limiter and the idempotency layer see only the string
   `[...]` and `- 1` versus `-1`: the digest fails loudly on those, which is accepted. Regenerate and redeploy clients with the server.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
-- **The generated Rust client does not sign yet** (cratestack#1007), and binding v1 is not
-  frozen (cratestack#1082).
+- **The Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust runtime
+  (Dart through FRB, JavaScript through the wasm and napi builds) rather than a second
+  implementation, so their generated code stays unsigned; the Flutter runtime mirror rejects an
+  envelope until P1.
+- **Binding v1 freezes with the first release that has the client** (cratestack#1082): until
+  then a change to the AAD is not a breaking change. The schema-identity change (cratestack#1065)
+  is already in.
 - **A signer is recorded, not authenticated**: mapping it to an identity is cratestack#1077.
 
 ## Read next

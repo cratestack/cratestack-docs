@@ -1017,7 +1017,7 @@ The generated Dart APIs do not change. Only the Rust runtime config changes.
 The most important client-side features that still are not implemented end-to-end are:
 
 1. a raw exported ABI wrapper for direct Dart FFI consumers
-2. COSE envelope support
+2. COSE envelope support through the Flutter wrapper (the Rust runtime seals and opens since cratestack#1007; the Flutter mirror still rejects an envelope until P1)
 3. request signing and canonicalization on the runtime path
 4. generated typed Rust client output comparable to the generated Dart package output
 5. a public Flutter or Dart-facing persisted-state API
@@ -1025,7 +1025,7 @@ The most important client-side features that still are not implemented end-to-en
 7. a first-class typed remote-error surface in the generated Dart APIs
 8. fully selection-aware response typing when `fields`, `include`, and `includeFields[path]` narrow or reshape payloads
 
-### 3. Future Signed or Enveloped Transport
+### 3. Signed or Enveloped Transport (Rust runtime; Flutter mirror pending)
 
 Use when:
 
@@ -1034,10 +1034,10 @@ Use when:
 
 Intended config:
 
-1. codec: `cbor` or `json`
-2. envelope: `cose_sign1`
+1. codec: `cbor` (an envelope wraps CBOR, so `json` is refused)
+2. envelope: `cose_sign1` or `cose_mac0`
 
-This is not implemented yet, but the config seam is already reserved so the generated Dart API does not need another architecture change when envelope support lands.
+The Rust runtime implements it (cratestack#1007): `RuntimeHandle::with_envelope(config, envelope, schema_sha)` takes the keys out of band, and `RuntimeHandle::new` with an envelope in the config but none supplied is a `BadInput` that says so. See [Signed transport](../guides/signed-transport.md#the-rust-client). The Flutter mirror in `cratestack-client-flutter` stays guarded until P1, so the generated Dart API does not need another architecture change when it lands.
 
 ## Streaming surfaces
 
