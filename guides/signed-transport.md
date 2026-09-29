@@ -390,13 +390,38 @@ to plain:
 | Sealed for this request, route, status and headers | the decoded value, or the usual `Remote` error for a sealed error |
 | Sealed, but for another request, or with its status or a bound header changed | `ClientError::Envelope(EnvelopeError::Unverified)` |
 | Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or schema digest is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read |
-| A stream, a `@stream` op or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent |
+| A streamed call (`*_streamed`, `call_streaming`) or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent. A `@stream` procedure called through `post_list` is sealed and works, as one buffered array |
 
 The generated code tells the client which route each call is for, so a REST call binds the
 template (`/widgets/{id}`) and the values (`7`), and an RPC call its op id (`batch` for
 `/rpc/batch`). `Idempotency-Key` and `If-Match` are bound as you pass them. A request authorizer
 still runs, over the plain payload with `Content-Type: application/cbor`, which is what the
 server's `AuthProvider` sees once it has opened the seal.
+
+**Redirects are never followed.** A sealed request is bound to one route: a `303` would turn it
+into a plain authenticated `GET` at a path the proxy chose, a `307` would re-send the sealed bytes
+to another `Location`. `CratestackClient::new` builds its `reqwest::Client` with
+`redirect::Policy::none()`, so a redirect is an unsigned answer (`Unsigned { status: 303 }`). A
+client you supply with `with_http_client` or `with_middleware_client` **must not follow redirects
+either**; if it does, the answer from a URL other than the sealed one is `Unverified`, which
+catches the plain `GET`, but not a hop that already received the sealed bytes.
+
+**A router mounted under path parameters.** When the server nests the router under a prefix with
+parameters (`Router::nest("/t/{tenant}", ..)` and `.mount_prefix("/t/{tenant}")` on the layer), the
+seal binds those values ahead of the route's own, so a request signed for one tenant cannot be
+replayed at another. Name them on the envelope, in order, with
+`ClientEnvelope::with_mount_params(vec!["acme".into()])`, and put the mount in the base URL. Wrong
+or missing values fail verification (an unsigned `401`). A plain prefix such as `/api` has no
+parameters and needs nothing.
+
+**Response headers are not signed.** `ETag`, `Retry-After` and `Idempotency-Replayed` come from
+the transport and reach you as the proxy sent them; the seal covers the status and the payload.
+Read a version from the payload when it must be trustworthy. `Idempotency-Key` and `If-Match`
+must each be given once, without leading or trailing whitespace; the client refuses anything else
+locally (`BadInput`), since a hop may fold or trim it.
+
+**Retries.** Do not put a stock retry layer (`RetryTransientMiddleware`) in front of a sealed
+client: it ignores the idempotency marker and replays the sealed bytes, which the server refuses.
 
 **A key in a platform keystore.** Android Keystore and iOS `SecKey` sign through an async call
 and answer with a DER signature. `ExternalSigner::esp256` takes the public key and an async
