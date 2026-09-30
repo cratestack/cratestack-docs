@@ -542,15 +542,81 @@ sequenceDiagram
   `Unsigned`.
 - **Without the header** (a hand-built client) the layer tries the op's accepted digests newest first,
   at most `max_contract_trials` (default 4). A message's nonce is recorded only once it verifies, so a
-  failed trial burns nothing, and a forged message costs at most that many parse, key-resolution and
-  verification passes (one each per trial until keys are resolved once).
+  failed trial burns nothing. The COSE envelope parses the message and resolves its key **once**
+  (`open_request_any`) and repeats only the signature check, so a forged message costs one parse, one
+  key resolution and at most that many verifications.
 - **The response is sealed under the digest the request used**, and the client opens it under the
   digest it sent.
 - **A digest from another op is refused**: op B's accepted list does not hold op A's digest, even with
   a matching route and selector.
 
-The accepted list per op is `[current]` today. A later change adds a committed lock of older
-compatible contracts, which only appends to that list; nothing here changes when it does.
+The accepted list per op is `[current]` until the server names a contract lock (next section), which
+only appends older digests to it.
+
+### Keeping older clients working through a compatible change
+
+Adding an optional field to a model or an args type changes the digest of every op that reaches it,
+yet an old client's messages still decode under the new shape. To keep accepting them, commit a
+**contract lock** next to the schema and name it in the server macro:
+
+```rust
+cratestack::include_server_schema!(
+    "schemas/app.cstack",
+    db = Postgres,
+    contracts = "schemas/app.contracts.lock"
+);
+```
+
+```bash
+# before shipping a client build: record the current contracts as a generation
+cratestack contract lock  --schema schemas/app.cstack --lock schemas/app.contracts.lock --note "store 1.4.7"
+# in CI: fail when the current contract is unlocked, or breaks a locked one
+cratestack contract check --schema schemas/app.cstack --lock schemas/app.contracts.lock
+# later: stop accepting old generations, or one op's older clients
+cratestack contract prune --lock schemas/app.contracts.lock --keep 5
+cratestack contract prune --lock schemas/app.contracts.lock --op procedure.placeOrder
+```
+
+The lock is JSON: `contracts` holds each distinct canonical op contract once, under its digest, and
+`generations` (oldest first) records, per locked moment, the client contract digest, a `locked_at`
+date, a `note` and each op's digest at that moment. The macro recomputes every stored contract's
+digest (a hand edit is a compile error), reads the file with `include_bytes!` so editing it rebuilds
+the crate, and emits `ACCEPTED_CONTRACTS` as `[current, ...locked, newest first]` per op. No clock is
+read at build time: dates come from `contract lock --date` (default today, UTC).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Shipped: contract lock (a generation is recorded)
+    Shipped --> Accepted: the schema changes compatibly
+    Accepted --> Accepted: more compatible changes, more generations
+    Accepted --> Refused: a breaking change to an op (compile error until pruned)
+    Refused --> Accepted: contract prune --op, then the op's older clients get the 426
+    Accepted --> [*]: contract prune --keep, --before, --generation
+```
+
+**What counts as compatible.** Every locked contract of an op the schema still has is judged against
+the current one by a conservative classifier (anything it does not recognise is breaking), at compile
+time and by `contract check`. Old is the signer's shape:
+
+- The op's transport, key, kind, verb, model, procedure name, return type and kept attributes are
+  unchanged.
+- An argument or field may be **added** only as optional (a field may instead carry `@default`). A
+  required argument, or a field only the input reaches, may **become optional**. Variants may be
+  **appended** to an enum only the input reaches. A declaration only the output reaches may gain any
+  field, because decoders ignore keys they do not know.
+- Everything else is breaking, notably: removing an argument or field (the signed value would be
+  silently ignored, a meaning the signer never produced), any retype, an arity change in a direction
+  that reads it, a variant added to an enum an old client decodes, inserting, removing or reordering
+  variants, reordering arguments, and adding, removing or changing an attribute of a kept field or
+  declaration (a `@default` field is not in the create input, so adding one to an existing field
+  drops what an old client sent). A model op's model counts as both input and output.
+
+An incompatible locked entry is a **compile error** naming the op and the reason. Shipping the break
+on purpose is `cratestack contract prune --op <key>`: older clients of that op get the `426` and no
+other op is touched. `contract lock` refuses to write while the current contract breaks a locked one,
+so the prune is always a separate, reviewed step. A signed `/rpc/batch` never takes history (see
+[Limits](#limits)). A lock holds every distinct contract of every generation, so its first generation
+is the size of the whole client contract; later ones add only the ops that changed.
 
 ### Upgrading from binding version 1
 
@@ -577,8 +643,8 @@ a signed request to a route with no contract row is a logged `500`. The shared v
   means, leaves it alone. Change the op, or add a new one, when meaning changes.
 - **A signed `/rpc/batch` binds the whole-contract digest** (`CLIENT_CONTRACT_SHA256_BYTES`), and is
   accepted only when it equals the server's current one, so any client-facing change (a new op, an
-  edit to any op) refuses a signed batch from an older client with the `426`. Per-frame digests are
-  a follow-up.
+  edit to any op, locked or not) refuses a signed batch from an older client with the `426`.
+  Per-frame digests are a follow-up.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust runtime
