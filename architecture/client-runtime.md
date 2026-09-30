@@ -652,7 +652,7 @@ let config = RuntimeConfigWire {
 };
 ```
 
-### Rust Client In The Browser (`wasm32-unknown-unknown`)
+### Rust Client In The Browser (wasm32-unknown-unknown)
 
 *(Since 0.14.1, [cratestack#1104](https://github.com/cratestack/cratestack/issues/1104).)*
 `include_client_schema!` builds for `wasm32-unknown-unknown`, through the `cratestack-client`
