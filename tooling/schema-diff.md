@@ -139,6 +139,11 @@ taxonomy. Explicitly out of scope for now:
 * **Field-level attribute changes** other than what feeds the type/arity/default checks above (e.g.
   `@pii`, `@sensitive`, `@unique`) aren't classified.
 
+**For signed clients, `cratestack contract check` is the enforcing gate.** `diff` stays a heuristic
+report; `cratestack contract lock|check|prune` ([Signed transport](../guides/signed-transport#keeping-older-clients-working-through-a-compatible-change))
+judge each op's wire contract against the contracts locked for shipped clients with a conservative
+classifier, and fail when the current schema breaks one.
+
 Source of truth: [issue #134](https://github.com/cratestack/cratestack/issues/134).
 
 ## Read Next

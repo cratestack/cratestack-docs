@@ -144,7 +144,9 @@ named below.
 - **A signed `/rpc/batch` binds the whole-contract digest for now**, accepted only when it equals the
   server's current one. Per-frame digests are a follow-up.
 - **The compatible-history lock** (digests of older contracts a server still accepts, checked by a
-  classifier) is a separate change. The server's accepted list per op has one member until it lands.
+  classifier) shipped in the change after binding version 2
+  ([cratestack#1123](https://github.com/cratestack/cratestack/issues/1123), 2026-09-30): see §4,
+  "The compatible-history lock". Without a lock the accepted list per op has one member.
 
 **Decisions from the P0 security review** (maintainer, 2026-09-24, on
 [cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)). They amend §1, §4 and §10.
@@ -581,13 +583,37 @@ server already accepts, and the signature covers all 32 bytes, so a lie is the o
   "contract_unsupported" }` (REST `CONTRACT_UNSUPPORTED`), before any key lookup.
 - Header absent (a hand-built client): the op's accepted digests are tried newest first, capped
   (default 4). A nonce is recorded only after a message verifies, so a failed trial burns nothing,
-  and a forged message costs at most the cap in parse, key-resolution and verification passes (one
-  each per trial until keys are resolved once).
+  and the COSE envelope parses the message and resolves its key once (`open_request_any`), so a
+  forged message costs one parse, one key resolution and at most the cap in verifications.
 - The response is sealed under the digest the request opened under.
 - A signed `/rpc/batch` has one AAD and many ops: until frames carry their own digests it binds the
   whole-contract digest, accepted only when equal to the server's.
-- The accepted list per op is `[current]` today; the compatible-history lock (a separate change)
-  only appends older digests a conservative classifier judges wire-compatible.
+- The accepted list per op is `[current]`, plus the older digests of a committed lock that a
+  conservative classifier judges wire-compatible (next paragraph).
+
+**The compatible-history lock (#1123).** A server built with `include_server_schema!(.., contracts =
+"x.contracts.lock")` accepts, per op, `[current, ...locked, newest first]`. The lock is a committed,
+content-addressed JSON file (`format`, `domain`, `contracts`: canonical op contract by digest,
+`generations`: client contract digest, date, note and op digests, oldest first) maintained by
+`cratestack contract lock|check|prune`. It widens nothing a peer can influence: the accepted set is
+fixed at build time from the file, the macro recomputes every stored contract's digest, and the
+selector header still only chooses among accepted digests. Admission is decided by
+`cratestack_core::classify(old, new)` per op, at compile time (an incompatible entry is a compile
+error naming the op and reason) and in `contract check`. It is security-critical and so refuses by
+default: identical op identity, return type and kept attributes; additions only as optional (or
+`@default` on a model op's own model, the one place a create input omits the field; a `type` or a
+model used as an argument decodes it as required, so there it is refused, and so is an added
+`FindMany<T>?` argument); required to optional only on input-only declarations; enum variants appended
+only to input-only enums; any added field on output-only declarations; every removal, retype,
+insertion, reorder or attribute change refused. Removing a field is refused even though the server
+would decode the message, because the signed value would be silently ignored. A round-trip test
+encodes values of the old generated types and decodes them as the new ones (and the reverse for
+replies) for each compatible rule (fixture-based, not random inputs), and pins that the refused
+`@default` edit really fails to decode. `tests/vectors/contract.json` pins the canonical contract bytes,
+digests and client contract digest of a fixture schema, for a future non-Rust sealer; the generated
+TypeScript and Dart constants are checked against it too, which is parity (both generators call the
+same Rust function), while the independent check is recomputing the digests from the canonical
+strings with plain SHA-256.
 
 ### 5. Freshness and replay, offline-aware
 
@@ -810,7 +836,11 @@ story per phase). The unsigned streaming it builds on is
   Deterministic Ed25519 makes this exact.
 - **Tampering:** flip one bit in each of the payload, the protected header, the AAD route, the AAD
   contract digest and the request digest → reject. A request bound under another op's digest
-  (`neg-contract-cross-op`) and one signed over a version 1 AAD (`neg-binding-v1`) → reject. Assert on encoded bytes, not decoded values.
+  (`neg-contract-cross-op`) and one signed over a version 1 AAD (`neg-binding-v1`) → reject. Assert
+  on encoded bytes, not decoded values.
+- **Contract lock:** a locked, compatible older digest opens and its response seals under it; an
+  incompatible lock entry is a compile error naming the op and reason. Candidates that differ in
+  anything but the contract digest, and an empty candidate list, are refused before any key lookup.
 - **Streams:** truncate before the terminal checkpoint → `Incomplete`. Reorder, drop or insert an
   item → reject at the next checkpoint. A forged error item → reject. A legitimate COSE_Sign1 item →
   not treated as a checkpoint.
