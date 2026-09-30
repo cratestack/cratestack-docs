@@ -601,13 +601,19 @@ selector header still only chooses among accepted digests. Admission is decided 
 `cratestack_core::classify(old, new)` per op, at compile time (an incompatible entry is a compile
 error naming the op and reason) and in `contract check`. It is security-critical and so refuses by
 default: identical op identity, return type and kept attributes; additions only as optional (or
-`@default` on a field); required to optional only on input-only declarations; enum variants appended
+`@default` on a model op's own model, the one place a create input omits the field; a `type` or a
+model used as an argument decodes it as required, so there it is refused, and so is an added
+`FindMany<T>?` argument); required to optional only on input-only declarations; enum variants appended
 only to input-only enums; any added field on output-only declarations; every removal, retype,
 insertion, reorder or attribute change refused. Removing a field is refused even though the server
 would decode the message, because the signed value would be silently ignored. A round-trip test
 encodes values of the old generated types and decodes them as the new ones (and the reverse for
-replies) for every compatible rule. `tests/vectors/contract.json` pins the canonical contract bytes,
-digests and client contract digest of a fixture schema for non-Rust implementations.
+replies) for each compatible rule (fixture-based, not random inputs), and pins that the refused
+`@default` edit really fails to decode. `tests/vectors/contract.json` pins the canonical contract bytes,
+digests and client contract digest of a fixture schema, for a future non-Rust sealer; the generated
+TypeScript and Dart constants are checked against it too, which is parity (both generators call the
+same Rust function), while the independent check is recomputing the digests from the canonical
+strings with plain SHA-256.
 
 ### 5. Freshness and replay, offline-aware
 
@@ -829,8 +835,12 @@ story per phase). The unsigned streaming it builds on is
 - **Vectors:** identical bytes from Rust native, wasm and napi for the same key and payload.
   Deterministic Ed25519 makes this exact.
 - **Tampering:** flip one bit in each of the payload, the protected header, the AAD route, the AAD
-  contract digest and the request digest → reject. A locked, compatible older digest opens and its response seals under it; an incompatible lock entry is a compile error. A request bound under another op's digest
-  (`neg-contract-cross-op`) and one signed over a version 1 AAD (`neg-binding-v1`) → reject. Assert on encoded bytes, not decoded values.
+  contract digest and the request digest → reject. A request bound under another op's digest
+  (`neg-contract-cross-op`) and one signed over a version 1 AAD (`neg-binding-v1`) → reject. Assert
+  on encoded bytes, not decoded values.
+- **Contract lock:** a locked, compatible older digest opens and its response seals under it; an
+  incompatible lock entry is a compile error naming the op and reason. Candidates that differ in
+  anything but the contract digest, and an empty candidate list, are refused before any key lookup.
 - **Streams:** truncate before the terminal checkpoint → `Incomplete`. Reorder, drop or insert an
   item → reject at the next checkpoint. A forged error item → reject. A legitimate COSE_Sign1 item →
   not treated as a checkpoint.

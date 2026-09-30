@@ -577,12 +577,22 @@ cratestack contract prune --lock schemas/app.contracts.lock --keep 5
 cratestack contract prune --lock schemas/app.contracts.lock --op procedure.placeOrder
 ```
 
+**Exit codes** for `contract lock|check|prune`: `0` ok, `1` a failed verdict (`check`: the current
+contract is not locked, or breaks a locked one; `lock`: it breaks a locked one), `2` a tool error (an
+unreadable schema or lock, a bad date or flag value). `check --json` prints one JSON document on every
+path, so a CI parser never meets an empty stdout; a tool error is `{"ok": false, "error": "...",
+"client_contract": ..., "locked": false, "incompatible": []}` with exit `2`.
+
 The lock is JSON: `contracts` holds each distinct canonical op contract once, under its digest, and
 `generations` (oldest first) records, per locked moment, the client contract digest, a `locked_at`
 date, a `note` and each op's digest at that moment. The macro recomputes every stored contract's
-digest (a hand edit is a compile error), reads the file with `include_bytes!` so editing it rebuilds
-the crate, and emits `ACCEPTED_CONTRACTS` as `[current, ...locked, newest first]` per op. No clock is
-read at build time: dates come from `contract lock --date` (default today, UTC).
+digest (a hand edit is a compile error), reads the file at expansion with `fs::read_to_string`
+(an `include_bytes!` of it only makes cargo track it, so editing it rebuilds the crate), and emits `ACCEPTED_CONTRACTS` as `[current, ...locked, newest first]` per op. No clock is
+read at build time: dates come from `contract lock --date` (default today, UTC). A date is a real
+`YYYY-MM-DD` calendar date, checked where it enters (`--date`, a lock file's `locked_at`) and
+compared as a date by `prune --before`; `10/02/2026` is refused rather than compared as text, which
+would have pruned a generation locked yesterday. A lock of a format this build does not know is
+reported as "format N".
 
 ```mermaid
 stateDiagram-v2
@@ -600,8 +610,12 @@ time and by `contract check`. Old is the signer's shape:
 
 - The op's transport, key, kind, verb, model, procedure name, return type and kept attributes are
   unchanged.
-- An argument or field may be **added** only as optional (a field may instead carry `@default`). A
-  required argument, or a field only the input reaches, may **become optional**. Variants may be
+- An argument or field may be **added** only as optional. The one exception is a field with
+  `@default` **on a model op's own model**: only a model's create input leaves a `@default` field
+  out. A `type`, or a model reached as a procedure argument, decodes a `@default` field as required,
+  so an old client's message would fail to decode; that is refused. A `FindMany<T>?` argument is
+  refused too (its generated field is never optional and has no default); `Page<T>` cannot be an
+  argument at all. A required argument, or a field only the input reaches, may **become optional**. Variants may be
   **appended** to an enum only the input reaches. A declaration only the output reaches may gain any
   field, because decoders ignore keys they do not know.
 - Everything else is breaking, notably: removing an argument or field (the signed value would be
@@ -614,7 +628,9 @@ time and by `contract check`. Old is the signer's shape:
 An incompatible locked entry is a **compile error** naming the op and the reason. Shipping the break
 on purpose is `cratestack contract prune --op <key>`: older clients of that op get the `426` and no
 other op is touched. `contract lock` refuses to write while the current contract breaks a locked one,
-so the prune is always a separate, reviewed step. A signed `/rpc/batch` never takes history (see
+so the prune is always a separate, reviewed step. Each compatible rule is backed by a fixture-based
+round trip through the generated types (not random inputs), and the refused `@default` case is
+pinned the same way. A signed `/rpc/batch` never takes history (see
 [Limits](#limits)). A lock holds every distinct contract of every generation, so its first generation
 is the size of the whole client contract; later ones add only the ops that changed.
 
