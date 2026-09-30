@@ -581,7 +581,8 @@ server already accepts, and the signature covers all 32 bytes, so a lie is the o
   "contract_unsupported" }` (REST `CONTRACT_UNSUPPORTED`), before any key lookup.
 - Header absent (a hand-built client): the op's accepted digests are tried newest first, capped
   (default 4). A nonce is recorded only after a message verifies, so a failed trial burns nothing,
-  and a forged message costs at most the cap in verifications.
+  and a forged message costs at most the cap in parse, key-resolution and verification passes (one
+  each per trial until keys are resolved once).
 - The response is sealed under the digest the request opened under.
 - A signed `/rpc/batch` has one AAD and many ops: until frames carry their own digests it binds the
   whole-contract digest, accepted only when equal to the server's.
@@ -706,7 +707,12 @@ error. The op contract digest in the AAD makes a mismatch fail closed when signe
   the digests ship in every client binary. It is not one of the checks this section forbids telling
   apart (signature, key, freshness, replay, audience, AAD). Being unsigned it is a hint, never
   proof: the client surfaces `EnvelopeError::ContractUnsupported { op }` and must not treat the
-  server's contract as known.
+  server's contract as known. The client reads the body only for its code, so a proxy's own `426`
+  stays `Unsigned`. **It deliberately carries no `Upgrade` header**: RFC 9110 §15.5.22 asks for one,
+  but `Upgrade` is connection-specific (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2) and stripped by
+  proxies, and no protocol token names an op contract; `426` is kept because every other 4xx already
+  means something else here (`409` idempotency and transactions, `410` heuristically cacheable, `412`
+  conditional headers, `400` the malformed selector).
 - **Error responses are signed too**, or a hop could inject fake errors.
 - **A client in `Required` mode rejects unsigned or wrongly signed responses.** It never falls back
   to plain.

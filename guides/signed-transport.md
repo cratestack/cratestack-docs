@@ -273,7 +273,7 @@ signed request gets back is sealed**, errors included.
 | Response | Signed? | When |
 | --- | --- | --- |
 | `401` | unsigned | Unsigned under `Required`; any verification failure (bad signature, wrong binding, replay, unknown key); the principal mapper returned `Unauthorized`. Always the same coarse answer. |
-| `426` | unsigned | The request's `Cratestack-Contract` header names a digest the server does not accept for this op: its wire shape changed since the client was built. Body `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`). Answered before any key is looked up; see [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients). |
+| `426` | unsigned | The request's `Cratestack-Contract` header names a digest the server does not accept for this op: its wire shape changed since the client was built. Body `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`). Answered before any key is looked up; see [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients). Deliberately sent without `Upgrade`: RFC 9110 §15.5.22 asks for one, but `Upgrade` is connection-specific (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2) and stripped by proxies, and no protocol token names an op contract; 426 is kept because every other 4xx already means something else here. |
 | `415` | unsigned | A COSE body under `Off`, or anywhere the layer binds no op (an unmatched path, an allow-listed or unbindable route, a malformed `/rpc/{op_id}`); a signed batch whose every answer is `Off`. |
 | `400` | unsigned | A bound header, or `Cratestack-Contract`, sent twice or malformed; a bound header not UTF-8; a body that failed to arrive; an unreadable plain batch (not under `Required`). |
 | `413` | unsigned | The body exceeds the layer's `max_body_bytes`. |
@@ -399,8 +399,8 @@ to plain:
 |---|---|
 | Sealed for this request, route, status and headers | the decoded value, or the usual `Remote` error for a sealed error |
 | Sealed, but for another request, or with its status or a bound header changed | `ClientError::Envelope(EnvelopeError::Unverified)` |
-| Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or a wire shape mismatch is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read |
-| The unsigned `426`: the server no longer accepts this client's wire shape for the op | `EnvelopeError::ContractUnsupported { op }`, and the body is never read. **Unsigned, so a hint and never proof**: offer "update the app" for that feature, and know that other ops are unaffected |
+| Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or a wire shape mismatch is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read (bar the `426` below) |
+| The unsigned `426` whose body code is `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`): the server no longer accepts this client's wire shape for the op | `EnvelopeError::ContractUnsupported { op }` (`op` is `METHOD /template` on REST, the op id on RPC). The body is read only for that code, which is unauthenticated. **Unsigned, so a hint and never proof**: offer "update the app" for that feature, and know that other ops are unaffected. A `426` with any other code (a proxy that requires TLS or h2, say) is `EnvelopeError::Unsigned { status: 426 }` |
 | A streamed call (`*_streamed`, `call_streaming`) or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent. A `@stream` procedure called through `post_list` is sealed and works, as one buffered array |
 
 The generated code tells the client which route each call is for, so a REST call binds the
@@ -486,9 +486,11 @@ stores. So, for a client built from an older schema:
 | You change | The client's calls |
 | --- | --- |
 | A policy (`@@allow`, `@allow`, `@authorize`), an `@@index`, `@@sql`, `@@audit`, a validator (`@length`, `@regex`, ...), `@no_rate_limit`, `@no_idempotency`, `@isolation`, the `auth` block, the datasource | keep working: no op's digest moves |
-| Add a procedure, a model, a type | keep working: no existing op's digest moves |
+| Add a procedure, a model, a type | keep working: no existing op's digest moves (but a signed `/rpc/batch` is refused, see the footnote) |
 | Add, remove or retype a field of a model or type, change an argument or return type, an enum's variants, `@@paged`, the transport | the ops that reach it get the `426`; every other op keeps working |
 | A field marked `@server_only` | keeps working: it is on no wire |
+
+A signed `/rpc/batch` binds the whole-contract digest for now, so **any row above that changes the client contract, including "add a procedure", refuses a signed batch** from an older client with the `426` (see [Limits](#limits)).
 
 A `.cstack` edit that changes an op's shape is therefore a deliberate, per-op break, and the cheapest
 way to make one is to add a new procedure beside the old one. The reviewed list of attributes that do
@@ -512,7 +514,7 @@ sequenceDiagram
     participant L as EnvelopeLayer (server, new schema)
     participant H as Handler
     C->>L: POST /rpc/procedure.ping, Cratestack-Contract: sel(ping@old), body sealed under ping@old
-    Note over L: ping's accepted list is [ping@old]: the selector names it
+    Note over L: ping@new = ping@old (unchanged by a policy and validator edit), so the selector names an accepted digest
     L->>L: open under ping@old (one verification)
     L->>H: plain payload
     H-->>L: response
@@ -528,10 +530,20 @@ sequenceDiagram
 - **A selector that names no accepted digest is an unsigned `426`** with `RpcErrorBody { code:
   "contract_unsupported" }` (REST `CONTRACT_UNSUPPORTED`), answered before any key lookup. It
   reveals only that this op's shape is no longer served, which every client binary already carries;
-  it is unsigned, so the client treats it as a hint.
+  it is unsigned, so the client treats it as a hint. The same answer goes to an unsigned,
+  nonce-bound request whose well-formed selector names nothing, so both paths behave alike.
+- **Why the `426` carries no `Upgrade` header.** RFC 9110 §15.5.22 asks for one. `Upgrade` is a
+  connection-level field (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2), stripped by hyper's h2
+  server and dropped by proxies, and no protocol token names "this op's contract", so a compliant
+  header could neither arrive nor say anything. Every other status already means something here
+  (`409` is the idempotency and transaction layers, `410` is heuristically cacheable, `412` belongs
+  to conditional headers, `400` is the malformed selector), so `426` is kept and the client
+  recognises the refusal by the body's code alone, never by the status: a proxy's own `426` stays
+  `Unsigned`.
 - **Without the header** (a hand-built client) the layer tries the op's accepted digests newest first,
   at most `max_contract_trials` (default 4). A message's nonce is recorded only once it verifies, so a
-  failed trial burns nothing, and a forged message costs at most that many verifications.
+  failed trial burns nothing, and a forged message costs at most that many parse, key-resolution and
+  verification passes (one each per trial until keys are resolved once).
 - **The response is sealed under the digest the request used**, and the client opens it under the
   digest it sent.
 - **A digest from another op is refused**: op B's accepted list does not hold op A's digest, even with
