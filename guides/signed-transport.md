@@ -11,26 +11,30 @@ it was first published as 0.13.1, which is yanked because it made breaking chang
 The design is
 [ADR 0006](/internals/cose-envelope-adr). The generated Rust client signs from the first
 release after 0.14.2 ([cratestack#1007](https://github.com/cratestack/cratestack/issues/1007),
-see [The Rust client](#the-rust-client)); binding v1, including the AAD, freezes in that release
-(cratestack#1082), so until then the wire format may still change. The schema-identity change
-(cratestack#1065) has already landed.
+see [The Rust client](#the-rust-client)); binding v1, including the AAD, froze in 0.15.0
+(cratestack#1082). **Binding version 2 (0.16.0, [cratestack#1123](https://github.com/cratestack/cratestack/issues/1123))
+is a breaking wire change:** the AAD binds the digest of the op being called instead of the whole
+schema's, so a server-only schema edit no longer refuses every signed client, and a version 2
+server refuses version 1 messages. Upgrade servers and clients together, and see
+[Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients).
 </Warning>
 
 `EnvelopeLayer` is a tower layer for the generated REST and RPC routers. It opens
 signed requests (COSE_Sign1 or COSE_Mac0 bodies), hands the router the plain CBOR payload
 they wrap, and seals the router's response against the same request. A signature then
 covers the payload **and** what the request was for: the service, the method, the route and
-its parameters, the query, the schema, and the `Idempotency-Key` / `If-Match` headers.
+its parameters, the query, the op's wire contract, and the `Idempotency-Key` / `If-Match` headers.
 
 This is ADR 0006's P0 scope: unary messages and `nonce` replay protection. Streams (`chain`
 mode) are P1, so a signed request never gets a stream (see [Limits](#limits)).
 
 Use it when a TLS terminator, a proxy or a message queue sits between the client and the
 service and must not be able to alter or replay a request: payments, device commands,
-service-to-service calls across a trust boundary. The layer is opt-in per op. The schema digest a
-signed request binds is the schema's canonical identity, so comment and whitespace edits, moving
-a declaration and reordering a model's fields do not change it (cratestack#1065, see
-[Limits](#limits)).
+service-to-service calls across a trust boundary. The layer is opt-in per op. The digest a
+signed request binds is its **op's contract digest**: it moves only when that op's wire shape
+does, so a policy, an index, SQL, a validator, another op or a new procedure leaves every older
+client working (cratestack#1123, see
+[Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients)).
 
 ## Enable it
 
@@ -55,7 +59,7 @@ crate's schemas in the same build.
 
 Build the COSE envelope, then the layer through the schema's generated
 `envelope_layer(envelope, policy, audience)`. It picks the schema's transport (REST or RPC),
-its route descriptors and its `SCHEMA_SHA256_BYTES`, and returns the builder:
+its route descriptors and its `ACCEPTED_CONTRACTS`, and returns the builder:
 
 ```rust
 use std::sync::Arc;
@@ -108,9 +112,10 @@ passes (the root), whichever order they come in. The other builder calls:
 | `.principal_mapper(..)` | `ThumbprintPrincipal` | What the signer is charged to. |
 | `.response_seal_policy(..)` | `AcceptNamesEnvelope` | Under `Optional`, which unsigned responses are sealed. |
 | `.max_body_bytes(n)` | `DEFAULT_MAX_BODY_BYTES` | The request body the layer buffers (`413` beyond). |
+| `.max_contract_trials(n)` | `DEFAULT_MAX_CONTRACT_TRIALS` (4) | For a request that names no digest (no `Cratestack-Contract` header), how many of the op's accepted digests are tried, newest first. |
 
 Without the generated function, `EnvelopeLayer::builder(envelope, audience,
-cratestack_schema::SCHEMA_SHA256_BYTES)` takes `.policy(..)` and one of `.rest(prefix,
+cratestack_schema::ACCEPTED_CONTRACTS)` takes `.policy(..)` and one of `.rest(prefix,
 cratestack_schema::axum::ROUTE_TRANSPORTS)`, `.rpc(prefix)` or `.binding_resolver(..)`;
 neither the policy nor the transport has a default.
 
@@ -229,7 +234,11 @@ The external AAD, which both sides rebuild and nobody sends, binds:
   repeated values keep their order (`?tag=a&tag=b` is not `?tag=b&tag=a`). An RPC call binds its
   query too; generated RPC clients send none, and a client that adds one (a cache-buster) must
   bind it;
-- the schema digest (`SCHEMA_SHA256_BYTES`) and the payload media type (`application/cbor`);
+- the **op contract digest** and the payload media type (`application/cbor`). The digest is the
+  called op's (`OP_CONTRACTS` on the client, `ACCEPTED_CONTRACTS` on the server; a signed
+  `/rpc/batch` binds the whole-contract `CLIENT_CONTRACT_SHA256_BYTES`). The client names the
+  digest it used in the **unbound** `Cratestack-Contract` header (see
+  [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients));
 - **`bound_headers`**: `Idempotency-Key` and `If-Match` **exactly as sent** (UTF-8, untrimmed),
   or null. A proxy that strips the key from a re-sealed retry (so it would run twice) or
   alters `If-Match` breaks the signature. A request sending either header twice, or a value that
@@ -264,11 +273,12 @@ signed request gets back is sealed**, errors included.
 | Response | Signed? | When |
 | --- | --- | --- |
 | `401` | unsigned | Unsigned under `Required`; any verification failure (bad signature, wrong binding, replay, unknown key); the principal mapper returned `Unauthorized`. Always the same coarse answer. |
+| `426` | unsigned | The request's `Cratestack-Contract` header names a digest the server does not accept for this op: its wire shape changed since the client was built. Body `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`). Answered before any key is looked up; see [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients). Deliberately sent without `Upgrade`: RFC 9110 §15.5.22 asks for one, but `Upgrade` is connection-specific (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2) and stripped by proxies, and no protocol token names an op contract; 426 is kept because every other 4xx already means something else here. |
 | `415` | unsigned | A COSE body under `Off`, or anywhere the layer binds no op (an unmatched path, an allow-listed or unbindable route, a malformed `/rpc/{op_id}`); a signed batch whose every answer is `Off`. |
-| `400` | unsigned | A bound header sent twice or not UTF-8; a body that failed to arrive; an unreadable plain batch (not under `Required`). |
+| `400` | unsigned | A bound header, or `Cratestack-Contract`, sent twice or malformed; a bound header not UTF-8; a body that failed to arrive; an unreadable plain batch (not under `Required`). |
 | `413` | unsigned | The body exceeds the layer's `max_body_bytes`. |
 | `405` | unsigned | Another method on a generated path, under a `Required` `unresolved_mode`. |
-| `500` | unsigned | `envelope misconfigured`; a key-resolver, nonce-store or signer outage; an envelope that labels its seal as a non-envelope type. The detail is only logged. |
+| `500` | unsigned | `envelope misconfigured` (a route the contract table has no row for included, which a custom resolver fixes with `ResolvedRoute::with_contract_key`); a key-resolver, nonce-store or signer outage; an envelope that labels its seal as a non-envelope type. The detail is only logged. |
 | handler errors, `409`, `412`, `422`, `429` | **sealed** | Anything the router answers for a bound op: a handler's `404` or `403`, the rate limiter's `429`, the idempotency layer's `409`/`412`/`422`, the RPC router's `404` for a well-formed unknown op id. A non-CBOR error (axum's own `413`, a `text/plain` fallback) is re-encoded as the transport's CBOR error first. A plain request to an unmatched path gets the router's plain `404`. |
 | `406` | **sealed** | A signed request to an RPC subscription (before its handler runs), or any other response a signed request would get as a stream. |
 | `400` | **sealed** | A signed `/rpc/batch` whose frames cannot be read once opened. |
@@ -389,12 +399,16 @@ to plain:
 |---|---|
 | Sealed for this request, route, status and headers | the decoded value, or the usual `Remote` error for a sealed error |
 | Sealed, but for another request, or with its status or a bound header changed | `ClientError::Envelope(EnvelopeError::Unverified)` |
-| Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or schema digest is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read |
+| Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or a wire shape mismatch is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read (bar the `426` below) |
+| The unsigned `426` whose body code is `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`): the server no longer accepts this client's wire shape for the op | `EnvelopeError::ContractUnsupported { op }` (`op` is `METHOD /template` on REST, the op id on RPC). The body is read only for that code, which is unauthenticated. **Unsigned, so a hint and never proof**: offer "update the app" for that feature, and know that other ops are unaffected. A `426` with any other code (a proxy that requires TLS or h2, say) is `EnvelopeError::Unsigned { status: 426 }` |
 | A streamed call (`*_streamed`, `call_streaming`) or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent. A `@stream` procedure called through `post_list` is sealed and works, as one buffered array |
 
 The generated code tells the client which route each call is for, so a REST call binds the
 template (`/widgets/{id}`) and the values (`7`), and an RPC call its op id (`batch` for
-`/rpc/batch`). `Idempotency-Key` and `If-Match` are bound as you pass them. A request authorizer
+`/rpc/batch`). It also hands over the schema's `OP_CONTRACTS` (`with_contracts`), so each call binds
+the digest of its own op and names it in the `Cratestack-Contract` header; a call to an op the
+table lacks is a `BadInput` and is never sent. A hand-built client of one op pins its digest with
+`with_contract_sha`. `Idempotency-Key` and `If-Match` are bound as you pass them. A request authorizer
 still runs, over the plain payload with `Content-Type: application/cbor`, which is what the
 server's `AuthProvider` sees once it has opened the seal.
 
@@ -453,14 +467,101 @@ with an unsigned `401`. So the client marks sealed requests non-idempotent for
 has to send the call again through the client, which reseals it, instead of replaying the
 bytes.
 
-**The FFI runtime.** `RuntimeHandle::with_envelope(config, envelope, schema_sha)` takes the
+**The FFI runtime.** `RuntimeHandle::with_envelope(config, envelope, contracts)` (the generated `OP_CONTRACTS`) takes the
 envelope out of band, because keys cannot travel in `RuntimeConfigWire`; the config names it with
 `RuntimeEnvelopeConfig::CoseSign1` or `CoseMac0`, and `RuntimeHandle::new` refuses those with a
 `BadInput` that says so. A raw request over the bridge must be an RPC one (`/rpc/{op_id}` or
 `/rpc/batch`): a raw REST path carries no route template to bind. A failure reaches the host as
 one of the existing error codes with an `envelope_*` `remote_code`
-(`envelope_unsigned`, `envelope_unverified`, `envelope_seal`, `envelope_open`,
-`envelope_streams_unsupported`).
+(`envelope_unsigned`, `envelope_contract_unsupported` (with HTTP status `426`),
+`envelope_unverified`, `envelope_seal`, `envelope_open`, `envelope_streams_unsupported`).
+
+## Evolving a schema under signed clients
+
+A signed request binds the digest of **the op it calls** (binding version 2). That digest covers the
+op's transport, key and kind, its input and output types, and every model, type and enum reachable
+from them, in their wire projection. It does not cover anything that only the server runs or
+stores. So, for a client built from an older schema:
+
+| You change | The client's calls |
+| --- | --- |
+| A policy (`@@allow`, `@allow`, `@authorize`), an `@@index`, `@@sql`, `@@audit`, a validator (`@length`, `@regex`, ...), `@no_rate_limit`, `@no_idempotency`, `@isolation`, the `auth` block, the datasource | keep working: no op's digest moves |
+| Add a procedure, a model, a type | keep working: no existing op's digest moves (but a signed `/rpc/batch` is refused, see the footnote) |
+| Add, remove or retype a field of a model or type, change an argument or return type, an enum's variants, `@@paged`, the transport | the ops that reach it get the `426`; every other op keeps working |
+| A field marked `@server_only` | keeps working: it is on no wire |
+
+A signed `/rpc/batch` binds the whole-contract digest for now, so **any row above that changes the client contract, including "add a procedure", refuses a signed batch** from an older client with the `426` (see [Limits](#limits)).
+
+A `.cstack` edit that changes an op's shape is therefore a deliberate, per-op break, and the cheapest
+way to make one is to add a new procedure beside the old one. The reviewed list of attributes that do
+not count (`DROPPED_ATTRIBUTES`) is fail-loud: an attribute the list does not name counts, so a newly
+added attribute moves digests until it is reviewed onto the list. `cratestack contract digest` prints
+every op's digest and `cratestack contract print --op <key>` the canonical form that is hashed, which
+is how to see why one moved.
+
+### How the server picks the digest
+
+The AAD is never sent, and a server can accept more than one digest for an op, so the client names
+the one it used in a header that is **not bound and not trusted**:
+
+```text
+Cratestack-Contract: <first 8 bytes of the op digest, unpadded base64url>   (11 characters)
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client (built from the old schema)
+    participant L as EnvelopeLayer (server, new schema)
+    participant H as Handler
+    C->>L: POST /rpc/procedure.ping, Cratestack-Contract: sel(ping@old), body sealed under ping@old
+    Note over L: ping@new = ping@old (unchanged by a policy and validator edit), so the selector names an accepted digest
+    L->>L: open under ping@old (one verification)
+    L->>H: plain payload
+    H-->>L: response
+    L-->>C: 200, sealed under ping@old (the digest the request used)
+    C->>L: POST /rpc/procedure.retyped, Cratestack-Contract: sel(retyped@old)
+    Note over L: retyped's accepted list is [retyped@new]: no match
+    L-->>C: 426 contract_unsupported (unsigned, before any key lookup)
+    Note over C: EnvelopeError::ContractUnsupported { op }
+```
+
+- **The header selects, it never widens.** It only chooses among digests the server already accepts
+  for the op, and the signature covers all 32 bytes, so a lie is the ordinary `401`.
+- **A selector that names no accepted digest is an unsigned `426`** with `RpcErrorBody { code:
+  "contract_unsupported" }` (REST `CONTRACT_UNSUPPORTED`), answered before any key lookup. It
+  reveals only that this op's shape is no longer served, which every client binary already carries;
+  it is unsigned, so the client treats it as a hint. The same answer goes to an unsigned,
+  nonce-bound request whose well-formed selector names nothing, so both paths behave alike.
+- **Why the `426` carries no `Upgrade` header.** RFC 9110 §15.5.22 asks for one. `Upgrade` is a
+  connection-level field (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2), stripped by hyper's h2
+  server and dropped by proxies, and no protocol token names "this op's contract", so a compliant
+  header could neither arrive nor say anything. Every other status already means something here
+  (`409` is the idempotency and transaction layers, `410` is heuristically cacheable, `412` belongs
+  to conditional headers, `400` is the malformed selector), so `426` is kept and the client
+  recognises the refusal by the body's code alone, never by the status: a proxy's own `426` stays
+  `Unsigned`.
+- **Without the header** (a hand-built client) the layer tries the op's accepted digests newest first,
+  at most `max_contract_trials` (default 4). A message's nonce is recorded only once it verifies, so a
+  failed trial burns nothing, and a forged message costs at most that many parse, key-resolution and
+  verification passes (one each per trial until keys are resolved once).
+- **The response is sealed under the digest the request used**, and the client opens it under the
+  digest it sent.
+- **A digest from another op is refused**: op B's accepted list does not hold op A's digest, even with
+  a matching route and selector.
+
+The accepted list per op is `[current]` today. A later change adds a committed lock of older
+compatible contracts, which only appends to that list; nothing here changes when it does.
+
+### Upgrading from binding version 1
+
+Binding version 2 is a flag day. A 0.16 server refuses a 0.15 client's messages and a 0.16 client's
+are refused by a 0.15 server, both as the coarse unsigned `401`. Nothing in the AAD's layout moved
+except what element 7 holds, so the version number is what tells the two apart, and there is no opt-in
+to keep accepting version 1. A custom `BindingResolver` (a versioned `/v1/...` route, say) must map
+its routes to op keys: return the op id as the route, or call `ResolvedRoute::with_contract_key`;
+a signed request to a route with no contract row is a logged `500`. The shared vectors in
+`cratestack-cose/tests/vectors` are regenerated for version 2, with `neg-binding-v1`,
+`neg-contract-sha` and `neg-contract-cross-op`.
 
 ## Limits
 
@@ -471,22 +572,21 @@ one of the existing error codes with an `envelope_*` `remote_code`
 - **Responses are re-buffered** to be sealed, up to `MAX_RESPONSE_REBUFFER_BYTES` (8 MiB);
   a longer one becomes a sealed `500`. The payload is copied once into the sealed message; the
   zero-copy API is cratestack#1076.
-- **The schema digest covers the whole parsed schema**, not its text (cratestack#1065). Comments,
-  `///` docs, whitespace outside string literals (including `"""` SQL bodies, whose contents stay
-  verbatim), moving a top-level declaration and reordering a model's, type's, mixin's or view's
-  fields do not change it. A server-only edit (a policy, an index, a view's SQL) does, and a client
-  built before that edit is refused. So do reordering enum variants (the first is the `Default`, and
-  Postgres orders an enum by declaration), attributes or procedure arguments, a trailing comma in
-  `[...]` and `- 1` versus `-1`: the digest fails loudly on those, which is accepted. Regenerate and redeploy clients with the server.
+- **A semantic change with no shape change is not caught.** The digest covers what decodes, so an
+  `Int` field that switches from major to minor units, or a validator that changes what a value
+  means, leaves it alone. Change the op, or add a new one, when meaning changes.
+- **A signed `/rpc/batch` binds the whole-contract digest** (`CLIENT_CONTRACT_SHA256_BYTES`), and is
+  accepted only when it equals the server's current one, so any client-facing change (a new op, an
+  edit to any op) refuses a signed batch from an older client with the `426`. Per-frame digests are
+  a follow-up.
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust runtime
   (Dart through FRB, JavaScript through the wasm and napi builds) rather than a second
   implementation, so their generated code stays unsigned; the Flutter runtime mirror rejects an
   envelope until P1.
-- **Binding v1 freezes with the first release that has the client** (cratestack#1082): until
-  then a change to the AAD is not a breaking change. The schema-identity change (cratestack#1065)
-  is already in.
+- **A version 2 server refuses binding version 1** (0.15.0 peers), with no opt-in: upgrade the
+  server and its clients together. Any future change to the AAD bumps the version again.
 - **A signer is recorded, not authenticated**: mapping it to an identity is cratestack#1077.
 
 ## Read next
