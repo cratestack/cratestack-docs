@@ -17,6 +17,13 @@ server layer that calls it from the generated routers is cratestack#1006 (shippe
 the measurements below come from that work; the proof of concept's fixture was reconstructed for
 the vectors because its script was not available.
 
+**Amended 2026-09-30 (binding version 2).** The AAD no longer binds the whole-schema digest. It binds
+the digest of the op being called, so a server-only schema edit no longer refuses every signed client
+([cratestack#1123](https://github.com/cratestack/cratestack/issues/1123), epic
+[#1030](https://github.com/cratestack/cratestack/issues/1030); §4, "Op contracts"). Binding version 1
+froze with 0.15.0, so this is a breaking wire change with a flag day: a version 2 verifier refuses
+version 1.
+
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
 bytes") and its processing order (`HTTP body → envelope.open → codec.decode`).
@@ -117,7 +124,27 @@ named below.
     nonce store) is a `500`.
   - The schema SHA first hashed the raw `.cstack` text, so a comment-only schema edit would
     reject every signed client. cratestack#1065 replaced it with a canonical schema identity (§4,
-    "Schema identity (#1065)").
+    "Schema identity (#1065)"). That still refused every client on any schema edit, so binding
+    version 2 replaced it in the AAD with the called op's contract digest (§4, "Op contracts").
+
+**Decisions for binding version 2** (maintainer, 2026-09-30, on
+[cratestack#1123](https://github.com/cratestack/cratestack/issues/1123)). They amend §4 and §10.
+
+- **The AAD binds the op's contract digest, not the schema's.** Element 7 is `contract_sha`, the
+  digest of the wire closure of the op being called. `BINDING_VERSION` is `2`.
+- **An unbound `Cratestack-Contract` header selects the digest.** It carries the first 8 bytes of the
+  digest (unpadded base64url, 11 characters) and chooses which of the digests the server already
+  accepts for the op to verify under. The signature covers all 32 bytes, so the header widens
+  nothing.
+- **A digest the server does not accept is an unsigned `426 contract_unsupported`**, answered before
+  any key is looked up. Without the header, the server tries the accepted digests newest first, at
+  most a configured number (default 4).
+- **The response is sealed under the digest the request used.**
+- **Version 2 verifiers refuse version 1**, with no opt-in.
+- **A signed `/rpc/batch` binds the whole-contract digest for now**, accepted only when it equals the
+  server's current one. Per-frame digests are a follow-up.
+- **The compatible-history lock** (digests of older contracts a server still accepts, checked by a
+  classifier) is a separate change. The server's accepted list per op has one member until it lands.
 
 **Decisions from the P0 security review** (maintainer, 2026-09-24, on
 [cratestack#1005](https://github.com/cratestack/cratestack/issues/1005)). They amend §1, §4 and §10.
@@ -326,7 +353,7 @@ pub struct Binding<'a> {
     pub route: &'a str,                    // op_id for RPC; route template for REST
     pub path_params: &'a [&'a str],        // REST: matched values in template order; RPC: empty
     pub query: Option<&'a str>,            // canonical_query()
-    pub schema_sha: &'a [u8; 32],
+    pub contract_sha: &'a [u8; 32],        // the called op's contract digest (binding version 2)
     pub payload_media_type: &'a str,       // "application/cbor"
     pub response: Option<ResponseBinding>, // responses only; None on requests
 }
@@ -409,13 +436,13 @@ payload     = bstr .cbor Body
 
 ```cddl
 external_aad = bstr .cbor [
-  1,                        ; binding version
+  2,                        ; binding version
   audience: tstr,           ; the recipient: a configured logical service id, never the Host header
   method: tstr,
   route: tstr,              ; RPC op_id (stable across prefix rewrites); REST route template
   path_params: [* tstr],    ; REST: matched path parameter values in template order; RPC: []
   query: tstr / null,       ; canonical_query()
-  schema_sha: bstr .size 32,
+  contract_sha: bstr .size 32, ; the called op's contract digest (see "Op contracts")
   payload_type: tstr,       ; "application/cbor"
   bound_headers: [          ; request headers with semantics, exactly as sent (UTF-8, untrimmed)
     idempotency_key: tstr / null,
@@ -439,23 +466,31 @@ external_aad = bstr .cbor [
   one).
 - Response headers (`ETag`, `Retry-After`) remain unauthenticated.
 
-**Binding version 1 is not frozen yet.** It freezes at the first release in which generated
-routers and clients put the envelope on the wire: cratestack#1006 (server layer) and cratestack#1007
-(Rust client). It does not freeze at the first release of `cratestack-cose` itself. v0.13.0 publishes
-the crate before either consumer exists, so no deployed peer can depend on version 1 yet. The crate
-says so ("wire-format preview", cratestack#1082) and tells direct users to pin an exact version.
-Every change before the freeze is part of version 1: `path_params`, `audience`, the nonce-based
-unsigned digest, and cratestack#1065's schema identity. From the freezing release on, any change to
-the element list or to how an element is derived bumps the version, and verifiers reject versions they
-do not know. (Decision 2026-09-26, taken when v0.13.0 was cut: tying the freeze to the crate's first
-release would have forced version 2 for #1065 with no peer to be compatible with.)
+**Binding versions.**
+
+- **Version 1** bound `schema_sha`, the whole-schema identity below. Every change before its
+  freeze was part of it: `path_params`, `audience`, the nonce-based unsigned digest, and
+  cratestack#1065's schema identity. It froze with 0.15.0, the first release in which generated
+  routers and clients put the envelope on the wire (cratestack#1006, #1007). (Decision 2026-09-26,
+  taken when v0.13.0 was cut: tying the freeze to the crate's first release would have forced a new
+  version for #1065 with no peer to be compatible with.)
+- **Version 2** (cratestack#1123, 2026-09-30, 0.16.0) replaces element 7 with `contract_sha`, the
+  called op's contract digest. Every other element keeps its position, so the array lengths (9 and
+  12) are unchanged, and the version number is the domain separation: the same 32 bytes under 1 and
+  2 never produce the same AAD.
+- From 0.15.0 on, any change to the element list or to how an element is derived bumps the version.
+  Verifiers reject versions they do not accept, and a version 2 verifier accepts only 2: accepting
+  version 1 would cost a second trial verification on every failure (the version is not on the
+  wire) and keep a downgrade path alive for peers that, one day after 0.15.0, almost certainly had
+  not shipped. Version 1 peers must be upgraded together with their servers.
 
 Both sides rebuild this from context they already have, so it **costs 0 bytes on the wire**. It
 defeats:
 
 - **cross-endpoint replay:** a body signed for `payment.create` fails on `payment.refund`;
 - **response swapping:** a response is bound to its request and its status code;
-- **schema drift:** a client built against another `.cstack` fails closed;
+- **wire-shape drift, per op:** a client whose wire shape for an op differs from the server's fails
+  closed for that op, and only that op;
 - **cross-service replay and reflection:** the `audience` names the recipient;
 - **header stripping:** `bound_headers` covers `Idempotency-Key` and `If-Match`;
 - **stale responses:** an unsigned request's digest includes the client's `Cratestack-Nonce`, so a
@@ -466,8 +501,10 @@ defeats:
 Use the `op_id`, never the raw URL path, because gateways rewrite prefixes. (The same fact made
 `Router::nest` break descriptor lookup in cratestack#877.)
 
-**Schema identity (#1065).** `schema_sha` is the schema's canonical identity, not a hash of the
-`.cstack` text. It is `SHA-256(b"cratestack/schema-identity/v1\0" ‖ canonical JSON)`, computed by
+**Schema identity (#1065).** Version 1 bound `schema_sha`, the schema's canonical identity, which
+is not a hash of the `.cstack` text. Version 2 no longer binds it: it remains the identity the
+warn-only `x-cratestack-schema-sha` drift header carries (`SCHEMA_SHA256`), and the op contract
+digests below are what the AAD carries. It is `SHA-256(b"cratestack/schema-identity/v1\0" ‖ canonical JSON)`, computed by
 `cratestack_core::schema_digest` over the parsed schema, and every producer calls that one function:
 the three `include_*_schema!` macros and the CLI that bakes the constant into generated Dart and
 TypeScript clients. The digest used to be computed twice, over the source bytes, once in the macros
@@ -491,13 +528,65 @@ crate and once in the CLI.
   serialising the IR, so a new IR field enters the digest by a deliberate edit and never through a
   `#[serde(default)]`. A golden digest test pins it; the `/v1` tag makes any later change to the
   form a new identity on purpose.
-- **Cost:** the whole IR is hashed, not only the wire surface, so a server-only edit (a policy, an
-  `@@index`, a view's SQL) also changes the digest, and a client built before the edit is refused.
-  That fails loud at deploy, which is preferred to a wire mismatch that slips through. A follow-up
-  could let a server accept several previous digests.
+- **Cost (why version 2 exists):** the whole IR is hashed, not only the wire surface, so a
+  server-only edit (a policy, an `@@index`, a view's SQL) also changed the digest, and every client
+  built before the edit was refused with an unsigned `401` indistinguishable from a revoked key.
+  Mobile clients cannot be force-updated, so under `Required` each schema deploy would lock out
+  every installed app.
 
-This is inside version 1: it lands before the freeze above, so no deployed peer sees the old
-digest, and every existing `SCHEMA_SHA256` changes once.
+This was inside version 1: it landed before the freeze above.
+
+**Op contracts (#1123).** What the AAD protects is **decode agreement**: the server must never
+decode a signed payload (and the client must never decode a signed response) under a wire shape
+other than the one the signer encoded it under. The attack or confusion is re-interpretation of
+signed bytes: a field retyped, an arity changed, an enum variant reordered or removed, a field moved
+server-only, `Page<T>` against `T[]`. Cross-op and cross-service replay are already defeated by
+`route` and `audience`. The binding never guaranteed server *behaviour*: handler code, policies,
+validators and SQL do not change how bytes decode, so a digest that moves on such an edit refuses
+for no security reason. So the digest is per op, over what decodes:
+
+- **In the digest:** the op's transport, key and kind, its input and output roots (a procedure's
+  arguments and return type; for a model op the verb and the model), and the **closure**: every
+  model, type, enum and view reachable from the roots through field types, generic arguments,
+  relations and `@computed(params:)`, each in its wire projection (`@server_only` fields removed,
+  since they are on no wire). The key is the RPC `op_id`, or `"<METHOD> <route template>"` on REST,
+  so `@api_version` is in it.
+- **Out of it** (`DROPPED_ATTRIBUTES`, each entry reviewed against the generators that read it, with
+  a test that pins the readers): `@@allow`, `@@deny`, procedure `@allow`/`@deny`/`@authorize`,
+  `@@index`, `@@sql` bodies, `@@audit`, `@@retain`, `@@internal` (it decides whether an op exists,
+  which is the key), `@@unique`, `@@soft_delete`, `@@subscribe`/`@@emit`, `@no_idempotency`,
+  `@no_rate_limit`, `@isolation`, `@pii`, `@sensitive`, `@db_enforce`, field `@unique`, view
+  `@from`, procedure `@deprecated`, and the value validators (`@length`, `@regex`, `@email`,
+  `@range`, ...). The `datasource`, config blocks, `extension` blocks, the `auth` block, the
+  schema-level MCP config, queries, unreachable declarations, every other op, docs and spans are out
+  entirely.
+- **Fail-loud:** an attribute not on the reviewed list stays in, including attributes added later,
+  so a new one moves digests until someone reviews it onto the list.
+- **Derivation.** `SHA-256(b"cratestack/op-contract/v1\0" ‖ canonical JSON)`, written node by node
+  with every IR node destructured exhaustively, like the schema identity. If the derivation rules
+  change, the tag moves to `op-contract/v2`. A second digest,
+  `client_contract_digest = SHA-256(b"cratestack/client-contract/v1\0" ‖ canonical JSON of the
+  sorted [key, hex(op digest)] table)`, is the build identity of the whole client-facing contract,
+  and what a signed `/rpc/batch` binds.
+- **Not caught, as before:** a semantic change with no shape change (an `Int` switching from major
+  to minor units). A later `@contract_revision(n)` attribute could force a break on purpose.
+
+**Choosing the digest (binding version 2).** The AAD is never sent, and a server may accept more than
+one digest for an op, so the sender names its digest in the unbound `Cratestack-Contract` header: the
+first 8 bytes, unpadded base64url. The header is never trusted: it only selects among digests the
+server already accepts, and the signature covers all 32 bytes, so a lie is the ordinary `401`.
+
+- Header present and naming an accepted digest: one verification.
+- Header present and naming none: an unsigned `426` with `RpcErrorBody { code:
+  "contract_unsupported" }` (REST `CONTRACT_UNSUPPORTED`), before any key lookup.
+- Header absent (a hand-built client): the op's accepted digests are tried newest first, capped
+  (default 4). A nonce is recorded only after a message verifies, so a failed trial burns nothing,
+  and a forged message costs at most the cap in verifications.
+- The response is sealed under the digest the request opened under.
+- A signed `/rpc/batch` has one AAD and many ops: until frames carry their own digests it binds the
+  whole-contract digest, accepted only when equal to the server's.
+- The accepted list per op is `[current]` today; the compatible-history lock (a separate change)
+  only appends older digests a conservative classifier judges wire-compatible.
 
 ### 5. Freshness and replay, offline-aware
 
@@ -602,7 +691,7 @@ large queues into several batches.
 The payload saving (−49% raw, −16% compressed) is larger than anything signing costs, and it helps
 unsigned traffic too. It is orthogonal to COSE and ships as `CborPackedCodec` (D4). It needs stable
 field ids, via explicit `@wire(n)` or ids locked in a committed lockfile, with renumbering a schema
-error. The schema SHA in the AAD makes a mismatch fail closed when signed; unsigned, the existing
+error. The op contract digest in the AAD makes a mismatch fail closed when signed; unsigned, the existing
 `x-cratestack-schema-sha` check is the guard.
 
 ### 10. Errors and threat model
@@ -611,6 +700,13 @@ error. The schema SHA in the AAD makes a mismatch fail closed when signed; unsig
   reason. The response must never reveal which check failed. A **backend failure** (the key resolver
   or the nonce store is unreachable) is a `500`, logged server-side: it says nothing about the
   message, and operators can tell an outage from an attack.
+- **One refusal is unsigned and not a `401`: `426 contract_unsupported`** (binding version 2). It
+  answers a `Cratestack-Contract` selector that names no digest accepted for the op, before any key
+  lookup, so it reveals only that this op's wire shape is no longer served: public information, since
+  the digests ship in every client binary. It is not one of the checks this section forbids telling
+  apart (signature, key, freshness, replay, audience, AAD). Being unsigned it is a hint, never
+  proof: the client surfaces `EnvelopeError::ContractUnsupported { op }` and must not treat the
+  server's contract as known.
 - **Error responses are signed too**, or a hop could inject fake errors.
 - **A client in `Required` mode rejects unsigned or wrongly signed responses.** It never falls back
   to plain.
@@ -707,7 +803,8 @@ story per phase). The unsigned streaming it builds on is
 - **Vectors:** identical bytes from Rust native, wasm and napi for the same key and payload.
   Deterministic Ed25519 makes this exact.
 - **Tampering:** flip one bit in each of the payload, the protected header, the AAD route, the AAD
-  schema SHA and the request digest → reject. Assert on encoded bytes, not decoded values.
+  contract digest and the request digest → reject. A request bound under another op's digest
+  (`neg-contract-cross-op`) and one signed over a version 1 AAD (`neg-binding-v1`) → reject. Assert on encoded bytes, not decoded values.
 - **Streams:** truncate before the terminal checkpoint → `Incomplete`. Reorder, drop or insert an
   item → reject at the next checkpoint. A forged error item → reject. A legitimate COSE_Sign1 item →
   not treated as a checkpoint.

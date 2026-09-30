@@ -1037,7 +1037,7 @@ Intended config:
 1. codec: `cbor` (an envelope wraps CBOR, so `json` is refused)
 2. envelope: `cose_sign1` or `cose_mac0`
 
-The Rust runtime implements it (cratestack#1007): `RuntimeHandle::with_envelope(config, envelope, schema_sha)` takes the keys out of band, and `RuntimeHandle::new` with an envelope in the config but none supplied is a `BadInput` that says so. See [Signed transport](../guides/signed-transport.md#the-rust-client). The Flutter mirror in `cratestack-client-flutter` stays guarded until P1, so the generated Dart API does not need another architecture change when it lands.
+The Rust runtime implements it (cratestack#1007): `RuntimeHandle::with_envelope(config, envelope, contracts)` takes the keys out of band, and `RuntimeHandle::new` with an envelope in the config but none supplied is a `BadInput` that says so. See [Signed transport](../guides/signed-transport.md#the-rust-client). The Flutter mirror in `cratestack-client-flutter` stays guarded until P1, so the generated Dart API does not need another architecture change when it lands.
 
 ## Streaming surfaces
 
