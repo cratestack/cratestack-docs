@@ -141,6 +141,54 @@ The generated routers' default body limit applies to the payload after opening. 
 own cap, `DEFAULT_MAX_BODY_BYTES`, is that limit plus 16 KiB of envelope overhead; raise it
 with `.max_body_bytes(..)` if the router gets a larger limit.
 
+### Keys that change at run time
+
+*(Unreleased, [cratestack#1149](https://github.com/cratestack/cratestack/issues/1149); through 0.14.2 write your own `CoseVerifierResolver`.)*
+`StaticVerifierResolver` is fixed when you build it. For devices or peers that enrol after the
+server starts, use `cratestack_cose::RegistryVerifierResolver`: share it as an `Arc`, give the
+envelope one clone as its `CoseVerifierResolver`, and keep one for `register` and `revoke`.
+
+```rust
+use std::sync::Arc;
+use cratestack::cose::{CoseEnvelope, CoseMode, CoseVerifierResolver, RegistryVerifierResolver};
+
+// Bound the registry if callers can trigger registrations.
+let registry = Arc::new(RegistryVerifierResolver::with_max_keys(10_000));
+
+let envelope = CoseEnvelope::server(
+    CoseMode::Sign1,
+    Arc::new(server_signer),
+    registry.clone() as Arc<dyn CoseVerifierResolver>,
+    Arc::new(InMemoryNonceStore::new()),
+)
+.build()?;
+
+// At enrolment: returns the kid (first 8 bytes of the key's RFC 9679 thumbprint).
+let kid = registry.register(device_verify_key.clone())?;
+
+// On sign-out: remove exactly this key...
+registry.revoke_key(&device_verify_key);
+// ...or everything filed under the kid (see the collision note below).
+registry.revoke(&kid);
+```
+
+- **Key types.** Ed25519, ESP256, and both HMAC algorithms (256/64 and 256/256).
+- **`with_max_keys(n)`** is a hard bound. A new key past it fails with `Conflict`; registering a key
+  that is already present succeeds even when the registry is full. `new()` is unbounded.
+- **Concurrency.** Each call takes one short `std` `RwLock`, never held across an `.await`. A
+  `register` or `revoke` is atomic with respect to `resolve`, and a `register` that returned is
+  visible to every later `resolve`. A request whose `resolve` already returned the key still
+  finishes verifying with it, so a revocation applies to requests that resolve after it returns,
+  not to ones already in flight.
+- **Per process.** The state lives in memory. Every replica needs the same registrations (and a
+  shared nonce store, see above), and a restart starts empty: re-register from your own store.
+- **Collisions.** The `kid` is only 8 bytes. `revoke(kid)` removes every key under it: both
+  algorithms of one HMAC secret, and any unrelated key whose `kid` happens to collide. To cut off
+  one device, use `revoke_key(&key)`.
+- **Unknown and revoked look the same.** An unknown `kid` resolves to no keys (not an error), so a
+  revoked key and a never-registered one both get the coarse, unsigned `401`.
+- `len()` and `is_empty()` report how many keys are held.
+
 ## Modes
 
 An `EnvelopePolicy` picks a mode per op. `EnvelopeMode` is itself a policy (one mode for every
