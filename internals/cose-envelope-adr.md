@@ -770,6 +770,14 @@ is no second implementation in TS or Dart. The TS cbor-seq scanner stays for fra
 verification (hashing, signature checks) goes through the wasm/napi exports. Generated Dart clients
 that bypass the Rust runtime require the runtime for signed mode until there is demand.
 
+*Implementation status (Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)); the decision above is unchanged.*
+The Dart and Flutter clients now reach the one implementation through the bridge: `cratestack_cbor`
+exposes `cratestack-cose` over `flutter_rust_bridge` natively and the `cratestack-cbor-wasm` build on
+the web, as `package:cratestack_cbor/cose.dart`. That release seals with in-memory keys (HMAC and
+Ed25519) in `Required` mode only. Signing with a key in a platform keystore, and the chain mode
+streams need, are not part of it. See the guide's
+[The Dart client](/guides/signed-transport#the-dart-client).
+
 ### 12. Placement relative to the existing layers
 
 This section was added while reviewing the proposal against the codebase. It is what "auth headers
