@@ -422,7 +422,9 @@ repeated or malformed is a `400`, a request type the op does not allow a `415`, 
 type a `406`, all unsigned and before any key lookup; a header that lies fails the signature (the coarse
 `401`). The client never decodes a type it did not request.
 
-Negotiation uses the existing `Accept` and `Content-Type` headers. The router gains a policy:
+Whether a request or response is sealed at all is still negotiated by the existing `Accept` and
+`Content-Type` headers (`application/cose`); the inner payload type is the selector headers above. The
+router gains a policy:
 `Required` (unsigned requests → `401 unauthenticated`), `Optional` (verify when present), or `Off`.
 
 ### 3. Message layout
