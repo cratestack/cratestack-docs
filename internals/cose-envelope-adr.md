@@ -24,6 +24,14 @@ the digest of the op being called, so a server-only schema edit no longer refuse
 froze with 0.15.0, so this is a breaking wire change with a flag day: a version 2 verifier refuses
 version 1.
 
+**Amended 2026-10-09 (negotiated payload types).** The inner payload is no longer fixed to CBOR. The type
+was already element 8 of the AAD (§4), so only which string goes in became negotiable: two unbound
+selector headers, `Cratestack-Payload-Type` and `Cratestack-Payload-Accept`, default to
+`application/cbor`, and a response binding names the response payload's own type
+([cratestack#1168](https://github.com/cratestack/cratestack/issues/1168); §2, "Payload types"). **No
+binding-version change**, no COSE header change, and a message that names no type is byte-identical to
+0.15.3's.
+
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
 bytes") and its processing order (`HTTP body → envelope.open → codec.decode`).
@@ -401,7 +409,22 @@ The inner payload media type is not sent in a COSE header (label 3 would cost by
 It is bound through the AAD instead (§4), so a verifier cannot be tricked into decoding the payload as
 something else.
 
-Negotiation uses the existing `Accept` and `Content-Type` headers. The router gains a policy:
+**Payload types** (amended 2026-10-09). The type bound in the AAD is carried by two **unbound selector
+headers**, the same pattern as `Cratestack-Contract` (they select among what the verifier already allows
+and never widen it, because the AAD carries the whole string): `Cratestack-Payload-Type` (a request's type;
+on a sealed response, that response's type) and `Cratestack-Payload-Accept` (the response types the client
+reads, in order). Absent means `application/cbor`. A request binding names the request payload's type; a
+response binding names the response payload's own type. A payload type is a lowercase `type/subtype` of
+token characters without parameters or wildcards; an envelope (`application/cose*`), a stream
+(`application/cbor-seq`, `text/event-stream`) and a multipart body are never sealable. What an op allows is
+the layer's opt-in set intersected with the types its route declares; `/rpc/batch` stays CBOR. A selector
+repeated or malformed is a `400`, a request type the op does not allow a `415`, and no acceptable response
+type a `406`, all unsigned and before any key lookup; a header that lies fails the signature (the coarse
+`401`). The client never decodes a type it did not request.
+
+Whether a request or response is sealed at all is still negotiated by the existing `Accept` and
+`Content-Type` headers (`application/cose`); the inner payload type is the selector headers above. The
+router gains a policy:
 `Required` (unsigned requests → `401 unauthenticated`), `Optional` (verify when present), or `Off`.
 
 ### 3. Message layout

@@ -282,7 +282,9 @@ The external AAD, which both sides rebuild and nobody sends, binds:
   repeated values keep their order (`?tag=a&tag=b` is not `?tag=b&tag=a`). An RPC call binds its
   query too; generated RPC clients send none, and a client that adds one (a cache-buster) must
   bind it;
-- the **op contract digest** and the payload media type (`application/cbor`). The digest is the
+- the **op contract digest** and the payload media type: the request's own type on a request, the
+  response's own type on a response, `application/cbor` unless the peers negotiated another (see
+  [Payload media types](#payload-media-types)). The digest is the
   called op's (`OP_CONTRACTS` on the client, `ACCEPTED_CONTRACTS` on the server; a signed
   `/rpc/batch` binds the whole-contract `CLIENT_CONTRACT_SHA256_BYTES`). The client names the
   digest it used in the **unbound** `Cratestack-Contract` header (see
@@ -299,8 +301,11 @@ altered in transit. Don't base a security decision on one.
 
 ## What the router sees
 
-An opened request reaches the router as the plain request it wraps: the payload as
-`application/cbor` (no `Content-Type` for an empty payload) with `Accept: application/cbor`.
+An opened request reaches the router as the plain request it wraps: the payload with the type
+it was sealed under as `Content-Type` (no `Content-Type` for an empty payload) and the negotiated
+response types as `Accept`. Both are `application/cbor` unless the client named another type (see
+[Payload media types](#payload-media-types)); the layer's own `Cratestack-Payload-*` headers are
+removed before the router sees the request.
 
 - The `AuthProvider` authenticates **that payload**. A client that also sends
   `Authorization: Signature` signs the payload, not the COSE bytes.
@@ -311,6 +316,83 @@ An opened request reaches the router as the plain request it wraps: the payload 
 - The layer inserts `VerifiedPrincipal`, which the rate limiter and the idempotency layer key
   on (`princ:<sha256>`); see [Idempotency](./idempotency#principal-scoping) and
   [Rate limiting](./rate-limiting#key-function).
+
+## Payload media types
+
+<Note>Since CrateStack 0.15.4 ([cratestack#1168](https://github.com/cratestack/cratestack/issues/1168)).</Note>
+
+The payload inside a seal is CBOR unless the client says otherwise, so a service whose public
+payloads are not CBOR (a Stripe-shaped API: form-encoded requests, JSON responses) can move to
+signed requests without changing them. Two **unbound selector headers**, the same pattern as
+`Cratestack-Contract`, carry the choice:
+
+| Header | On | Value | Absent means |
+|---|---|---|---|
+| `Cratestack-Payload-Type` | a request | the type of the sealed request payload | `application/cbor` |
+| `Cratestack-Payload-Type` | a sealed response | the type of the sealed response payload (the layer always sends it) | `application/cbor` |
+| `Cratestack-Payload-Accept` | a request | the response types the client reads, in order of preference, joined by `", "` | `application/cbor` |
+
+A type is a lowercase `type/subtype` of RFC 9110 token characters, with no parameters, no `q` and
+no wildcard, at most 127 bytes; an accept list is one to eight distinct types. Nothing is
+normalised, so a client and a server cannot disagree about a spelling.
+
+**Nothing about the wire changes for a peer that does not use this.** The COSE message and the
+binding version (2) are the same: the type was already element 8 of the AAD. A request binding
+names the request payload's type; a **response binding names the response payload's own type**,
+which need not be the request's (form in, JSON out). A message that names no type is
+byte-identical to 0.15.3's, so a 0.15.3 client and a 0.15.4 layer interoperate.
+
+**The headers select, the AAD authenticates.** A request header that lies about the payload
+makes the AAD the layer rebuilds differ from the client's, so the signature fails with the coarse
+unsigned `401`. A response whose `Cratestack-Payload-Type` lies fails the client's verification
+(`Unverified`).
+
+### Opting in
+
+```rust
+let layer = cratestack_schema::axum::envelope_layer(envelope, EnvelopeMode::Required, "payments")
+    .payload_media_types(
+        ["application/cbor", "application/x-www-form-urlencoded"], // what a client may seal
+        ["application/cbor", "application/json"],                  // what the layer may seal back
+    )
+    .build()?;
+```
+
+The default is `application/cbor` for both, so a layer that never calls
+`payload_media_types` changes nothing. What an **op** allows is that set intersected with the
+types its route declares: `RestBindingResolver` reads each descriptor's
+`capabilities.request_types` / `response_types` (the generated routes declare CBOR and JSON; a
+hand-written service builds its own static table of `RouteTransportDescriptor`s), and
+`RpcBindingResolver` the RPC binding's CBOR and JSON. A custom `BindingResolver` narrows a route
+with `ResolvedRoute::with_payload_types(request, response)`, and sets none otherwise.
+`/rpc/batch` stays CBOR both ways.
+
+`build()` refuses a type outside the grammar, one that may never be sealed
+(`application/cose*`, `application/cbor-seq`, `text/event-stream`, `multipart/*`), an empty request
+set, and a response set with neither `application/cbor` nor `application/json` (the layer's own
+errors are sealed in one of them).
+
+### What happens to a request
+
+All of these are decided from the headers alone, **before any key is looked up, any signature
+checked or any nonce spent**, and go out unsigned like the other pre-verification refusals:
+
+| The request | The answer |
+|---|---|
+| a selector header sent twice, or malformed | `400` |
+| a request type the op does not allow | `415`, code `payload_type_unsupported` (REST `PAYLOAD_TYPE_UNSUPPORTED`) |
+| no type in `Cratestack-Payload-Accept` that the op can answer in (and write an error in: CBOR or JSON) | `406`, code `payload_type_not_acceptable` (REST `PAYLOAD_TYPE_NOT_ACCEPTABLE`) |
+| the header names type A, the payload is sealed under B | the coarse `401` |
+
+What the router answers is sealed under the type it labelled the response with, when that type
+was negotiated (parameters such as `charset=utf-8` are ignored). A **success** in any other type
+is a sealed `500`. An **error** in any other type (axum's own `413`, a `text/plain` fallback) is
+re-encoded in the transport's error shape, in the client's first choice of CBOR or JSON, and
+sealed; the layer's own sealed errors use that choice too. A service's own JSON error envelope
+(Stripe's `{"error": {...}}`) is in a negotiated type, so it is sealed as it is.
+
+An unsigned, nonce-bound request under `Optional` negotiates its response type the same way
+(its request payload is not sealed, so only `Cratestack-Payload-Accept` is read).
 
 ## Errors
 
@@ -323,14 +405,16 @@ signed request gets back is sealed**, errors included.
 | `401` | unsigned | Unsigned under `Required`; any verification failure (bad signature, wrong binding, replay, unknown key); the principal mapper returned `Unauthorized`. Always the same coarse answer. |
 | `426` | unsigned | The request's `Cratestack-Contract` header names a digest the server does not accept for this op: its wire shape changed since the client was built. Body `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`). Answered before any key is looked up; see [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients). Deliberately sent without `Upgrade`: RFC 9110 §15.5.22 asks for one, but `Upgrade` is connection-specific (§7.8), forbidden on HTTP/2 (RFC 9113 §8.2.2) and stripped by proxies, and no protocol token names an op contract; 426 is kept because every other 4xx already means something else here. |
 | `415` | unsigned | A COSE body under `Off`, or anywhere the layer binds no op (an unmatched path, an allow-listed or unbindable route, a malformed `/rpc/{op_id}`); a signed batch whose every answer is `Off`. |
-| `400` | unsigned | A bound header, or `Cratestack-Contract`, sent twice or malformed; a bound header not UTF-8; a body that failed to arrive; an unreadable plain batch (not under `Required`). |
+| `415` | unsigned | A `Cratestack-Payload-Type` the op does not allow (code `payload_type_unsupported`); see [Payload media types](#payload-media-types). |
+| `406` | unsigned | No type in `Cratestack-Payload-Accept` that the op can answer in (code `payload_type_not_acceptable`). |
+| `400` | unsigned | A bound header, `Cratestack-Contract` or a payload-type selector sent twice or malformed; a bound header not UTF-8; a body that failed to arrive; an unreadable plain batch (not under `Required`). |
 | `413` | unsigned | The body exceeds the layer's `max_body_bytes`. |
 | `405` | unsigned | Another method on a generated path, under a `Required` `unresolved_mode`. |
 | `500` | unsigned | `envelope misconfigured` (a route the contract table has no row for included, which a custom resolver fixes with `ResolvedRoute::with_contract_key`); a key-resolver, nonce-store or signer outage; an envelope that labels its seal as a non-envelope type. The detail is only logged. |
-| handler errors, `409`, `412`, `422`, `429` | **sealed** | Anything the router answers for a bound op: a handler's `404` or `403`, the rate limiter's `429`, the idempotency layer's `409`/`412`/`422`, the RPC router's `404` for a well-formed unknown op id. A non-CBOR error (axum's own `413`, a `text/plain` fallback) is re-encoded as the transport's CBOR error first. A plain request to an unmatched path gets the router's plain `404`. |
+| handler errors, `409`, `412`, `422`, `429` | **sealed** | Anything the router answers for a bound op: a handler's `404` or `403`, the rate limiter's `429`, the idempotency layer's `409`/`412`/`422`, the RPC router's `404` for a well-formed unknown op id. An error in a type the request did not negotiate (axum's own `413`, a `text/plain` fallback) is re-encoded as the transport's error, in CBOR or JSON, first. A plain request to an unmatched path gets the router's plain `404`. |
 | `406` | **sealed** | A signed request to an RPC subscription (before its handler runs), or any other response a signed request would get as a stream. |
 | `400` | **sealed** | A signed `/rpc/batch` whose frames cannot be read once opened. |
-| `500` | **sealed** | A non-CBOR success to a signed request; a response over `MAX_RESPONSE_REBUFFER_BYTES`; the principal mapper failed (other than `Unauthorized`) or returned `""`. |
+| `500` | **sealed** | A success to a signed request in a payload type it did not negotiate (CBOR unless the client named another); a response over `MAX_RESPONSE_REBUFFER_BYTES`; the principal mapper failed (other than `Unauthorized`) or returned `""`. |
 
 ## Extension points
 
@@ -449,6 +533,7 @@ to plain:
 | Sealed, but for another request, or with its status or a bound header changed | `ClientError::Envelope(EnvelopeError::Unverified)` |
 | Not sealed at all, whatever the status: a proxy stripped the seal, or the layer refused the request (a wrong audience or a wire shape mismatch is an unsigned `401`) | `EnvelopeError::Unsigned { status }`, and the body is never read (bar the `426` below) |
 | The unsigned `426` whose body code is `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`): the server no longer accepts this client's wire shape for the op | `EnvelopeError::ContractUnsupported { op }` (`op` is `METHOD /template` on REST, the op id on RPC). The body is read only for that code, which is unauthenticated. **Unsigned, so a hint and never proof**: offer "update the app" for that feature, and know that other ops are unaffected. A `426` with any other code (a proxy that requires TLS or h2, say) is `EnvelopeError::Unsigned { status: 426 }` |
+| Sealed under a payload type the call did not ask for (`Cratestack-Payload-Type`, absent meaning CBOR, is not among the types the codec lists) | `EnvelopeError::UnexpectedPayloadType { got }`, and the body is never opened, let alone decoded |
 | A streamed call (`*_streamed`, `call_streaming`) or a subscription | `EnvelopeError::StreamsUnsupported`, before anything is sent. A `@stream` procedure called through `post_list` is sealed and works, as one buffered array |
 
 The generated code tells the client which route each call is for, so a REST call binds the
@@ -457,8 +542,50 @@ template (`/widgets/{id}`) and the values (`7`), and an RPC call its op id (`bat
 the digest of its own op and names it in the `Cratestack-Contract` header; a call to an op the
 table lacks is a `BadInput` and is never sent. A hand-built client of one op pins its digest with
 `with_contract_sha`. `Idempotency-Key` and `If-Match` are bound as you pass them. A request authorizer
-still runs, over the plain payload with `Content-Type: application/cbor`, which is what the
+still runs, over the plain payload with the codec's `Content-Type`, which is what the
 server's `AuthProvider` sees once it has opened the seal.
+
+**Codecs other than CBOR.** The codec's `CONTENT_TYPE` is the type of every sealed request, and
+`HttpClientCodec::payload_accept` (default: the same type) the types it reads back, so a
+`JsonCodec` client can take an envelope, and so can a hand-written form-in/JSON-out codec that
+overrides `payload_accept`. CBOR sends nothing extra; any other type travels in
+`Cratestack-Payload-Type` / `Cratestack-Payload-Accept` and needs a layer that opted in
+([Payload media types](#payload-media-types)). `with_envelope` refuses (`BadInput`) a codec whose
+type can never be sealed, and a sealed `/rpc/batch` over a non-CBOR codec is `BadInput`, never
+sent.
+
+### Sealing a call you send yourself
+
+`ClientEnvelope::seal_call` is the sealing the generated clients run on, for a caller that does
+its own HTTP (a Node SDK over wasm, a hand-written adapter):
+
+```rust
+let route = RouteRef::new("/v1/charges", &[]);
+let sealed = envelope
+    .seal_call(
+        SealCall::new("POST", route, contract_sha) // the op's digest, e.g. from OP_CONTRACTS
+            .payload(b"amount=1500&currency=xaf", "application/x-www-form-urlencoded")
+            .accept("application/json")
+            .idempotency_key("idem-1"),
+    )
+    .await?;
+
+let mut request = http.post(url).body(sealed.body.clone());
+for (name, value) in &sealed.headers {
+    request = request.header(name, value); // Content-Type, Accept, Cratestack-*, bound headers
+}
+let response = request.send().await?;
+let (status, headers) = (response.status().as_u16(), response.headers().clone());
+let opened = sealed.pending.open(status, &headers, response.bytes().await?).await?;
+// opened.payload_type, opened.body: verified, and a type the call asked for
+```
+
+`SealedCall::headers` holds every header the seal depends on; send them as given and add
+anything else (an `Authorization`-style header, a tracing id) yourself. `PendingResponse::open`
+returns `EnvelopeError::Unsigned` for an unsealed answer, `UnexpectedPayloadType` for a type the
+call did not ask for, and `Unverified` for a failed verification. The same bad-input rules apply as
+for a generated call: a payload or accept type that cannot be sealed, a bound header with
+surrounding whitespace, and a non-CBOR `/rpc/batch` are `BadInput`, and nothing is signed.
 
 **Redirects are never followed.** A sealed request is bound to one route: a `303` would turn it
 into a plain authenticated `GET` at a path the proxy chose, a `307` would re-send the sealed bytes
@@ -494,7 +621,9 @@ client: it ignores the idempotency marker and replays the sealed bytes, which th
 and answer with a DER signature. `ExternalSigner::esp256` takes the public key and an async
 callback that receives the full to-be-signed bytes (the keystore hashes them itself, as
 `SHA256withECDSA`), works out the `kid` from the key, and converts a DER answer to the 64-byte
-form the envelope needs; a raw `r || s` answer is accepted too:
+form the envelope needs; a raw `r || s` answer is accepted too. `ExternalSigner::ed25519(&public_key, sign)`
+is the same for an Ed25519 key that cannot leave its store (a Node `KeyObject`, a KMS): the callback
+signs the whole to-be-signed bytes (pure Ed25519) and returns the 64-byte signature:
 
 ```rust
 let signer = ExternalSigner::esp256(&public_key_sec1, move |tbs| {
@@ -522,7 +651,8 @@ envelope out of band, because keys cannot travel in `RuntimeConfigWire`; the con
 `/rpc/batch`): a raw REST path carries no route template to bind. A failure reaches the host as
 one of the existing error codes with an `envelope_*` `remote_code`
 (`envelope_unsigned`, `envelope_contract_unsupported` (with HTTP status `426`),
-`envelope_unverified`, `envelope_seal`, `envelope_open`, `envelope_streams_unsupported`).
+`envelope_unverified`, `envelope_seal`, `envelope_open`, `envelope_unexpected_payload_type`,
+`envelope_streams_unsupported`).
 
 ## Evolving a schema under signed clients
 
@@ -696,7 +826,7 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 ## Limits
 
 - **Streams cannot be sealed** until ADR 0006 P1 (`chain` mode). A signed request gets
-  `Accept: application/cbor`, so a `@stream` op answers with one buffered, sealed array; a
+  `Accept` of sealable types only (never a stream), so a `@stream` op answers with one buffered, sealed array; a
   signed subscription is a sealed `406` before its handler runs. Only an unsigned request under
   `Optional` streams (plain), so give subscriptions `Optional` or `Off` in the policy.
 - **Responses are re-buffered** to be sealed, up to `MAX_RESPONSE_REBUFFER_BYTES` (8 MiB);
