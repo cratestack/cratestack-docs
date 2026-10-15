@@ -312,10 +312,63 @@ removed before the router sees the request.
 - The layer inserts `cratestack_core::VerifiedSigner` (visible to the `AuthProvider` in
   `RequestContext::extensions`), and generated handlers record it on the context
   (`ctx.verified_signer()`). It is a **fact, not an authentication**: identity stays the
-  `AuthProvider`'s decision. A signer-to-identity adapter is cratestack#1077.
+  `AuthProvider`'s decision, unless you wrap the provider in
+  [`CoseAuthProvider`](#authenticate-a-signer) *(Unreleased, [cratestack#1077](https://github.com/cratestack/cratestack/issues/1077).)*
 - The layer inserts `VerifiedPrincipal`, which the rate limiter and the idempotency layer key
   on (`princ:<sha256>`); see [Idempotency](./idempotency#principal-scoping) and
   [Rate limiting](./rate-limiting#key-function).
+
+## Authenticate a signer
+
+A signed client sends no `Authorization` header, so your header `AuthProvider` has nothing to
+authenticate and the request stays anonymous. `CoseAuthProvider` closes that gap *(Unreleased,
+cratestack#1077)*. It wraps the header provider and, when the header path gives no identity, asks
+the registries whether they still hold the verified signer's key. Depend on `cratestack-cose` with
+`features = ["auth"]`, and on `cratestack-auth`, which owns `DeviceKeyResolver`. Pass the wrapped
+provider to the generated router in place of the header provider:
+
+```rust
+use cratestack_cose::auth::CoseAuthProvider;
+
+let provider = CoseAuthProvider::new(header_provider, device_registry) // Arc<dyn DeviceKeyResolver>
+    .with_service_keys(service_registry)  // Arc<dyn CoseVerifierResolver>, e.g. RegistryVerifierResolver
+    .authenticate_devices(true);          // off by default
+```
+
+The rules run in this order:
+
+1. Your header provider runs first. An identity it returns wins, and the registries are not asked.
+   An error from it is returned as is: a header the provider refuses is never replaced by the
+   signer. A header it accepts but maps to anonymous is not a refusal, and the signer supersedes it.
+2. With no verified signer, the answer is the header provider's. The signer is read only from the
+   request's in-process extensions, never from a header or body, so a client cannot fake one.
+3. A verified signer is matched by its **full thumbprint**; the 8-byte `kid` is only a prefix. The
+   service registry is asked first, then the device registry, which is asked only when device
+   authentication is on. A key that is unknown or revoked is anonymous, not an error, so policy
+   refuses it as it refuses any anonymous caller. A failing registry is a `500`, so an outage is not
+   mistaken for an unknown key.
+
+The principal is `cose:<thumbprint>` with the default prefix, the same id the envelope's
+`ThumbprintPrincipal` charges the signer to. The context carries `kind` (`service` or `device`),
+`thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id).
+
+**Device keys are off by default.** A device key proves a device, not a user. With the gate off, an
+enrolled device signer is anonymous, and the device registry is not consulted. A service key
+authenticates either way.
+
+**Security.** With `authenticate_devices(true)`, any request sealed by an enrolled device key is
+authenticated, with no user (no `id_jwt`), on every method, whatever the header provider's
+`TransportCallerMode`. `auth() != null` then means "holds an enrolled device or service key", and
+revoking the key, not token expiry, is what bounds access. Turn the gate on only where device
+enrolment is itself gated. A rule that needs a signed-in user cannot rely on `auth() != null` alone.
+
+Two more limits:
+
+- Under `Required`, the envelope does not bind a header identity to the signer. When the header
+  provider authenticates, its identity wins, so one device can act as the user named in another
+  device's header.
+- An ESP256 or WebCrypto device key authenticates only through the service registry, because
+  `DeviceKeyResolver` is Ed25519-only.
 
 ## Payload media types
 
@@ -847,7 +900,9 @@ a signed request to a route with no contract row is a logged `500`. The shared v
   envelope until P1.
 - **A version 2 server refuses binding version 1** (0.15.0 peers), with no opt-in: upgrade the
   server and its clients together. Any future change to the AAD bumps the version again.
-- **A signer is recorded, not authenticated**: mapping it to an identity is cratestack#1077.
+- **A signer is recorded, not authenticated**, unless you wrap your provider in `CoseAuthProvider`
+  *(Unreleased, cratestack#1077)*. Device keys authenticate only with `authenticate_devices(true)`;
+  see [Authenticate a signer](#authenticate-a-signer).
 
 ## Read next
 

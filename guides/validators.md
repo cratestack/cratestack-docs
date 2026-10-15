@@ -108,11 +108,12 @@ model Member {
 
 Eligible validators: `@range`, `@length`, `@iso4217`. Non-eligible: `@email`, `@uri`, `@regex`. Applying `@db_enforce` to a non-eligible validator is currently silently skipped by the migration converter, not a parse-time error (a stricter parser-level check that promotes this to a build-time error may come later).
 
-When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. Subsequent validator changes flow through the diff engine:
+When set, the migration generator ([ADR 0004](../internals/schema-diff-adr#validator-promotion)) emits a `CHECK` constraint with a predictable name (`<table>_<field>_<validator>_check`) alongside the column. A `CHECK` on a table that the same migration creates is `safe`, because that table has no rows yet *(Unreleased, [cratestack#1129](https://github.com/cratestack/cratestack/issues/1129).)* Once a table exists, validator changes flow through the diff engine:
 
-* **Loosening** the rule (widening a range, dropping the attribute) — safe.
-* **Tightening** the rule (narrowing a range) — lossy if existing rows fall outside the new bound; requires `--allow-destructive` or a hand-written `up.pre.sql` that resolves violators first.
-* **Adding `@db_enforce`** to a field that previously lacked it — treated as a tightening, for the same reason: data written before the constraint existed may not satisfy it.
+* **Dropping the attribute** — safe.
+* **Loosening** the rule (widening a range) — the diff engine writes this as a drop and a re-add, and labels the migration `blocking`, so it gets a scaffolded `up.pre.sql`. No existing row can violate a wider bound, so there is nothing for that file to fix.
+* **Tightening** the rule (narrowing a range) — `blocking`, not lossy. Rows outside the new bound would fail the new `CHECK`, so resolve them in `up.pre.sql` first. `--allow-destructive` does not apply here.
+* **Adding `@db_enforce`** to a field that previously lacked it — `blocking`, for the same reason: data written before the constraint existed may not satisfy it.
 
 Defense-in-depth — app validators still run before the request reaches the database. `@db_enforce` is the safety net for non-framework writers (direct SQL, replication tools, sibling services). For banking workloads where the storage tier must enforce invariants independently, prefer `@db_enforce` on every eligible validator.
 

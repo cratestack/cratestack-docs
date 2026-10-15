@@ -213,7 +213,7 @@ migrate baseline: wrote migrations/postgres/schema.snapshot.json and recorded ba
 Exit code `0`. Read the report like this:
 
 - Grouped **by table** (`customers`), one line per drifted column, index, or constraint.
-- Each line is tagged with a [`Destructiveness`](https://github.com/cratestack/cratestack/blob/main/crates/cratestack-migrate/src/checksum.rs)-derived severity: `safe` (a missing index — cheap to add back), `lossy` (an undeclared column — dropping it would destroy data if you ever reconcile toward the schema), or `blocking` (not triggered here, reserved for changes the diff engine can't express safely at all).
+- Each line is tagged with a [`Destructiveness`](https://github.com/cratestack/cratestack/blob/main/crates/cratestack-migrate/src/ir.rs)-derived severity: `safe` (a missing index — cheap to add back), `lossy` (an undeclared column — dropping it would destroy data if you ever reconcile toward the schema), or `blocking` (not triggered here: a change that cannot apply to the rows already in the table until a precondition is met, such as a `NOT NULL` on a column that holds `NULL`s, or a `CHECK` on a table that already has rows).
 - Baselining **reports** drift, it does not **resolve** it. The snapshot is written from the
   live shape as introspected — `legacy_crm_id` and all — not from `schema.cstack`. That's
   deliberate: the drift becomes visible as a *pending* change the next time you run `migrate diff`,
