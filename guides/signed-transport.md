@@ -345,16 +345,27 @@ The rules run in this order:
 3. A verified signer is matched by its **full thumbprint**; the 8-byte `kid` is only a prefix. The
    service registry is asked first, then the device registry, which is asked only when device
    authentication is on. A key that is unknown or revoked is anonymous, not an error, so policy
-   refuses it as it refuses any anonymous caller. A failing registry is a `500`, so an outage is not
-   mistaken for an unknown key.
+   refuses it as it refuses any anonymous caller. A failure of a registry that is asked is a `500`,
+   so an outage is not mistaken for an unknown key. Unlike `cratestack-auth`'s verifier, which
+   treats a JWKS/service error as a miss, a service-registry error here is not a miss: it fails the
+   request, including for a device signer, even with the gate off (the service registry is asked
+   first). This fails closed.
 
 The principal is `cose:<thumbprint>` with the default prefix, the same id the envelope's
 `ThumbprintPrincipal` charges the signer to. The context carries `kind` (`service` or `device`),
 `thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id).
 
 **Device keys are off by default.** A device key proves a device, not a user. With the gate off, an
-enrolled device signer is anonymous, and the device registry is not consulted. A service key
-authenticates either way.
+enrolled device signer is anonymous, and the device registry is not consulted (a failing service
+registry still errors, as above). A service key authenticates either way.
+
+<Warning>
+`with_service_keys` must hold service keys only; a device key placed there authenticates as a
+service whatever the gate. The service registry is asked first and ignores
+`authenticate_devices`, so passing it a resolver that also holds device keys (for example the same
+`RegistryVerifierResolver` the envelope verifies with, where devices enrol) makes every enrolled
+device a `kind: service` caller with the gate off.
+</Warning>
 
 **Security.** With `authenticate_devices(true)`, any request sealed by an enrolled device key is
 authenticated, with no user (no `id_jwt`), on every method, whatever the header provider's
@@ -367,8 +378,8 @@ Two more limits:
 - Under `Required`, the envelope does not bind a header identity to the signer. When the header
   provider authenticates, its identity wins, so one device can act as the user named in another
   device's header.
-- An ESP256 or WebCrypto device key authenticates only through the service registry, because
-  `DeviceKeyResolver` is Ed25519-only.
+- An ESP256 or WebCrypto device key authenticates only through the service registry (as `kind`
+  `service`), because `DeviceKeyResolver` is Ed25519-only.
 
 ## Payload media types
 
