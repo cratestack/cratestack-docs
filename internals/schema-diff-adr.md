@@ -195,6 +195,8 @@ The generator emits CHECK constraints with stable, predictable names — `<table
 
 **Destructiveness for validator changes:**
 
+> **Implementation note.** The shipped diff engine classifies these more conservatively than proposed below: any non-enum `CHECK` added to a table that already exists is `blocking` (with a scaffolded `up.pre.sql`), not `lossy`, and a widened range is written as a drop plus a re-add, so it is labelled `blocking` too; `--allow-destructive` does not apply. A `CHECK` on a table the same migration creates is `safe` *(Unreleased, [cratestack#1129](https://github.com/cratestack/cratestack/issues/1129).)* The current behaviour is documented in [Validators](../guides/validators); the list below is the original proposal.
+
 * **Loosening** a `@db_enforce` validator (widening a range, dropping the attribute, lowering a length min) — safe.
 * **Tightening** a `@db_enforce` validator (narrowing a range, raising a length min) — **lossy** unless data already conforms. The generator emits the change behind `--allow-destructive`, and the developer is expected to either resolve violators in `up.pre.sql` or use the application's normal data-migration path before applying.
 * **Adding `@db_enforce` to an existing field** — treated as a tightening, since data written before the attribute existed may not conform. Same opt-in posture.
