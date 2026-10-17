@@ -298,6 +298,14 @@ The choice is purely additive. Every other emitted file is byte-identical either
   `--no-native-cbor` if you were relying on the pure-Dart codec.
 </Note>
 
+### Signed requests
+
+*(Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* The generated client sends unsigned requests. To call a server behind the
+[COSE envelope layer](/guides/signed-transport), import `package:cratestack_cbor/cose.dart` next to the
+codec: it seals and opens through the same Rust implementation as the server, and a codec-only app
+imports nothing new. The generated `cratestackOpContracts` holds the per-op digests a seal binds. See
+[The Dart client](/guides/signed-transport#the-dart-client).
+
 ### Platform support
 
 `cratestack_cbor` vendors prebuilt binaries rather than building Rust on a consumer's machine, so a platform works only if a binary was vendored for it:
@@ -506,3 +514,4 @@ format.
 - [`cratestack_annotations`](https://pub.dev/packages/cratestack_annotations) — the runtime `@CratestackBuilder(...)` annotation every generated data class carries
 - [`cratestack_builder`](https://pub.dev/packages/cratestack_builder) — the `build_runner` generator that expands the annotation into `{Class}Builder`
 - [RPC transport](/guides/rpc-transport) — full design for `transport rpc`
+- [Signed transport: the Dart client](/guides/signed-transport#the-dart-client) — sealing requests and opening responses with `cratestack_cbor` (Unreleased)
