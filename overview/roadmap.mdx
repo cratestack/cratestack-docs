@@ -92,7 +92,7 @@ Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialize
 - **Status:** Designed (currently no-ops)
 - **What:** Local-journal and local-event-bus implementations for `@@audit` and `@@emit` in `include_embedded_schema!`, needed for sync-engine wiring.
 - **Why deferred:** Both attributes parse and codegen cleanly today but emit no-ops on the embedded backend. The full implementation depends on the sync-engine surface, which is itself unscheduled.
-- **Unblocks on:** Sync engine design.
+- **Unblocks on:** Sync engine design — now proposed as [ADR 0020](/internals/sync-engine-adr), with an unpublished prototype (`cratestack-sync`). The embedded journal is shaped by whatever that ADR settles.
 
 ### Binary-size feature gating for embedded-only builds
 
