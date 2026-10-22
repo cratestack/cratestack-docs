@@ -155,7 +155,8 @@
               "internals/views-adr",
               "internals/schema-diff-adr",
               "internals/rpc-transport-adr",
-              "internals/cose-envelope-adr"
+              "internals/cose-envelope-adr",
+              "internals/sync-engine-adr"
             ]
           },
           {
