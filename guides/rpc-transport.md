@@ -286,6 +286,8 @@ await for (final chunk in stream) {
 
 ### Path 3 — Flutter via dio + `CborSeqStreamTransformer`
 
+*(Unreleased, [cratestack#1204](https://github.com/cratestack/cratestack/issues/1204).)* A generated client no longer needs the hand-wiring below: `CratestackRpcHttpAdapter.stream()` streams an `application/cbor-seq` answer through `CborSeqStreamTransformer` for you, over any `CratestackHttpTransport` (Dio's is `CratestackDioTransport`), with a pure-Dart `CratestackCborSeqScanner` by default and a `cborSeqDecoder:` argument to plug in `FlutterCborSeqDecoder`. A final `Tag(48900, RpcErrorBody)` item becomes a `CratestackRpcException`, and a call that gets no answer is a `CratestackTransportException`. See [Dart HTTP transport](/guides/dart-http-transport#streaming). The raw wiring below is for an app that drives Dio directly.
+
 For apps that want HTTP to live in Dart — native NSURLSession/OkHttp visibility, dio interceptors for auth/retry/idempotency, Flutter DevTools network inspection, system proxy and certificate pinning — the generated Dart RPC runtime ships two primitives:
 
 - `CborSeqDecoderHandle` — abstract interface; `Future<List<Uint8List>> feed(Uint8List)` plus `int pendingLen()`. The FFI-backed `FlutterCborSeqDecoder` (from `cratestack-client-flutter`) satisfies it; pure-Dart impls work for web or server-side Dart.
