@@ -29,6 +29,7 @@
               "overview/banking-readiness",
               "overview/release-track",
               "overview/migrating-to-0-8",
+              "overview/migrating-dart-http-transport",
               "overview/roadmap",
               "overview/branding"
             ]
@@ -63,6 +64,8 @@
             "pages": [
               "guides/typescript-client-generation",
               "guides/dart-client-generation",
+              "guides/dart-http-transport",
+              "guides/dart-fespalier-preset",
               "guides/refine-integration"
             ]
           },

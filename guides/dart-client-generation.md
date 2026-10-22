@@ -1,13 +1,13 @@
 ---
 title: Dart client generation
-description: Generate a typed Dart/Flutter package — CRUD APIs, procedures, and (with `--preset riverpod`) a full generated Riverpod provider surface — from a `.cstack` schema with `cratestack generate-dart`.
+description: Generate a typed Dart/Flutter package — CRUD APIs, procedures, and (with `--preset riverpod` or `--preset fespalier`) a full generated Riverpod provider surface — from a `.cstack` schema with `cratestack generate-dart`.
 ---
 
 # Dart client generation
 
-`cratestack generate-dart` renders a complete, publishable Dart package from a parsed `.cstack` schema: typed models, a client with per-model CRUD APIs and procedure APIs, and — with `--preset riverpod` — a full set of generated [Riverpod](https://riverpod.dev) providers on top of it. It's implemented by `cratestack-client-dart` and uses the same schema-first approach as the TypeScript and Rust client generators — there is no OpenAPI/Swagger document in the middle, the `.cstack` file is the only source of truth.
+`cratestack generate-dart` renders a complete, publishable Dart package from a parsed `.cstack` schema: typed models, a client with per-model CRUD APIs and procedure APIs, and — with `--preset riverpod` or `--preset fespalier` — a full set of generated [Riverpod](https://riverpod.dev) providers on top of it. It's implemented by `cratestack-client-dart` and uses the same schema-first approach as the TypeScript and Rust client generators — there is no OpenAPI/Swagger document in the middle, the `.cstack` file is the only source of truth.
 
-This guide covers generating the package, the `default` and `riverpod` presets, what the `riverpod` preset actually generates and why it's shaped the way it is, and a full getting-started walkthrough from schema to a running Flutter screen.
+This guide covers generating the package, the `default`, `riverpod` and `fespalier` presets, what the `riverpod` preset actually generates and why it's shaped the way it is, and a full getting-started walkthrough from schema to a running Flutter screen. How a generated client sends HTTP (the transport seam, Dio, typed errors, abort) has its own page: [Dart HTTP transport](/guides/dart-http-transport).
 
 ## Generate the package
 
@@ -31,16 +31,18 @@ Once the CLI binary is installed, drop the `cargo run -p cratestack-cli --` pref
 | `--base-path` | no | `/api` | default API base path baked into the runtime |
 | `--template-dir` | no | none | override individual `.j2` templates; anything not overridden falls back to the bundled default |
 | `--check` | no | off | drift-detection mode: generate in memory and diff against `--out` instead of writing; exits non-zero and lists the files that differ |
-| `--preset` | no | `default` | `default` or `riverpod` — see below |
+| `--preset` | no | `default` | `default`, `riverpod` or `fespalier` — see below |
+| `--fespalier-ref` | no | `v0.21.0` | `--preset fespalier` only: the git tag, branch or commit of `github.com/fespalier/fespalier` that the generated pubspec pins `fespalier_transport` at. An error with any other preset — see [The `fespalier` preset](/guides/dart-fespalier-preset) |
 | `--run-build-runner` | no | off | after generation, run `dart run build_runner build --delete-conflicting-outputs` in `--out` — see [The `--run-build-runner` flag](#the-run-build-runner-flag) |
 | `--no-native-cbor` | no | off | fall back to pure-Dart `package:cbor` instead of the native `cratestack_cbor` codec, which is the default — see [The CBOR codec](#the-cbor-codec) |
 
-### The two presets
+### The presets
 
 `--preset` selects the generated package's shape:
 
 - **`default`** — one monolithic `lib/src/models.dart` and one monolithic `lib/src/apis.dart`. This layout is unchanged from before the `riverpod` preset existed, and it stays the default — you don't need `--preset` to get it. It is **not** byte-identical output anymore, though: as of the builder-generation move (see [The `--run-build-runner` flag](#the-run-build-runner-flag) below), every data class in `models.dart` now carries a `@CratestackBuilder(...)` annotation and the file gains a `part 'models.builder.dart';` directive, so a `default`-preset regeneration now needs a `build_runner` pass it never needed before.
 - **`riverpod`** (opt-in, epic [#297](https://github.com/cratestack/cratestack/issues/297)) — one file per model under `lib/src/models/` (a shared `lib/src/models/shared_types.dart` for cross-model types like `Page`/`PageInfo`), procedures in their own `lib/src/procedures.dart`, and package-wide DI providers (`xAdapterProvider`, `xClientProvider`) living in `lib/src/client.dart`. Every model and procedure-argument file also declares a full set of generated `@riverpod` providers — see [The `riverpod` preset](#the-riverpod-preset) below.
+- **`fespalier`** *(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204))* — the `riverpod` preset sending through fespalier's `HttpTransport` (`package:fespalier_transport`) instead of Dio. No `dio` in the pubspec; an app overrides `<prefix>TransportProvider` and `<prefix>BaseUriProvider` with its transport chain. Everything else is the `riverpod` preset's. See [The `fespalier` preset](/guides/dart-fespalier-preset).
 
 ```bash
 cargo run -p cratestack-cli -- generate-dart \
@@ -53,6 +55,19 @@ cargo run -p cratestack-cli -- generate-dart \
 ### Picking REST or RPC
 
 There's no separate flag for this — exactly like the TypeScript generator, `generate-dart` reads `schema.transport` off the parsed `.cstack` file and switches templates accordingly. REST is the default; a schema opts into RPC with a `transport rpc` directive at the top of the file. Both presets support both transports. See [Using the riverpod preset over RPC](#using-the-riverpod-preset-over-rpc) below and the [RPC transport](/guides/rpc-transport) guide for the full transport design.
+
+### Sending HTTP: the transport seam
+
+*(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204).)* Every generated package sends through a pure-Dart `CratestackHttpTransport` seam, with one adapter per protocol built over it: `CratestackHttpAdapter` (REST) and `CratestackRpcHttpAdapter` (RPC). In the `default` and `riverpod` presets Dio is one transport, `CratestackDioTransport(dio)`, in `lib/src/dio_transport.dart`; the four `*DioAdapter` classes are gone.
+
+```dart
+final adapter = CratestackHttpAdapter(
+  CratestackDioTransport(dio),
+  baseUri: Uri.parse('https://api.example.com'),
+);
+```
+
+Failures are typed (`CratestackRestException`, `CratestackRpcException`, and the sealed `CratestackTransportException`), and both call options types take an `abort`. See [Dart HTTP transport](/guides/dart-http-transport) for the seam, the errors and the options, and [Migrating the Dart client to the HTTP transport](/overview/migrating-dart-http-transport) if you are coming from a `*DioAdapter`.
 
 ### Regenerating after schema changes
 
@@ -80,7 +95,7 @@ This is the real layout of `examples/flutter-riverpod/client/`, a generated (che
 
 ### The DI layer providers are built on top of
 
-Every generated package — `default` or `riverpod` — declares two `Provider`s in `lib/src/client.dart`, unchanged in shape by the `riverpod` preset:
+Every generated Riverpod package declares two `Provider`s in `lib/src/client.dart`, unchanged in shape by the `riverpod` preset:
 
 ```dart
 final flutterRiverpodClientAdapterProvider = Provider<CratestackClientAdapter>((ref) {
@@ -95,18 +110,23 @@ final flutterRiverpodClientClientProvider = Provider<FlutterRiverpodClientCrates
 });
 ```
 
-`xAdapterProvider` throws until overridden — that's the single override point a consumer supplies to point the generated client at a real server (or a mock, in tests):
+`xAdapterProvider` throws until overridden — that's the single override point a consumer supplies to point the generated client at a real server (or a mock, in tests). The adapter is `CratestackHttpAdapter` (REST) or `CratestackRpcHttpAdapter` (RPC) over a transport, and Dio is one transport, `CratestackDioTransport` *(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204); it replaces the removed `CratestackDioAdapter`, see [the migration](/overview/migrating-dart-http-transport))*:
 
 ```dart
 ProviderScope(
   overrides: [
     flutterRiverpodClientAdapterProvider.overrideWithValue(
-      CratestackDioAdapter(dio: myDio),
+      CratestackHttpAdapter(
+        CratestackDioTransport(myDio),
+        baseUri: Uri.parse('https://api.example.com'),
+      ),
     ),
   ],
   child: const MyApp(),
 );
 ```
+
+Under `--preset fespalier` this single override is replaced by two (`xTransportProvider` and `xBaseUriProvider`), and `xAdapterProvider` has a default built from them.
 
 Every other generated provider in the package — every model's read/write providers, every procedure's provider — is built by watching `xClientProvider` (indirectly, via a per-model `Provider<XApi>`), not by talking to the adapter directly. Overriding `xAdapterProvider` alone is enough to redirect the entire generated surface.
 
@@ -397,7 +417,7 @@ void main() {
     ProviderScope(
       overrides: [
         flutterRiverpodClientAdapterProvider.overrideWithValue(
-          CratestackDioAdapter(dio: buildAppDio()),
+          buildAppAdapter(),
         ),
       ],
       child: const RiverpodExampleApp(),
@@ -406,7 +426,19 @@ void main() {
 }
 ```
 
-`buildAppDio()` (`app/lib/src/runtime.dart`) is just a `Dio` pointed at `http://127.0.0.1:3210` with a stand-in `x-auth-id: 1` header — everything downstream of this one override (every provider below) comes from the generated client.
+`buildAppAdapter()` (`app/lib/src/runtime.dart`) wraps a `Dio` carrying a stand-in `x-auth-id: 1` header as the transport, and points the adapter at `http://127.0.0.1:3210`. The server's origin goes in `baseUri`, not in the `Dio`'s `baseUrl`, and the adapter is set to `CratestackWireFormat.json` because the reused `react-vite-swr` server is wired with a JSON codec only:
+
+```dart
+CratestackHttpAdapter buildAppAdapter({String baseUrl = 'http://127.0.0.1:3210'}) {
+  return CratestackHttpAdapter(
+    CratestackDioTransport(buildAppDio()),
+    baseUri: Uri.parse(baseUrl),
+    format: CratestackWireFormat.json,
+  );
+}
+```
+
+Everything downstream of this one override (every provider below) comes from the generated client.
 
 **4. Consume the generated providers in a widget** (`app/lib/src/screens/boards_screen.dart`, trimmed):
 
@@ -503,9 +535,14 @@ format.
 - **Update/delete controllers are single, global controllers per model, not keyed by id.** `<Model>UpdateController`/`<Model>DeleteController`'s `save`/`delete` methods take the target `id` as an argument, rather than the provider itself being a family keyed by id. Fine at small-to-medium screen scale; a screen with many concurrent in-flight updates per row might want a per-row wrapper of its own.
 - **List/get providers forwarding `query`/`input` needs a live server that understands it.** The provider parameter is forwarded as-is to the underlying REST or RPC call — there's no client-side filtering fallback if the server doesn't support a given filter.
 - **RPC transport has no typed query-builder class.** Unlike REST's `CratestackListQuery`, an RPC list provider's optional argument stays a raw `IMap<String, Object?>` — see [Using the riverpod preset over RPC](#using-the-riverpod-preset-over-rpc) above.
+- **Call options cannot carry transport attributes** *(Unreleased)*. `CratestackHttpRequest.extra` exists and a transport forwards it, but neither `CratestackCallOptions` nor `CratestackRpcCallOptions` can fill it. Tracked in [cratestack#1207](https://github.com/cratestack/cratestack/issues/1207).
+- **An `AuthProvider` refusal cannot shape its response body** *(Unreleased)*. The generated handler encodes any auth error as the standard `{code, message}` envelope, so a client cannot tell refusal reasons apart by a body member. Tracked in [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).
 
 ## See also
 
+- [Dart HTTP transport](/guides/dart-http-transport) — the `CratestackHttpTransport` seam, the two adapters, `CratestackDioTransport`, typed errors, abort and idempotency options, streaming and query encoding
+- [The `fespalier` preset](/guides/dart-fespalier-preset) — `--preset fespalier`, the Riverpod surface over fespalier's `HttpTransport` with no Dio
+- [Migrating the Dart client to the HTTP transport](/overview/migrating-dart-http-transport) — the `*DioAdapter` removal, one line per adapter
 - [`cratestack-client-dart`](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-client-dart) — crate source, including the `riverpod/` template directory referenced throughout this guide
 - [`examples/flutter-riverpod`](https://github.com/cratestack/cratestack/tree/main/examples/flutter-riverpod) — the real, running app this guide's walkthrough is drawn from
 - [TypeScript client generation](/guides/typescript-client-generation) — the sibling generator, including the additive `--swr` layout and a cross-language side-by-side comparison
