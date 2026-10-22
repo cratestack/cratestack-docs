@@ -195,7 +195,7 @@
     "builtin-function-call": {
       "patterns": [
         {
-          "match": "\\b(auth|env|dbgenerated|autoincrement|uuid|cuid|now|hasRole|inTenant|lower|not|or|and)\\b(?=\\s*\\()",
+          "match": "\\b(auth|env|dbgenerated|uuid|cuid|now|hasRole|inTenant|lower|not|or|and)\\b(?=\\s*\\()",
           "name": "support.function.builtin.cstack"
         }
       ]

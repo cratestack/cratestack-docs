@@ -25,6 +25,18 @@ emitted DDL.
 | `@default(auth().x)` | Pulls a value from the auth context. Supports nested paths (`auth().organization.id`).                     |
 | `@default(dbgenerated())` | Defers to the database default — the column must declare `DEFAULT` in SQL. This is how `Cuid` primary keys are generated in practice, e.g. `id Cuid @id @default(dbgenerated())`. |
 
+`dbgenerated()` takes no argument and must be the whole default: `cratestack check` refuses
+`@default(dbgenerated("x"))` and `@default(dbgenerated() || 'x')`, because the migration
+emitter writes no `DEFAULT` clause for the marker and anything combined with it would be
+dropped. *(The trailing-text refusal is unreleased: after 0.15.4,
+[cratestack#1167](https://github.com/cratestack/cratestack/pull/1167).)*
+
+`@default(autoincrement())` is refused *(unreleased: after 0.15.4,
+[cratestack#1128](https://github.com/cratestack/cratestack/issues/1128))*. Neither Postgres nor SQLite
+has an `autoincrement()` function, so the `DEFAULT autoincrement()` clause it used to produce
+failed when the migration was applied. For a sequence or identity column, write
+`@default(dbgenerated())` and declare the identity in hand-authored migration SQL.
+
 Auth-defaulted columns are limited to `String`/`Cuid`, `Int`, and
 `Boolean` and act as **fallbacks**: they fill the field only when the
 create input omits it. They are not enforcement.
