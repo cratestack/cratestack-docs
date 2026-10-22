@@ -432,7 +432,7 @@ auth User {
 }
 
 model User {
-  id    Int    @id @default(autoincrement())
+  id    Int    @id @default(dbgenerated())
   email String @unique
   name  String?
   role  String
@@ -441,7 +441,7 @@ model User {
 }
 
 model Post {
-  id        Int     @id @default(autoincrement())
+  id        Int     @id @default(dbgenerated())
   title     String
   published Boolean @default(false)
   authorId  Int

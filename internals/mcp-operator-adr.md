@@ -185,7 +185,7 @@ A model is exposed as a read-only resource by `@@mcp(resource: "<segment>")`:
 
 ```cstack
 model Post {
-  id        Int     @id @default(autoincrement())
+  id        Int     @id @default(dbgenerated())
   title     String
   published Boolean @default(false)
   authorId  Int
