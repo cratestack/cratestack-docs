@@ -12,7 +12,7 @@ The design is
 [ADR 0006](/internals/cose-envelope-adr). The generated Rust client signs from the first
 release after 0.14.2 ([cratestack#1007](https://github.com/cratestack/cratestack/issues/1007),
 see [The Rust client](#the-rust-client)); binding v1, including the AAD, froze in 0.15.0
-(cratestack#1082). **Binding version 2 (0.16.0, [cratestack#1123](https://github.com/cratestack/cratestack/issues/1123))
+(cratestack#1082). **Binding version 2 (0.15.2, [cratestack#1123](https://github.com/cratestack/cratestack/issues/1123))
 is a breaking wire change:** the AAD binds the digest of the op being called instead of the whole
 schema's, so a server-only schema edit no longer refuses every signed client, and a version 2
 server refuses version 1 messages. Upgrade servers and clients together, and see
@@ -143,7 +143,7 @@ with `.max_body_bytes(..)` if the router gets a larger limit.
 
 ### Keys that change at run time
 
-*(Unreleased, [cratestack#1149](https://github.com/cratestack/cratestack/issues/1149); through 0.14.2 write your own `CoseVerifierResolver`.)*
+*(Since 0.15.4, [cratestack#1149](https://github.com/cratestack/cratestack/issues/1149); through 0.15.3 write your own `CoseVerifierResolver`.)*
 `StaticVerifierResolver` is fixed when you build it. For devices or peers that enrol after the
 server starts, use `cratestack_cose::RegistryVerifierResolver`: share it as an `Arc`, give the
 envelope one clone as its `CoseVerifierResolver`, and keep one for `register` and `revoke`.
@@ -313,7 +313,7 @@ removed before the router sees the request.
   `RequestContext::extensions`), and generated handlers record it on the context
   (`ctx.verified_signer()`). It is a **fact, not an authentication**: identity stays the
   `AuthProvider`'s decision, unless you wrap the provider in
-  [`CoseAuthProvider`](#authenticate-a-signer) *(Unreleased, [cratestack#1077](https://github.com/cratestack/cratestack/issues/1077).)*
+  [`CoseAuthProvider`](#authenticate-a-signer) *(Since 0.16.0, [cratestack#1077](https://github.com/cratestack/cratestack/issues/1077).)*
 - The layer inserts `VerifiedPrincipal`, which the rate limiter and the idempotency layer key
   on (`princ:<sha256>`); see [Idempotency](./idempotency#principal-scoping) and
   [Rate limiting](./rate-limiting#key-function).
@@ -321,7 +321,7 @@ removed before the router sees the request.
 ## Authenticate a signer
 
 A signed client sends no `Authorization` header, so your header `AuthProvider` has nothing to
-authenticate and the request stays anonymous. `CoseAuthProvider` closes that gap *(Unreleased,
+authenticate and the request stays anonymous. `CoseAuthProvider` closes that gap *(since 0.16.0,
 cratestack#1077)*. It wraps the header provider and, when the header path gives no identity, asks
 the registries whether they still hold the verified signer's key. Depend on `cratestack-cose` with
 `features = ["auth"]`, and on `cratestack-auth`, which owns `DeviceKeyResolver`. Pass the wrapped
@@ -720,7 +720,7 @@ one of the existing error codes with an `envelope_*` `remote_code`
 
 ## The Dart client
 
-*(Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151); until it ships, a Dart or Flutter app cannot seal a request.)*
+*(Since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151); through 0.15.3, a Dart or Flutter app cannot seal a request.)*
 `package:cratestack_cbor/cose.dart` seals requests and opens responses for a Dart or Flutter app. It is
 not a Dart implementation of COSE: ADR 0006 section 11 keeps one, so the call goes over the bridge the
 codec already uses to the same `cratestack-cose` the server runs (`flutter_rust_bridge` on native
@@ -988,8 +988,8 @@ is the size of the whole client contract; later ones add only the ops that chang
 
 ### Upgrading from binding version 1
 
-Binding version 2 is a flag day. A 0.16 server refuses a 0.15 client's messages and a 0.16 client's
-are refused by a 0.15 server, both as the coarse unsigned `401`. Nothing in the AAD's layout moved
+Binding version 2 is a flag day. A 0.15.2-or-later server refuses a 0.15.0 or 0.15.1 client's messages
+and a 0.15.2-or-later client's are refused by a 0.15.0 or 0.15.1 server, both as the coarse unsigned `401`. Nothing in the AAD's layout moved
 except what element 7 holds, so the version number is what tells the two apart, and there is no opt-in
 to keep accepting version 1. A custom `BindingResolver` (a versioned `/v1/...` route, say) must map
 its routes to op keys: return the op id as the route, or call `ResolvedRoute::with_contract_key`;
@@ -1018,12 +1018,12 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 - **The generated Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust
   runtime rather than a second implementation, so their generated code stays unsigned; the Flutter
   runtime mirror rejects an envelope until P1. A Dart or Flutter app seals through
-  [`cratestack_cbor`](#the-dart-client) (Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)).
+  [`cratestack_cbor`](#the-dart-client) (since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)).
   The published `@cratestack/cbor-web` and the napi addon do not.
 - **A version 2 server refuses binding version 1** (0.15.0 peers), with no opt-in: upgrade the
   server and its clients together. Any future change to the AAD bumps the version again.
 - **A signer is recorded, not authenticated**, unless you wrap your provider in `CoseAuthProvider`
-  *(Unreleased, cratestack#1077)*. Device keys authenticate only with `authenticate_devices(true)`;
+  *(since 0.16.0, cratestack#1077)*. Device keys authenticate only with `authenticate_devices(true)`;
   see [Authenticate a signer](#authenticate-a-signer).
 
 ## Read next

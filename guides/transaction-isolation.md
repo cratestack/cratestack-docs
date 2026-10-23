@@ -126,7 +126,7 @@ The transaction goes in, the value plus the same transaction comes out.
 It's `FnMut`, not `Fn` — the retry loop calls the closure again on each
 serialization-failure retry, so it must be callable more than once.
 
-*(Unreleased, [cratestack#1117](https://github.com/cratestack/cratestack/issues/1117).)* The
+*(Since 0.15.0, [cratestack#1117](https://github.com/cratestack/cratestack/issues/1117).)* The
 framework's own reads for a write the body makes through `run_in_tx(&mut tx, ctx)` (create policies
 with their relation lookups, the `@version` probe, the upsert update-policy check, the `@@audit`
 bootstrap) run on that same transaction. They see the body's earlier writes, read its snapshot under

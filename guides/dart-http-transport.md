@@ -5,7 +5,7 @@ description: How a generated Dart client sends HTTP — the CratestackHttpTransp
 
 # Dart HTTP transport
 
-*(Unreleased, [cratestack#1204](https://github.com/cratestack/cratestack/issues/1204); the `*DioAdapter` classes this replaces are still the shipped surface through the last release. Upgrading from them is a one-line change per adapter, see [Migrating the Dart client to the HTTP transport](/overview/migrating-dart-http-transport).)*
+*(Since 0.16.0, [cratestack#1204](https://github.com/cratestack/cratestack/issues/1204); the `*DioAdapter` classes this replaces are the shipped surface through 0.15.4. Upgrading from them is a one-line change per adapter, see [Migrating the Dart client to the HTTP transport](/overview/migrating-dart-http-transport).)*
 
 Every package `cratestack generate-dart` writes sends through one small interface, `CratestackHttpTransport`. It sits under the two adapter interfaces the generated client already depended on, `CratestackClientAdapter` (REST) and `CratestackRpcAdapter` (RPC). Dio is one implementation of it. fespalier's `HttpTransport` is another (see [The `fespalier` preset](/guides/dart-fespalier-preset)), and an app can write its own.
 

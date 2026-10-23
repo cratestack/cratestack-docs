@@ -28,10 +28,10 @@ emitted DDL.
 `dbgenerated()` is spelled exactly that way, takes no argument and must be the whole default: `cratestack check` refuses
 `@default(dbgenerated("x"))` and `@default(dbgenerated() || 'x')`, because the migration
 emitter writes no `DEFAULT` clause for the marker and anything combined with it would be
-dropped. *(The trailing-text refusal is unreleased: after 0.15.4,
+dropped. *(The trailing-text refusal is new in 0.16.0,
 [cratestack#1167](https://github.com/cratestack/cratestack/pull/1167).)*
 
-`@default(autoincrement())` is refused *(unreleased: after 0.15.4,
+`@default(autoincrement())` is refused *(since 0.16.0,
 [cratestack#1128](https://github.com/cratestack/cratestack/issues/1128))*, in any letter case and as
 the bare word `@default(autoincrement)`. Neither Postgres nor SQLite
 has an `autoincrement()` function, so the `DEFAULT autoincrement()` clause it used to produce
