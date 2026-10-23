@@ -5,7 +5,7 @@ description: "`cratestack generate-dart --preset fespalier` — the Riverpod sur
 
 # The `fespalier` preset
 
-*(Unreleased, [cratestack#1204](https://github.com/cratestack/cratestack/issues/1204).)*
+*(Since 0.16.0, [cratestack#1204](https://github.com/cratestack/cratestack/issues/1204).)*
 
 `--preset fespalier` is the [`riverpod` preset](/guides/dart-client-generation#the-riverpod-preset) sending through [fespalier](https://github.com/fespalier/fespalier)'s `HttpTransport` (`package:fespalier_transport`) instead of Dio. An app builds its transport chain once, for example `SessionTransport(… HttpClientTransport(client))`, and every generated call sends through it, so whatever the chain does (a session, request signing, a write guard, spans) applies to the generated client with no Dio in front of it.
 
