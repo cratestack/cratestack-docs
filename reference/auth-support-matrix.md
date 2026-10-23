@@ -584,7 +584,7 @@ Treat these as future work — not all of them fail the same way:
 ownerId String @default(lower(auth().email))
 ```
 
-The first two are genuine parser rejections (Prisma's `?[...]` collection-predicate syntax isn't part of this grammar — use dotted `some`/`every`/`none` instead; comparing a boolean-returning term like `hasRole(...)` with `==` isn't a supported shape). The third is refused by `cratestack check` *(unreleased: after 0.15.4, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209))*: `auth()` is not a database function, so it cannot appear inside a database expression. An auth default is exactly `@default(auth().<path>)`; derive the lowercase value in a procedure instead.
+The first two are genuine parser rejections (Prisma's `?[...]` collection-predicate syntax isn't part of this grammar — use dotted `some`/`every`/`none` instead; comparing a boolean-returning term like `hasRole(...)` with `==` isn't a supported shape). The third is refused by `cratestack check` *(unreleased: after 0.16.0, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209))*: `auth()` is not a database function, so it cannot appear inside a database expression. An auth default is exactly `@default(auth().<path>)`; derive the lowercase value in a procedure instead.
 
 ## Security Notes
 

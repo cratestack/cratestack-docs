@@ -44,7 +44,7 @@ NOT NULL violation.
 
 ### Default functions
 
-*(Unreleased: after 0.15.4, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209).)*
+*(Unreleased: after 0.16.0, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209).)*
 
 A function-shaped default ends up in the migration's `DEFAULT` clause, so `cratestack check` only accepts functions it knows the database can run.
 
