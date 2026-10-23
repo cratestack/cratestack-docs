@@ -499,7 +499,7 @@ external_aad = bstr .cbor [
   routers and clients put the envelope on the wire (cratestack#1006, #1007). (Decision 2026-09-26,
   taken when v0.13.0 was cut: tying the freeze to the crate's first release would have forced a new
   version for #1065 with no peer to be compatible with.)
-- **Version 2** (cratestack#1123, 2026-09-30, 0.16.0) replaces element 7 with `contract_sha`, the
+- **Version 2** (cratestack#1123, 2026-09-30, 0.15.2) replaces element 7 with `contract_sha`, the
   called op's contract digest. Every other element keeps its position, so the array lengths (9 and
   12) are unchanged, and the version number is the domain separation: the same 32 bytes under 1 and
   2 never produce the same AAD.
@@ -793,7 +793,7 @@ is no second implementation in TS or Dart. The TS cbor-seq scanner stays for fra
 verification (hashing, signature checks) goes through the wasm/napi exports. Generated Dart clients
 that bypass the Rust runtime require the runtime for signed mode until there is demand.
 
-*Implementation status (Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)); the decision above is unchanged.*
+*Implementation status (since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)); the decision above is unchanged.*
 The Dart and Flutter clients now reach the one implementation through the bridge: `cratestack_cbor`
 exposes `cratestack-cose` over `flutter_rust_bridge` natively and the `cratestack-cbor-wasm` build on
 the web, as `package:cratestack_cbor/cose.dart`. That release seals with in-memory keys (HMAC and

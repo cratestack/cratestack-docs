@@ -42,7 +42,7 @@ Once the CLI binary is installed, drop the `cargo run -p cratestack-cli --` pref
 
 - **`default`** — one monolithic `lib/src/models.dart` and one monolithic `lib/src/apis.dart`. This layout is unchanged from before the `riverpod` preset existed, and it stays the default — you don't need `--preset` to get it. It is **not** byte-identical output anymore, though: as of the builder-generation move (see [The `--run-build-runner` flag](#the-run-build-runner-flag) below), every data class in `models.dart` now carries a `@CratestackBuilder(...)` annotation and the file gains a `part 'models.builder.dart';` directive, so a `default`-preset regeneration now needs a `build_runner` pass it never needed before.
 - **`riverpod`** (opt-in, epic [#297](https://github.com/cratestack/cratestack/issues/297)) — one file per model under `lib/src/models/` (a shared `lib/src/models/shared_types.dart` for cross-model types like `Page`/`PageInfo`), procedures in their own `lib/src/procedures.dart`, and package-wide DI providers (`xAdapterProvider`, `xClientProvider`) living in `lib/src/client.dart`. Every model and procedure-argument file also declares a full set of generated `@riverpod` providers — see [The `riverpod` preset](#the-riverpod-preset) below.
-- **`fespalier`** *(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204))* — the `riverpod` preset sending through fespalier's `HttpTransport` (`package:fespalier_transport`) instead of Dio. No `dio` in the pubspec; an app overrides `<prefix>TransportProvider` and `<prefix>BaseUriProvider` with its transport chain. Everything else is the `riverpod` preset's. See [The `fespalier` preset](/guides/dart-fespalier-preset).
+- **`fespalier`** *(since 0.16.0, [#1204](https://github.com/cratestack/cratestack/issues/1204))* — the `riverpod` preset sending through fespalier's `HttpTransport` (`package:fespalier_transport`) instead of Dio. No `dio` in the pubspec; an app overrides `<prefix>TransportProvider` and `<prefix>BaseUriProvider` with its transport chain. Everything else is the `riverpod` preset's. See [The `fespalier` preset](/guides/dart-fespalier-preset).
 
 ```bash
 cargo run -p cratestack-cli -- generate-dart \
@@ -58,7 +58,7 @@ There's no separate flag for this — exactly like the TypeScript generator, `ge
 
 ### Sending HTTP: the transport seam
 
-*(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204).)* Every generated package sends through a pure-Dart `CratestackHttpTransport` seam, with one adapter per protocol built over it: `CratestackHttpAdapter` (REST) and `CratestackRpcHttpAdapter` (RPC). In the `default` and `riverpod` presets Dio is one transport, `CratestackDioTransport(dio)`, in `lib/src/dio_transport.dart`; the four `*DioAdapter` classes are gone.
+*(Since 0.16.0, [#1204](https://github.com/cratestack/cratestack/issues/1204).)* Every generated package sends through a pure-Dart `CratestackHttpTransport` seam, with one adapter per protocol built over it: `CratestackHttpAdapter` (REST) and `CratestackRpcHttpAdapter` (RPC). In the `default` and `riverpod` presets Dio is one transport, `CratestackDioTransport(dio)`, in `lib/src/dio_transport.dart`; the four `*DioAdapter` classes are gone.
 
 ```dart
 final adapter = CratestackHttpAdapter(
@@ -110,7 +110,7 @@ final flutterRiverpodClientClientProvider = Provider<FlutterRiverpodClientCrates
 });
 ```
 
-`xAdapterProvider` throws until overridden — that's the single override point a consumer supplies to point the generated client at a real server (or a mock, in tests). The adapter is `CratestackHttpAdapter` (REST) or `CratestackRpcHttpAdapter` (RPC) over a transport, and Dio is one transport, `CratestackDioTransport` *(Unreleased, [#1204](https://github.com/cratestack/cratestack/issues/1204); it replaces the removed `CratestackDioAdapter`, see [the migration](/overview/migrating-dart-http-transport))*:
+`xAdapterProvider` throws until overridden — that's the single override point a consumer supplies to point the generated client at a real server (or a mock, in tests). The adapter is `CratestackHttpAdapter` (REST) or `CratestackRpcHttpAdapter` (RPC) over a transport, and Dio is one transport, `CratestackDioTransport` *(since 0.16.0, [#1204](https://github.com/cratestack/cratestack/issues/1204); it replaces the removed `CratestackDioAdapter`, see [the migration](/overview/migrating-dart-http-transport))*:
 
 ```dart
 ProviderScope(
@@ -320,7 +320,7 @@ The choice is purely additive. Every other emitted file is byte-identical either
 
 ### Signed requests
 
-*(Unreleased, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* The generated client sends unsigned requests. To call a server behind the
+*(Since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* The generated client sends unsigned requests. To call a server behind the
 [COSE envelope layer](/guides/signed-transport), import `package:cratestack_cbor/cose.dart` next to the
 codec: it seals and opens through the same Rust implementation as the server, and a codec-only app
 imports nothing new. The generated `cratestackOpContracts` holds the per-op digests a seal binds. See
@@ -535,8 +535,8 @@ format.
 - **Update/delete controllers are single, global controllers per model, not keyed by id.** `<Model>UpdateController`/`<Model>DeleteController`'s `save`/`delete` methods take the target `id` as an argument, rather than the provider itself being a family keyed by id. Fine at small-to-medium screen scale; a screen with many concurrent in-flight updates per row might want a per-row wrapper of its own.
 - **List/get providers forwarding `query`/`input` needs a live server that understands it.** The provider parameter is forwarded as-is to the underlying REST or RPC call — there's no client-side filtering fallback if the server doesn't support a given filter.
 - **RPC transport has no typed query-builder class.** Unlike REST's `CratestackListQuery`, an RPC list provider's optional argument stays a raw `IMap<String, Object?>` — see [Using the riverpod preset over RPC](#using-the-riverpod-preset-over-rpc) above.
-- **Call options cannot carry transport attributes** *(Unreleased)*. `CratestackHttpRequest.extra` exists and a transport forwards it, but neither `CratestackCallOptions` nor `CratestackRpcCallOptions` can fill it. Tracked in [cratestack#1207](https://github.com/cratestack/cratestack/issues/1207).
-- **An `AuthProvider` refusal cannot shape its response body** *(Unreleased)*. The generated handler encodes any auth error as the standard `{code, message}` envelope, so a client cannot tell refusal reasons apart by a body member. Tracked in [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).
+- **Call options cannot carry transport attributes** *(since 0.16.0)*. `CratestackHttpRequest.extra` exists and a transport forwards it, but neither `CratestackCallOptions` nor `CratestackRpcCallOptions` can fill it. Tracked in [cratestack#1207](https://github.com/cratestack/cratestack/issues/1207).
+- **An `AuthProvider` refusal cannot shape its response body** *(since 0.16.0)*. The generated handler encodes any auth error as the standard `{code, message}` envelope, so a client cannot tell refusal reasons apart by a body member. Tracked in [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).
 
 ## See also
 
@@ -551,4 +551,4 @@ format.
 - [`cratestack_annotations`](https://pub.dev/packages/cratestack_annotations) — the runtime `@CratestackBuilder(...)` annotation every generated data class carries
 - [`cratestack_builder`](https://pub.dev/packages/cratestack_builder) — the `build_runner` generator that expands the annotation into `{Class}Builder`
 - [RPC transport](/guides/rpc-transport) — full design for `transport rpc`
-- [Signed transport: the Dart client](/guides/signed-transport#the-dart-client) — sealing requests and opening responses with `cratestack_cbor` (Unreleased)
+- [Signed transport: the Dart client](/guides/signed-transport#the-dart-client) — sealing requests and opening responses with `cratestack_cbor` (since 0.15.4)

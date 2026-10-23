@@ -90,7 +90,7 @@ CreateMaterializedView, DropMaterializedView
 CreateEnum, AlterEnumAddVariant, RenameEnumVariant, DropEnumVariant, DropEnum
 ```
 
-Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers `@db_enforce`-promoted validators (see "Validator promotion" below) and the CHECK constraint of an `enum`-typed field. A hand-written `@@check` attribute was never implemented: through 0.14.0 it parsed and did nothing, and on `main` (unreleased) it is refused as an unknown block attribute. `AddForeignKey` / `DropForeignKey` covers foreign keys promoted from `@relation` (see "Foreign-key promotion" below).
+Enum ops are emitted only by the Postgres SQL emitter; the SQLite emitter ignores them (see "Enums" below). `AddCheck` / `DropCheck` covers `@db_enforce`-promoted validators (see "Validator promotion" below) and the CHECK constraint of an `enum`-typed field. A hand-written `@@check` attribute was never implemented: through 0.14.0 it parsed and did nothing, and since 0.14.1 it is refused as an unknown block attribute. `AddForeignKey` / `DropForeignKey` covers foreign keys promoted from `@relation` (see "Foreign-key promotion" below).
 
 Each op carries a **destructiveness class**:
 
@@ -195,7 +195,7 @@ The generator emits CHECK constraints with stable, predictable names — `<table
 
 **Destructiveness for validator changes:**
 
-> **Implementation note.** The shipped diff engine classifies these more conservatively than proposed below: any non-enum `CHECK` added to a table that already exists is `blocking` (with a scaffolded `up.pre.sql`), not `lossy`, and a widened range is written as a drop plus a re-add, so it is labelled `blocking` too; `--allow-destructive` does not apply. A `CHECK` on a table the same migration creates is `safe` *(Unreleased, [cratestack#1129](https://github.com/cratestack/cratestack/issues/1129).)* The current behaviour is documented in [Validators](../guides/validators); the list below is the original proposal.
+> **Implementation note.** The shipped diff engine classifies these more conservatively than proposed below: any non-enum `CHECK` added to a table that already exists is `blocking` (with a scaffolded `up.pre.sql`), not `lossy`, and a widened range is written as a drop plus a re-add, so it is labelled `blocking` too; `--allow-destructive` does not apply. A `CHECK` on a table the same migration creates is `safe` *(Since 0.16.0, [cratestack#1129](https://github.com/cratestack/cratestack/issues/1129).)* The current behaviour is documented in [Validators](../guides/validators); the list below is the original proposal.
 
 * **Loosening** a `@db_enforce` validator (widening a range, dropping the attribute, lowering a length min) — safe.
 * **Tightening** a `@db_enforce` validator (narrowing a range, raising a length min) — **lossy** unless data already conforms. The generator emits the change behind `--allow-destructive`, and the developer is expected to either resolve violators in `up.pre.sql` or use the application's normal data-migration path before applying.
