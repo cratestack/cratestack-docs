@@ -1,6 +1,6 @@
 ---
 title: Reducing payload size
-description: Which levers actually shrink CrateStack responses and storage, ranked by measured effect — compression, CBOR, projections, then type choices in the .cstack schema, including when enums beat strings and what explicit enum ordinals would add.
+description: Which levers actually shrink CrateStack responses and storage, ranked by measured effect — compression, CBOR, projections, then type choices in the .cstack schema, including when enums beat strings and when to store them as explicit ordinals.
 ---
 
 # Reducing payload size
@@ -14,9 +14,9 @@ what they measurably save, so you spend schema churn where it pays.
 1. Compress responses. On a list endpoint that alone removes 65–75 % of the bytes.
 2. Let clients speak CBOR. It is already the default, except for the TypeScript REST client.
 3. Ask for less: `?fields=`, `includeFields[path]`, `@@paged`, `@server_only`.
-4. Then pick compact types. Model closed sets as `enum`, not `String`. Explicit enum
-   ordinals are a **proposed** feature (see [below](#enum-ordinals-proposed)). They
-   help most where nothing compresses the bytes.
+4. Then pick compact types. Model closed sets as `enum`, not `String`. Explicit
+   [enum ordinals](#enum-ordinals) *(unreleased)* store and send an enum as a small integer.
+   They help most where nothing compresses the bytes.
 
 Every number below was measured with the framework's own CBOR serializer
 (`minicbor-serde` 0.7.1, configured as `CborCodec` configures it) and `serde_json`. The method
@@ -112,6 +112,7 @@ REST and RPC.
 |---|---|---|
 | `String` | `TEXT` | text |
 | `enum` | `TEXT` + membership `CHECK` | text (the variant name) |
+| ordinal `enum` *(unreleased)* | `SMALLINT` + membership `CHECK` | integer |
 | `DateTime` | `TIMESTAMPTZ` (8 B) | text (RFC 3339) |
 | `Uuid` | `UUID` (16 B) | 16 B binary on CBOR, text on JSON |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
@@ -126,16 +127,16 @@ rest.
 
 ### Closed sets: use an `enum`, not a `String`
 
-A `status String` and a `status Status` cost the same bytes today: both go out as text. Use the
-enum anyway, because the gains are correctness:
+A `status String` and a `status Status` cost the same bytes: both go out as text, until the enum
+is made [ordinal](#enum-ordinals). Use the enum anyway, because the gains are correctness:
 
 - The column gets a membership `CHECK`, so the database refuses a typo'd status.
 - A filter like `?status=Pendng` is refused, and the error names the accepted values.
 - Generated clients get a real type: a TypeScript string union, a Dart `enum`, a Rust `enum`.
 - Policy literals (`auth().role == admin`) are checked against the variants at compile time.
 
-It also puts the field in a position to move to ordinals later without touching application
-code (next section). Good candidates: statuses, event kinds, roles, channels, categories.
+It also puts the field in a position to move to [ordinals](#enum-ordinals) later without
+touching application code. Good candidates: statuses, event kinds, roles, channels, categories.
 
 Keep `String` for sets that churn outside your release cycle. Currencies are `String @iso4217`
 for exactly that reason ([choosing types for money](../reference/scalars#choosing-types-for-money)).
@@ -168,19 +169,15 @@ Every row repeats every key, so `createdAt` costs 10 bytes per row before its va
 names, not short ones; `?fields=` and compression handle the rest. No attribute renames a field
 on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 
-## Enum ordinals (proposed)
+## Enum ordinals
 
-<Warning>
-**Not shipped.** No CrateStack release stores or sends an enum as its ordinal. This section
-describes the design in
-[`docs/design/enum-ordinals.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/enum-ordinals.md),
-which is being built in slices, so you can shape your schema for it today. Writing `Pending = 1`
-in a `.cstack` file is refused: on 0.16.0 it is a parse error, and on `main` `cratestack check`
-says the enum "declares explicit ordinals, which this release parses but does not generate".
-</Warning>
+<Note>
+**Unreleased.** Ordinal enums are on the framework's `main` branch, not in a release: on 0.16.0,
+`Pending = 1` is a parse error. The design and its measurements are in
+[`docs/design/enum-ordinals.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/enum-ordinals.md).
+</Note>
 
-The proposal stores and sends an enum as a small integer instead of its name, with the mapping
-written in the schema:
+Number every variant, and the enum is stored and sent as that number instead of its name:
 
 ```cstack
 enum PaymentStatus {
@@ -193,25 +190,47 @@ enum PaymentStatus {
 }
 ```
 
-The column becomes a `SMALLINT` (2 B) instead of `TEXT`. The value goes out as a 1–3 byte integer
-instead of its name. Application code keeps using names: TypeScript keeps its
-`'Pending' | 'Approved'` union, Dart keeps its enum constants, and URLs keep
-`?status=Approved`. URLs take names only: `?status=2` will be refused, so a query string
-reads the same before and after an enum becomes ordinal.
+| Where | String enum | Ordinal enum |
+|---|---|---|
+| Postgres column | `TEXT` + `CHECK (status IN ('Pending', …))` | `SMALLINT` (2 B) + `CHECK (status IN (1, 2, 3, 5))` |
+| SQLite | the name | the integer |
+| CBOR or JSON body, REST and RPC | the name (`Pending`: 8 B CBOR) | the number (1 B) |
+| `@default(Pending)` | `DEFAULT 'Pending'` | `DEFAULT 1` |
+| Query string | `?status=Approved` | `?status=Approved`; `?status=2` is refused |
+| Policy | `status != Refunded` | `status != Refunded`, compared as a number |
+
+Application code keeps using names:
+
+- **Rust:** the same enum, now `#[repr(i16)]`, with `ordinal()` and `TryFrom<i16>`; `Display` and
+  `FromStr` still use names.
+- **TypeScript:** the type stays `'Pending' | 'Approved' | …`. Responses are revived from numbers
+  to names. Requests still send names, so a TypeScript client does not save bytes on what it sends.
+- **Dart:** the same constants, with `int wireValue` beside `wireName`.
+- **Studio** shows `Approved (2)`. **WireMock** stubs carry numbers. An MCP tool's input schema
+  lists each number with its variant's name as the title.
+
+A server decodes a body's ordinal enum from the number **or** the name, so a client still sending
+names keeps working. It always answers with the number.
 
 ### Why the mapping must be explicit and enforced
 
 The tempting shortcut is to use each variant's position in the declaration. That breaks
 silently the first time someone sorts the variants or inserts one in the middle: every stored
-row now means a different status, and nothing errors. So the design makes the mapping explicit
-and **append-only**:
+row now means a different status, and nothing errors. So the mapping is explicit and
+**append-only**:
 
-- Every variant has a number, or none does. Numbers are unique.
+- Every variant has a number, or none does. Numbers are unique, from 0 to 32767.
 - `cratestack migrate diff` refuses to change a variant's number, to remove a variant without
-  listing its number in `@@reserved`, and to reuse a number.
+  listing its number in `@@reserved`, to drop a number from `@@reserved`, and to reuse a reserved
+  number.
 - Renaming a variant while keeping its number is allowed and moves no data.
-- `cratestack diff` reports removed and renamed variants as breaking. Today it does not look at
-  enums at all; the design fixes that for string enums too.
+- Removing a variant, here or from a string enum, is a **blocking** migration: rows may still
+  hold the value, so `up.pre.sql` is scaffolded with
+  `UPDATE … SET status = <a value the enum keeps> WHERE status IN (5)` to adapt *(unreleased)*.
+- `cratestack diff` reports removed and added variants, for every enum
+  ([schema diff](../tooling/schema-diff)).
+- An `auth` field may not have an ordinal enum type: a claim's encoding is the auth provider's
+  choice, and a policy comparing it with a number could fail open.
 
 ### "We don't need readable values in the database any more"
 
@@ -226,15 +245,30 @@ So use ordinals where values are high-volume, stable and machine-read: event kin
 hot tables, anything streamed. Keep names for small tables and anything an on-call engineer or
 auditor reads raw.
 
-### Preparing for ordinals today
+### Converting an existing enum
 
-- Model closed sets as `enum` now. Converting an enum to ordinals is planned to be one schema
-  edit that `migrate diff` turns into a data migration. Converting a `String` column is a
-  redesign.
-- Treat variant order as meaningless and never reorder for meaning. Leave gaps in your mental
-  numbering where you expect growth.
-- Never delete a variant that has ever been stored. The design keeps the number reserved
-  forever, and your data already depends on the name today.
+Add the numbers to the enum and run `cratestack migrate diff`. It writes the data migration:
+
+- **Postgres:** the column changes type with `USING (CASE status WHEN 'Pending' THEN 1 … END)`,
+  and its default and `CHECK` follow. It is classified lossy (it rewrites the table under an
+  exclusive lock), so `migrate diff` writes it only with `--allow-destructive`.
+- **SQLite:** `UPDATE … SET status = CASE status WHEN 'Pending' THEN 1 … END`.
+
+Removing the numbers converts back the same way. That is why closed sets should be an `enum`
+now: converting an enum is one schema edit, converting a `String` column is a redesign.
+
+On the wire the conversion is a breaking change. Regenerate the clients and deploy them with the
+server. Clients you cannot update in lockstep, such as installed mobile apps, are the hard case:
+a procedure can serve the new shape beside the old one under
+[`@api_version`](../architecture/http-transport-contract#procedure-routes), but model routes are
+not versioned, so an enum those apps read through a model can only become ordinal once they have
+updated.
+
+### Limits
+
+- Sorting by an ordinal enum (`?sort=status`) orders by number.
+- `cratestack migrate` reading a live Postgres reports drift on an ordinal column, because it
+  does not map `SMALLINT` or parse the numeric `CHECK`.
 
 ## Measuring your own API
 
