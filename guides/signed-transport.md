@@ -828,6 +828,129 @@ to the stripped Linux x86_64 library and about 270 KB to the web `.wasm`, for ev
 `cratestack_cbor`, signed or not. `@cratestack/cbor-web` on npm is built without it and stays
 codec-only.
 
+## Claim objects
+
+*(Unreleased: after 0.16.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
+A claim object is a signed payload that does **not** die with a request. It is a separate format in
+`cratestack-cose`, built for a payload that one device signs offline and another device delivers
+later: a QR code scanned by a terminal that is online, a voucher handed over by a messaging app. The
+envelope above cannot carry that. It is bound to one request, and the layer refuses it outside a
+±300 s `iat` window (`DEFAULT_SKEW_SECS`) or on a repeated `cti`. Whether a claim object has
+expired, or may be presented twice, is the **application's** decision, so the crate does not make it.
+
+| | Transport envelope | Claim object |
+|---|---|---|
+| Bound to | one request (service, route, query, op contract) | nothing but its own `typ` and the `external_aad` you choose |
+| Freshness | `iat` within ±300 s, enforced by the layer | none; `exp` is yours to check |
+| Replay | refused by the nonce store | none; `cti` is yours to record |
+| Opened by | `EnvelopeLayer` / `ClientEnvelope` | `open_claims`, called from your own code |
+| Algorithms | Ed25519, ESP256, HMAC (`COSE_Mac0`) | Ed25519 and ESP256 only |
+
+Use the envelope for a call between a client and a service. Use a claim object when the payload
+itself must travel on its own and be verified by whoever receives it. A claim object is not a
+replacement for the envelope on a request: it carries no binding to one and does no replay
+protection.
+
+### Sign and open
+
+```rust
+use cratestack::cose::{CwtClaims, Ed25519Signer, StaticVerifierResolver, open_claims, sign_claims};
+
+const TYP: &str = "application/vnd.example.grant+cwt";
+
+// Offline, on the issuing device.
+let signer = Ed25519Signer::from_seed(&seed);
+let claims = CwtClaims {
+    aud: Some("terminal-fleet".into()),
+    exp: Some(now + 3_600),
+    iat: Some(now),
+    cti: Some(grant_id.to_vec()), // unique, if you want it single-use
+};
+let bytes = sign_claims(&signer, TYP, &claims, &payload, b"tenant-1").await?;
+
+// Later, on whichever device or service receives the bytes.
+let resolver = StaticVerifierResolver::new().with_key(signer.verify_key());
+let opened = open_claims(&resolver, &bytes, TYP, b"tenant-1").await?;
+
+// open_claims has verified the signature and nothing else. Now decide.
+if opened.claims.exp.is_none_or(|exp| exp < now) { /* expired, or never meant to be accepted */ }
+if opened.claims.aud.as_deref() != Some("terminal-fleet") { /* not for us */ }
+if !seen_ids.insert(opened.claims.cti.clone()) { /* already accepted once */ }
+let grant = opened.payload; // exactly the bytes that were signed
+```
+
+`sign_claims(signer, typ, &CwtClaims, payload, external_aad)` returns the object's bytes.
+`open_claims(resolver, bytes, expected_typ, external_aad)` returns an `OpenedClaims`: the `kid`, the
+`alg`, the `key_thumbprint` of the key that verified (two keys can share a `kid`, so the thumbprint
+identifies the signer), the `claims` and the `payload`. The signer and the resolver are the
+envelope's own `CoseSigner` and `CoseVerifierResolver`, so an in-process key, a KMS or an HSM all
+work, and `StaticVerifierResolver` and `RegistryVerifierResolver` resolve keys as before.
+
+### What the crate checks, and what it leaves to you
+
+`open_claims` verifies the signature and the `typ`. It does **not** read a clock and it does **not**
+remember anything. In particular:
+
+- **An object with no `exp` never expires.** The same bytes open as many times as they are
+  presented. Put an `exp` in every object that should not live forever, and compare it with your
+  own clock.
+- **`aud` is not compared.** Check it against the audience you serve.
+- **`cti` is not recorded.** To make an object single-use, give it a `cti` and keep the ones you
+  accepted, in a store whose lifetime matches the object's.
+- **Verified is not fresh.** The `OpenedClaims` doc says so on purpose: a valid signature means
+  the holder of the key signed these bytes at some point, nothing more.
+
+### The wire shape
+
+A tagged `COSE_Sign1` (tag 18), RFC 9052:
+
+```text
+18([
+  protected   : bstr .cbor { 1: alg, 4: kid, ? 15: { ? 3: aud, ? 4: exp, ? 6: iat, ? 7: cti }, 16: typ },
+  unprotected : {},
+  payload     : bstr,         ; embedded, never detached
+  signature   : bstr
+])
+```
+
+- `alg` is Ed25519 (`-19`) or ESP256 (`-9`), the fully specified ids of RFC 9864; `kid` is the 8-byte thumbprint prefix, as in the envelope.
+- Label `15` carries the CWT claims (RFC 8392, in a COSE header by RFC 9597). Each claim is written
+  only when present. `aud` is a single string of at most `MAX_AUD_LEN` (256) bytes, `exp` and `iat`
+  are whole seconds since the Unix epoch, and `cti` is 1 to `MAX_CTI_LEN` (64) bytes.
+- Label `16` is `typ` (RFC 9596), **mandatory**, 1 to `MAX_TYP_LEN` (128) bytes. It names what the
+  object is, it is signed, and `open_claims` refuses any other (`WrongType`), so an object minted
+  for one purpose cannot be presented as another.
+- `external_aad` is signed but not sent: the opener must supply the same bytes. Put in it what the
+  object is bound to without carrying, such as a tenant or a purpose. Empty is fine.
+- Encoding is deterministic (RFC 8949 section 4.2.1) and an ESP256 signature is low-`s`. The opener is
+  as strict as the envelope's: no unknown, duplicate or out-of-order label, no non-minimal or
+  indefinite head, nothing unprotected, no detached payload, no trailing bytes.
+
+### Kept apart from the envelope
+
+The envelope's parser refuses header label `16` and the claim opener requires it. So a claim object
+presented to the `EnvelopeLayer` is refused, and an envelope presented to `open_claims` is
+`Malformed`, even when both were correctly signed. `cratestack-cose`'s
+`tests/claims_domain_separation.rs` checks both directions.
+
+### Errors
+
+`open_claims` and `sign_claims` return `ClaimsError` (`#[non_exhaustive]`, so match with a
+wildcard arm):
+
+| Variant | Meaning |
+|---|---|
+| `Malformed` | Not a canonical, tagged claim object: a wrong tag or encoding, an unknown or out-of-order label, a non-empty unprotected header, a detached payload, a missing `typ` (a transport envelope looks like this), a MAC algorithm, trailing bytes. |
+| `WrongType` | Well formed, but its `typ` is not the one expected. |
+| `Unverified` | No key the resolver returned verified it. An unknown `kid`, a bad signature and a different `external_aad` are the same answer on purpose. |
+| `Resolver` | The key resolver failed: an outage, not a verdict on the object. |
+| `Signer` | The signer failed: an outage, not a verdict on the inputs. |
+| `Misuse` | Your inputs or signer are wrong: an HMAC signer, a `kid` that is not 8 bytes, an empty or oversized `typ`, `aud` or `cti`, a signature of the wrong length. |
+
+The verdict variants carry nothing about the bytes received, so forwarding one to the peer leaks
+nothing beyond the variant. `ClaimsError::into_error()` maps `Malformed`, `WrongType` and
+`Unverified` to the envelope's coarse `401`, and everything else to a `500`.
+
 ## Evolving a schema under signed clients
 
 A signed request binds the digest of **the op it calls** (binding version 2). That digest covers the
@@ -1013,6 +1136,9 @@ a signed request to a route with no contract row is a logged `500`. The shared v
   accepted only when it equals the server's current one, so any client-facing change (a new op, an
   edit to any op, locked or not) refuses a signed batch from an older client with the `426`.
   Per-frame digests are a follow-up.
+- **A claim object has no freshness or replay check.** It is a different format from the envelope
+  (see [Claim objects](#claim-objects)): the crate verifies the signature and leaves `exp`, `aud`
+  and `cti` to your code. *(Unreleased: after 0.16.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The generated Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust
@@ -1031,3 +1157,4 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 1. [ADR 0006](/internals/cose-envelope-adr) for the envelope, the AAD layout and the threat model
 2. [Idempotency](./idempotency) and [Rate limiting](./rate-limiting), which key on the principal the layer inserts
 3. [Auth provider](./auth-provider) for identity, which the envelope does not decide
+4. [Claim objects](#claim-objects) for a signed payload that is delivered later, outside any request
