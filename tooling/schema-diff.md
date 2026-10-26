@@ -75,7 +75,7 @@ cratestack diff old.cstack new.cstack --json
 
 ## Classification
 
-Models, fields, and procedures are matched **by name only** — the same rename-agnostic philosophy
+Models, fields, procedures, and enums are matched **by name only** — the same rename-agnostic philosophy
 `cratestack migrate diff` uses for DB schema diffing. A rename shows up as a removal plus an addition,
 not as a rename; there is no heuristic rename detection to avoid false positives.
 
@@ -100,6 +100,12 @@ Each change lands in one of three buckets:
 * Adding [`@@internal("action")`](../reference/field-attributes#route-suppression) to a
   model action — the route, the RPC dispatch arm and the generated client method all disappear, so a
   PR that suppresses an action with live consumers fails the gate.
+* *(Unreleased on `main`.)* Removing an enum, or removing a variant from one.
+* *(Unreleased.)* Adding a variant to an enum that can appear in a **response**: one reachable from
+  any model, view, procedure result or query result, through fields, `type`s and generic arguments.
+  A client generated from the old schema refuses a value it does not know (the generated Dart
+  decoders throw `ArgumentError`, the Rust ones fail to deserialize), so ship regenerated clients
+  first. The reachability check is conservative: a `@server_only` field still counts.
 
 ### Additive
 
@@ -112,6 +118,8 @@ Each change lands in one of three buckets:
 * Removing `@@internal("action")` — restoring a suppressed action adds a route and a client method
   back. Additive for what a schema-only diff can observe: it cannot see a consumer's hand-written
   replacement handler colliding with the regenerated route at the same path.
+* *(Unreleased.)* Adding an enum, or adding a variant to an enum that only appears in **requests**
+  (procedure arguments and the types they use).
 
 ### Internal-only
 
@@ -121,6 +129,8 @@ Each change lands in one of three buckets:
   Each declared `@@unique([...])` is tracked as its own constraint — a model carrying several reports
   each add/remove separately rather than collapsing them into one entry. Each `@@internal("action")`
   declaration is keyed independently for the same reason.
+* *(Unreleased.)* Reordering an enum's variants. The wire carries names, so only declaration order
+  changes, and with it the first variant, which is the generated Rust `Default`.
 
 ## Known gaps
 
@@ -130,10 +140,12 @@ taxonomy. Explicitly out of scope for now:
 * **Behavioral (non-shape) breaking changes.** `@@soft_delete` changes which rows `.list()`/`.get()`
   return; that's a real behavior change for callers, but it doesn't change the response *type*, so it's
   reported as internal-only today.
-* **Views, mixins (as declarations), and enums are not diffed directly.** Mixin fields are already
+* **Views and mixins (as declarations) are not diffed directly.** Mixin fields are already
   inlined into `Model.fields` by the parser before this tool sees them, so a mixin field change is
   caught as a field change on every model that uses the mixin — but the mixin declaration itself, and
-  view/enum definitions, aren't compared.
+  view definitions, aren't compared. Enums were in this list until the change on `main` above; in
+  0.16.0 and earlier an enum change reports nothing at all.
+* **`type` declarations are not diffed directly** either; a field change on a `type` is invisible.
 * **Policy (`@@allow`/`@@deny`) changes** are not diffed — a policy that goes from permissive to
   restrictive is an authorization-breaking change this tool doesn't yet see.
 * **Field-level attribute changes** other than what feeds the type/arity/default checks above (e.g.
