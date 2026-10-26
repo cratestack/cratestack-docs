@@ -171,11 +171,12 @@ on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 ## Enum ordinals (proposed)
 
 <Warning>
-**Not implemented.** Nothing in this section exists in any CrateStack release. It describes the
-proposed design in
+**Not shipped.** No CrateStack release stores or sends an enum as its ordinal. This section
+describes the design in
 [`docs/design/enum-ordinals.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/enum-ordinals.md),
-so you can shape your schema for it today. Writing `Pending = 1` in a `.cstack` file now is a
-parse error.
+which is being built in slices, so you can shape your schema for it today. Writing `Pending = 1`
+in a `.cstack` file is refused: on 0.16.0 it is a parse error, and on `main` `cratestack check`
+says the enum "declares explicit ordinals, which this release parses but does not generate".
 </Warning>
 
 The proposal stores and sends an enum as a small integer instead of its name, with the mapping
