@@ -224,6 +224,9 @@ row now means a different status, and nothing errors. So the mapping is explicit
   listing its number in `@@reserved`, to drop a number from `@@reserved`, and to reuse a reserved
   number.
 - Renaming a variant while keeping its number is allowed and moves no data.
+- Removing a variant, here or from a string enum, is a **blocking** migration: rows may still
+  hold the value, so `up.pre.sql` is scaffolded with
+  `UPDATE … SET status = <a value the enum keeps> WHERE status IN (5)` to adapt *(unreleased)*.
 - `cratestack diff` reports removed and added variants, for every enum
   ([schema diff](../tooling/schema-diff)).
 - An `auth` field may not have an ordinal enum type: a claim's encoding is the auth provider's
@@ -247,8 +250,8 @@ auditor reads raw.
 Add the numbers to the enum and run `cratestack migrate diff`. It writes the data migration:
 
 - **Postgres:** the column changes type with `USING (CASE status WHEN 'Pending' THEN 1 … END)`,
-  and its default and `CHECK` follow. It is classified lossy: it rewrites the table under an
-  exclusive lock.
+  and its default and `CHECK` follow. It is classified lossy (it rewrites the table under an
+  exclusive lock), so `migrate diff` writes it only with `--allow-destructive`.
 - **SQLite:** `UPDATE … SET status = CASE status WHEN 'Pending' THEN 1 … END`.
 
 Removing the numbers converts back the same way. That is why closed sets should be an `enum`
@@ -264,9 +267,6 @@ updated.
 ### Limits
 
 - Sorting by an ordinal enum (`?sort=status`) orders by number.
-- Removing a reserved variant narrows the `CHECK`, and `migrate diff` does not flag it as
-  destructive, as for a string enum. Rows still holding the number fail the migration when it
-  runs.
 - `cratestack migrate` reading a live Postgres reports drift on an ordinal column, because it
   does not map `SMALLINT` or parse the numeric `CHECK`.
 
