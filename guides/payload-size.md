@@ -195,7 +195,8 @@ enum PaymentStatus {
 The column becomes a `SMALLINT` (2 B) instead of `TEXT`. The value goes out as a 1–3 byte integer
 instead of its name. Application code keeps using names: TypeScript keeps its
 `'Pending' | 'Approved'` union, Dart keeps its enum constants, and URLs keep
-`?status=Approved`.
+`?status=Approved`. URLs take names only: `?status=2` will be refused, so a query string
+reads the same before and after an enum becomes ordinal.
 
 ### Why the mapping must be explicit and enforced
 
