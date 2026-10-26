@@ -193,7 +193,7 @@ declared scalar instead of painting a single text box everywhere:
 
 | Scalar                       | Control                                              |
 | ---------------------------- | ---------------------------------------------------- |
-| enum                         | `<select>` populated from the schema's variants       |
+| enum                         | `<select>` populated from the schema's variants (an ordinal enum's row shows `Name (n)`, and the form still offers names) |
 | `Json`                       | `<textarea>` (parsed on submit)                       |
 | `DateTime`                   | `<input type="datetime-local">` (auto-normalized to UTC `Z`) |
 | `Float` / `Decimal`          | `<input type="number" step="any">`                    |
@@ -203,7 +203,10 @@ declared scalar instead of painting a single text box everywhere:
 
 The model-list endpoint (`GET /api/targets/:key/models`) carries
 `is_enum` and `enum_variants` per field so the UI can render the
-dropdown without a second fetch.
+dropdown without a second fetch. *(Unreleased)* For an
+[ordinal enum](../guides/payload-size#enum-ordinals) it also carries
+`enum_ordinals`, in `enum_variants` order. A write accepts the variant's
+name or its number and stores the number.
 
 <Frame caption="Edit mode on row p1. Each field gets the control its declared scalar calls for — `views` is a number input, not a text box.">
   <img src="/images/studio/studio-edit.png" alt="Studio drawer in edit mode with typed inputs per field and Save / Cancel buttons" />

@@ -136,6 +136,10 @@ Stated honestly, because these are real ceilings, not oversights:
   fixed example on every response, never reflecting what was actually created/patched. Relation
   fields and `@server_only` fields are excluded from every response entirely, same as the real
   server's default projection.
+* *(unreleased)* An [ordinal enum](../guides/payload-size#enum-ordinals) renders as its first
+  variant's number, and a model field of one is a fixed example too, never echoed from the request:
+  a TypeScript client sends the variant's name and a Rust or Dart client its number, so no single
+  template renders both as valid JSON.
 
 ## Where generated stubs live
 
