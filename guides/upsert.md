@@ -29,7 +29,7 @@ Use `.update(...)` when "row must already exist" is a precondition.
 `.upsert(...)` is generated only on models whose `@id` field is
 **client-supplied** — i.e. has no `@default(...)`. Calling `.upsert(...)`
 on a model with a server-generated PK (`@id @default(cuid())`,
-`@id @default(uuid_v7())`, etc.) is a **compile error**, not a runtime
+`@id @default(uuid())`, etc.) is a **compile error**, not a runtime
 "not supported."
 
 ```cstack

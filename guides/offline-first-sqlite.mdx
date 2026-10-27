@@ -110,6 +110,10 @@ model Note {
 The embedded runtime ignores `auth` blocks and `@@allow` / `@@deny` policies at SQL render time. They still parse and validate; they just don't gate reads or writes. Declare them as if you were on the server — your schema stays portable.
 </Note>
 
+<Note>
+Nothing on the device fills an `@default(auth().field)` or a database-generated default, so the embedded `Create…Input` keeps those fields: `auth()` ones as required, `dbgenerated()` and registered-function ones as an `Option` *(unreleased, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234))*. Literal defaults and `now()`/`uuid()`/`cuid()` are filled by the runtime. See [Defaults on the embedded runtime](/reference/field-attributes#defaults-on-the-embedded-runtime).
+</Note>
+
 ## Minimal Setup — Native
 
 ```rust
