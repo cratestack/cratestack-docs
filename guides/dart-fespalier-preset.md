@@ -143,7 +143,7 @@ Its README has the sequence and state diagrams for enrolment, renewal and sign-i
 ## Known gaps
 
 - A generated call cannot hand the transport chain a per-call attribute. `CratestackHttpRequest.extra` is forwarded as `TransportRequest.attributes`, but neither call options type can fill it, so a call such as a payment cannot ask the chain for a user-present signing key. Tracked in [cratestack#1207](https://github.com/cratestack/cratestack/issues/1207).
-- On 0.17.0 and earlier, an `AuthProvider` refusal cannot carry a machine-readable reason in its body, so a client cannot tell "renew the attestation" from "wipe the keys" by a body member. *(Unreleased, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* `AuthRefusal` adds such members next to `code` and `message` (see [Refusing a request](/guides/auth-provider#refusing-a-request)); the generated Dart client sees them in the decoded error body.
+- On 0.17.0 and earlier, an `AuthProvider` refusal cannot carry a machine-readable reason in its body, so a client cannot tell "renew the attestation" from "wipe the keys" by a body member. *(Unreleased, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* `AuthRefusal` adds such members next to `code` and `message` (see [Refusing a request](/guides/auth-provider#refusing-a-request)). A fespalier `RequestAuthenticator` reads them from the raw response, before the generated client decodes it. The generated client itself keeps them only in `CratestackRestException.body` (REST): its RPC `RpcErrorBody` reads `code`, `message` and `details` alone, until [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243) types them.
 
 ## See also
 
