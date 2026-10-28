@@ -98,7 +98,7 @@ RPC sends the same status, members and header, with the RPC code (`{"code": "una
 
 The Rust types gained a field for this: `CratestackErrorResponse` and `RpcErrorBody` carry the members in `extra`, and an envelope read from the wire collects there every member it does not know. An envelope without extra members is encoded byte for byte as before, in JSON and in CBOR.
 
-The MCP transport (`cratestack-mcp`) and the sync endpoints (`cratestack-sync`) still render a refusal their own way.
+The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.
 
 ## Internal callers
 

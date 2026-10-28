@@ -132,6 +132,36 @@ Before any MCP handling:
 The token is removed from the request once your provider has run. Every call then runs under the
 `CratestackContext` your provider built.
 
+### A provider that does not use bearer tokens
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The table
+above is the default rule: a request needs `Authorization: Bearer` before your provider runs. A
+provider that authenticates another way (a device signature, a COSE envelope, mTLS in the request's
+extensions) sets the rule on the builder:
+
+```rust
+use cratestack::mcp::CredentialPresence;
+use cratestack::axum::http::HeaderName;
+
+let mcp = StreamableHttpServer::builder(tools, auth_provider, origins, resource)
+    .with_credential_presence(
+        CredentialPresence::provider_decides().with_credential_headers([
+            HeaderName::from_static("x-attestation"),
+            HeaderName::from_static("x-signature"),
+        ]),
+    )
+    .build()?;
+```
+
+* `CredentialPresence::bearer()` is the default, unchanged.
+* `CredentialPresence::provider_decides()` sends every request to your provider.
+* `CredentialPresence::when(|parts| ...)` tests the request head (method, URI, headers and extensions, never the body).
+* `with_credential_headers` names the headers that carry the credential. They are removed before the MCP server sees the request, as `Authorization` is, and their values are cut out of your provider's logged error detail.
+
+A request found without a credential still gets the 401 `resource_metadata` challenge. An
+[`AuthRefusal`](./auth-provider#refusing-a-request) from your provider keeps its status, its envelope
+members and `details`, and its `WWW-Authenticate` challenges follow the guard's own.
+
 <Warning>
 **Your `AuthProvider` must check the token's audience** against the resource identifier. MCP
 requires it, and CrateStack ships no generic OAuth provider. The example's `src/token.rs` shows an
