@@ -60,6 +60,46 @@ let router = cratestack_schema::axum::router(
 
 Generated CRUD and procedure routes will call `authenticate(...)` for each request and use the resulting `CratestackContext` for schema policy enforcement.
 
+## Refusing a request
+
+*(Unreleased, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* A provider refuses by returning an error. `CratestackError::Unauthorized` and `Forbidden` give the standard envelope and nothing more:
+
+```json
+{ "code": "UNAUTHORIZED", "message": "no credential", "details": null }
+```
+
+That is enough for a client that only needs "signed in or not". When the client must act on *why* (renew a credential and retry once, sign out and wipe its keys, re-authenticate more strongly), return an `AuthRefusal` instead:
+
+```rust
+use cratestack::{AuthRefusal, Value};
+
+return Err(AuthRefusal::unauthenticated("attestation expired")
+    .with_member("error", Value::String("attestation_expired".into()))
+    .with_challenge(r#"Signature error="attestation_expired""#)
+    .into_error());
+```
+
+* `into_error()` turns the refusal into the `CratestackError` the provider returns. There is no `From` conversion, so `?` and `.into()` do not apply.
+* `AuthRefusal::unauthenticated(message)` is a `401` and `AuthRefusal::forbidden(message)` a `403`. The code stays `UNAUTHORIZED` / `FORBIDDEN` (RPC: `unauthenticated` / `permission_denied`), so a client that ignores the rest reads the refusal as before.
+* `with_member(name, value)` adds a top-level member next to `code` and `message`. The names `code`, `message` and `details` are ignored: a refusal cannot replace them.
+* `with_details(value)` sets `details`.
+* `with_challenge(value)` adds a `WWW-Authenticate` header (an RFC 6750 or RFC 9470 challenge, for instance). A value that is not printable ASCII is ignored.
+
+The REST response for the refusal above:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Signature error="attestation_expired"
+
+{ "code": "UNAUTHORIZED", "message": "attestation expired", "details": null, "error": "attestation_expired" }
+```
+
+RPC sends the same status, members and header, with the RPC code (`{"code": "unauthenticated", ...}`). A `POST /rpc/batch` is authenticated once, before any frame runs, so a refusal answers the whole batch the same way.
+
+The Rust types gained a field for this: `CratestackErrorResponse` and `RpcErrorBody` carry the members in `extra`, and an envelope read from the wire collects there every member it does not know. An envelope without extra members is encoded byte for byte as before, in JSON and in CBOR.
+
+The MCP transport (`cratestack-mcp`) and the sync endpoints (`cratestack-sync`) still render a refusal their own way.
+
 ## Internal callers
 
 Non-HTTP Rust callers can bind auth directly:
