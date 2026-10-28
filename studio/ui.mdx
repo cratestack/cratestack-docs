@@ -203,7 +203,7 @@ declared scalar instead of painting a single text box everywhere:
 
 The model-list endpoint (`GET /api/targets/:key/models`) carries
 `is_enum` and `enum_variants` per field so the UI can render the
-dropdown without a second fetch. *(Unreleased)* For an
+dropdown without a second fetch. *(Since 0.17.0)* For an
 [ordinal enum](../guides/payload-size#enum-ordinals) it also carries
 `enum_ordinals`, in `enum_variants` order. A write accepts the variant's
 name or its number and stores the number.

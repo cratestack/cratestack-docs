@@ -28,7 +28,7 @@ Implemented in this repo today:
 Implemented `.cstack` editor features:
 
 * diagnostics — **all independent errors at once**, not one per save
-* hover, including an enum's variants and, for an ordinal enum, each variant's number *(unreleased)*
+* hover, including an enum's variants and, for an ordinal enum, each variant's number *(since 0.17.0)*
 * completion
 * go-to-definition, including enums and mixins
 * find-all-references (`textDocument/references`)

@@ -44,7 +44,7 @@ NOT NULL violation.
 
 ### Default functions
 
-*(Unreleased: after 0.16.0, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209).)*
+*(Since 0.17.0, [cratestack#1209](https://github.com/cratestack/cratestack/issues/1209).)*
 
 A function-shaped default ends up in the migration's `DEFAULT` clause, so `cratestack check` only accepts functions it knows the database can run.
 
@@ -97,7 +97,7 @@ model Ticket {
 
 ### Literal defaults
 
-*(Unreleased: after 0.16.0, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234).)*
+*(Since 0.17.0, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234).)*
 
 `cratestack check` reads a literal for its field's type and refuses one that does not fit:
 
@@ -132,7 +132,7 @@ A double-quoted string used to reach the migration as `DEFAULT "draft"`, which P
 
 ### Defaults on the embedded runtime
 
-*(Unreleased: after 0.16.0, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234).)*
+*(Since 0.17.0, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234).)*
 
 `include_embedded_schema!` tables come from `create_table_sql`, not from migrations, and `CREATE TABLE IF NOT EXISTS` never changes a table an older app version created. So the embedded runtime handles each default itself:
 

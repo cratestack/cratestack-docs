@@ -830,7 +830,7 @@ codec-only.
 
 ## Claim objects
 
-*(Unreleased: after 0.16.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
+*(Since 0.17.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
 A claim object is a signed payload that does **not** die with a request. It is a separate format in
 `cratestack-cose`, built for a payload that one device signs offline and another device delivers
 later: a QR code scanned by a terminal that is online, a voucher handed over by a messaging app. The
@@ -1138,7 +1138,7 @@ a signed request to a route with no contract row is a logged `500`. The shared v
   Per-frame digests are a follow-up.
 - **A claim object has no freshness or replay check.** It is a different format from the envelope
   (see [Claim objects](#claim-objects)): the crate verifies the signature and leaves `exp`, `aud`
-  and `cti` to your code. *(Unreleased: after 0.16.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
+  and `cti` to your code. *(Since 0.17.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
 - **The generated Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust
