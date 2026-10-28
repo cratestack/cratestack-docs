@@ -15,7 +15,7 @@ what they measurably save, so you spend schema churn where it pays.
 2. Let clients speak CBOR. It is already the default, except for the TypeScript REST client.
 3. Ask for less: `?fields=`, `includeFields[path]`, `@@paged`, `@server_only`.
 4. Then pick compact types. Model closed sets as `enum`, not `String`. Explicit
-   [enum ordinals](#enum-ordinals) *(unreleased)* store and send an enum as a small integer.
+   [enum ordinals](#enum-ordinals) *(since 0.17.0)* store and send an enum as a small integer.
    They help most where nothing compresses the bytes.
 
 Every number below was measured with the framework's own CBOR serializer
@@ -112,7 +112,7 @@ REST and RPC.
 |---|---|---|
 | `String` | `TEXT` | text |
 | `enum` | `TEXT` + membership `CHECK` | text (the variant name) |
-| ordinal `enum` *(unreleased)* | `SMALLINT` + membership `CHECK` | integer |
+| ordinal `enum` *(since 0.17.0)* | `SMALLINT` + membership `CHECK` | integer |
 | `DateTime` | `TIMESTAMPTZ` (8 B) | text (RFC 3339) |
 | `Uuid` | `UUID` (16 B) | 16 B binary on CBOR, text on JSON |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
@@ -172,8 +172,7 @@ on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 ## Enum ordinals
 
 <Note>
-**Unreleased.** Ordinal enums are on the framework's `main` branch, not in a release: on 0.16.0,
-`Pending = 1` is a parse error. The design and its measurements are in
+**Since 0.17.0.** On 0.16.0 and earlier, `Pending = 1` is a parse error. The design and its measurements are in
 [`docs/design/enum-ordinals.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/enum-ordinals.md).
 </Note>
 
@@ -226,7 +225,7 @@ row now means a different status, and nothing errors. So the mapping is explicit
 - Renaming a variant while keeping its number is allowed and moves no data.
 - Removing a variant, here or from a string enum, is a **blocking** migration: rows may still
   hold the value, so `up.pre.sql` is scaffolded with
-  `UPDATE … SET status = <a value the enum keeps> WHERE status IN (5)` to adapt *(unreleased)*.
+  `UPDATE … SET status = <a value the enum keeps> WHERE status IN (5)` to adapt *(since 0.17.0)*.
 - `cratestack diff` reports removed and added variants, for every enum
   ([schema diff](../tooling/schema-diff)).
 - An `auth` field may not have an ordinal enum type: a claim's encoding is the auth provider's
