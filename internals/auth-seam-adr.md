@@ -9,11 +9,12 @@ description: One public seam that CrateStack's own authentication and any extern
 
 **Proposed**, 2026-10-28. It is the first child story of epic
 [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243). Nothing here is a supported
-surface until this ADR is accepted, except the refusal envelope (§1), which is built on branch
-`ccr-c6ab9d6f-9rnemm` of the framework at
-[`d8b088e`](https://github.com/cratestack/cratestack/commit/d8b088e2fa2f9c3975e87fbf07f701d16c8540ce)
-([cratestack#1208](https://github.com/cratestack/cratestack/issues/1208)) and not yet merged. §1
-records what that commit does and decides what the other transports must do to match it.
+surface until this ADR is accepted, except what
+[cratestack#1246](https://github.com/cratestack/cratestack/pull/1246) builds (open, not yet merged):
+the refusal envelope on REST, RPC, SSE, middleware errors, MCP and sync (§1,
+[cratestack#1208](https://github.com/cratestack/cratestack/issues/1208)), and MCP's pluggable
+credential-presence rule (§4). §1 and §4 record what that PR does; the rest of this ADR decides what
+comes next.
 
 The number is the next free one across both repositories. 0007–0010 are reserved by ADR 0001,
 0011–0019 are the framework's internal-shape series, and 0020 is the sync engine. The "ADR 0032" and
@@ -24,6 +25,9 @@ canonical request are all visible to clients and to authors of auth libraries.
 ## Date
 
 - 2026-10-28: proposed. The refusal envelope (§1) is built for REST, RPC unary and RPC batch.
+- 2026-10-29: updated for cratestack#1246, which also renders refusals on MCP Streamable HTTP and sync,
+  fixes sync's leak of `Internal` detail, and builds MCP credential presence as a builder option
+  (`CredentialPresence`) rather than the trait method first proposed in §4.
 
 ## The standing decision this ADR serves
 
@@ -41,10 +45,10 @@ it is a bug in this seam.
 
 | # | Question | Recommendation | Decision |
 |---|---|---|---|
-| D1 | How does a provider shape its refusal, and how does each transport render it? | **`AuthRefusal`, as built in #1208**: 401 or 403, extra top-level envelope members that never replace `code`/`message`/`details`, an optional `details`, and `WWW-Authenticate` challenges. The `code` stays framework-owned. Every transport that calls `AuthProvider` renders it (the matrix in §1). | built for REST, RPC unary and batch (#1208); open for the rest |
+| D1 | How does a provider shape its refusal, and how does each transport render it? | **`AuthRefusal`, as built in #1208**: 401 or 403, extra top-level envelope members that never replace `code`/`message`/`details`, an optional `details`, and `WWW-Authenticate` challenges. The `code` stays framework-owned. Every transport that calls `AuthProvider` renders it (the matrix in §1). | built in #1246 for REST, RPC unary and batch, SSE, middleware errors, MCP and sync; open for WebTransport and WebSocket (Q4, Q5) |
 | D2 | What does a provider map the caller *to*? | **A principal contract**: a small set of reserved claim names with fixed types (`sub`, `roles`, `tenant.id`, `auth_time`, `amr`, `acr`, `cnf`, `key_role`, `exp`), a builder in `cratestack-core`, and typed readers that `hasRole`, `inTenant` and the framework's own code use. Everything else stays free-form. | open |
 | D3 | What request does a provider verify? | **The canonical request**: the route CrateStack declares, never the mount prefix, with the exact body bytes the router received. One rule, stated per transport, tested by the kit. | open |
-| D4 | How does MCP know a request carries a credential? | **The provider says so**, through a new defaulted `AuthProvider::credential` method whose default is today's RFC 6750 Bearer check. MCP stays Bearer-only unless the deployment opts in, to keep ADR 0002's OAuth resource-server posture. | open |
+| D4 | How does MCP know a request carries a credential? | **The deployment chooses, on the MCP builder**: `CredentialPresence::bearer()` (the default, today's RFC 6750 check), `provider_decides()` or `when(predicate)`, plus `with_credential_headers` for the headers to strip and redact. MCP stays Bearer-only unless the deployment opts in, to keep ADR 0002's OAuth resource-server posture. A defaulted `AuthProvider::credential` method remains proposed for D5's chain (§4) | built in #1246 (builder); trait method open |
 | D5 | How are providers composed? | **A first-success chain in core**: a provider with no credential is skipped, the first authenticated answer wins, and a refusal stops the chain. | open |
 | D6 | How does a provider prove it behaves the same everywhere? | **A conformance kit behind a `testing` feature** that drives one provider through every transport and asserts identical verdicts, canonical requests and refusal rendering. | open |
 | D7 | How is independence enforced? | **No framework crate depends on any auth library**, checked in CI with `cargo tree` and `cargo metadata`. The external-library example lives outside the workspace with its own lockfile, like `examples/client-only-verification`. | open |
@@ -173,9 +177,9 @@ and the batch case).
 | RPC batch, `POST /rpc/batch` | #1208: the envelope is authenticated once, so a refusal answers **the whole batch** with the unary error body, its status and its challenges. No frame runs | As built. A refusal is never repeated per frame: there is one verdict for one envelope, and a `200` holding N copies of it would hide the status and the challenges. Policy denials stay per frame, as today |
 | SSE model subscription, `GET /rpc/subscribe/<op_id>` | Refused before the stream starts, through the RPC error path, so #1208 applies. Untested. After `Ready`, the context captured at open is used for every event | Kit case for the pre-stream refusal. Credential expiry on a live stream belongs to the subscriptions design (S1/S5), which reads `exp` (§2) |
 | `@stream` procedures (SSE, CBOR sequence) | Refused before the first item; #1208's challenges are attached | As built, with a kit case |
-| MCP Streamable HTTP | No Bearer token: `401` with the resource-metadata challenge before the provider runs. A provider refusal is replaced by a canned `invalid_token` (401) or `insufficient_scope` (403); members, `details` and the provider's challenges are dropped. An anonymous answer is a 401 | The refusal's message, members and `details` reach the client in the envelope MCP already sends. The `WWW-Authenticate` headers are MCP's own Bearer challenge first (with `resource_metadata`, as ADR 0002 requires), then the refusal's own challenges. Credential presence is decided by the provider (§4). An anonymous answer stays a 401 |
+| MCP Streamable HTTP | Before #1246: no Bearer token gave a `401` with the resource-metadata challenge before the provider ran, and a provider refusal was replaced by a canned `invalid_token` (401) or `insufficient_scope` (403), dropping members, `details` and challenges. **Built in #1246:** an `AuthRefusal` keeps its status, message, members and `details` in MCP's envelope, and its challenges follow MCP's own Bearer challenge (with `resource_metadata`, as ADR 0002 requires). Credential presence is the deployment's choice (§4). An anonymous answer stays a 401. Tests: `crates/cratestack-mcp/tests/http_refusal.rs`, `http_credential.rs` | As built |
 | MCP stdio | No provider: the application passes the context (ADR 0002 Q1, F2) | Unchanged |
-| `cratestack-sync` (`/sync/*`) | Any provider error becomes `401` `unauthenticated` with `error.to_string()` as the message. A 403 becomes a 401, a 5xx from an undecided provider becomes a 401, members and challenges are lost, and the message is the `Display` string, which for `Internal` includes the private detail | A refusal keeps its status: 401 `unauthenticated` or 403 with a new `forbidden` sync code. The message is `public_message()`, so nothing private leaks. Members are written into the sync error body under the same reserved-name rule, and challenges are attached. A non-refusal provider error keeps its own status (`unavailable`, `internal`). Sync is exempt from REST/RPC parity (ADR 0020 D7), but not from this ADR, because it calls `AuthProvider` |
+| `cratestack-sync` (`/sync/*`) | Before #1246: any provider error became `401` `unauthenticated` with `error.to_string()` as the message, so a 403 and an undecided provider's 5xx became 401s, members and challenges were lost, and an `Internal` error's private detail reached the client. **Built in #1246:** 401 stays `unauthenticated`, 403 becomes a new `forbidden` sync code, a 5xx becomes `internal`; the message is `public_message()`; members go into the sync error body under the same reserved-name rule (`RESERVED_SYNC_ERROR_MEMBERS`), challenges into the headers. Test: `crates/cratestack-sync/tests/auth_refusal.rs`, including `a_provider_failure_is_internal_and_leaks_nothing`. A provider `Unavailable` (503) reads as sync `internal` (500): sync has no 503 code | As built. Sync is exempt from REST/RPC parity (ADR 0020 D7), but not from this ADR, because it calls `AuthProvider` |
 | WebTransport session (#1238) | Authentication runs on the control stream's first frame (`Init`, for browsers) or on the CONNECT headers (native clients). A refusal closes the session with `4401` and a fixed reason; `4403` means a re-authentication named another principal, `4429` too many sessions, `4400` a protocol error. There is no envelope, so members, `details` and challenges are lost. CONNECT-level refusals (403 Origin, 404 path, 406 codec) are HTTP statuses and do not involve authentication | Before closing, the server writes `{id: 0, err: RpcErrorBody}` on the control stream, with the refusal's members and `details`, then closes with `4401`. `Init` is id 0 and `Ready{0}` acknowledges it, so the frame already exists in the protocol. The same applies to a refused re-authentication. Proposed by #1238's author; the close code for a 403 refusal is Q4 |
 | WebTransport subscription (op level) | A policy or setup refusal from the `SubscriptionDispatcher` is an `err` frame built by `RpcErrorBody::from_cratestack`, so #1208's members already reach the client | As built |
 | WebSocket (design only, `docs/design/subscriptions-websocket.md` §6.3) | Designed to close with `4401` | Mirrors WebTransport: `Error{id: 0}` with the refusal's body, then close |
@@ -323,7 +327,30 @@ provider can never authenticate an MCP call. The Bearer check does three things 
 missing credential gets a 401 challenge with no `error` (RFC 6750 §3.1), a malformed one gets a 400
 `invalid_request`, and the token is redacted from logged provider errors.
 
-**Decision.** `AuthProvider` gains a defaulted method:
+#### As built in #1246: a builder option
+
+MCP credential presence is chosen on `StreamableHttpServer::with_credential_presence`:
+
+| Rule | Behaviour |
+|---|---|
+| `CredentialPresence::bearer()` | The default: today's Bearer check, unchanged |
+| `CredentialPresence::provider_decides()` | Every request reaches the provider, which alone decides; a request without a credential costs a body read and a provider call before its 401 |
+| `CredentialPresence::when(\|parts\| ..)` | A predicate over the request head (method, URI, headers, extensions; never the body) |
+| `.with_credential_headers([...])` | The headers that carry a non-Bearer credential: stripped before `rmcp` sees the request, as `Authorization` is, and their values redacted from the provider's logged detail |
+
+A request found without a credential still gets the Bearer challenge with `resource_metadata`. Two
+`Authorization` headers are still a 400 under every rule. The challenge carries an `error` only when
+the request actually sent a bearer token.
+
+This was chosen over the trait method below for the first slice because it touches only MCP, changes
+no trait, and lets a deployment use a provider it does not own (an external library's) without
+wrapping it. Its limit: the provider cannot say *why* a credential is malformed (`Malformed` below),
+and nothing outside MCP can ask a provider whether it has a credential.
+
+#### Still proposed: a defaulted trait method, for the chain (D5)
+
+The first-success chain (§5) must skip a provider that has no credential without calling it, which
+needs the provider, not the deployment, to answer. So `AuthProvider` would gain a defaulted method:
 
 ```rust
 fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
@@ -355,7 +382,10 @@ authorization specification, so it is opt-in:
   provider and redacts that string from logged detail.
 - An anonymous answer is still a 401, the query-token refusal stays, and refusals render as in §1.
 
-This touches MCP deliberately, as ADR 0002 D5 requires for any extension of MCP.
+This touches MCP deliberately, as ADR 0002 D5 requires for any extension of MCP. Once the method
+exists, `CredentialPresence::provider_decides()` can ask `provider.credential(..)` before the body is
+read, instead of always calling `authenticate`, and the builder option stays as the deployment's
+override.
 
 ### 5. Composition (D5)
 
@@ -498,12 +528,13 @@ deny-list in `deny.toml` is the alternative if more libraries need guarding.
 The epic's child stories, in dependency order:
 
 1. This ADR.
-2. `AuthRefusal`, REST and RPC unary: **built** (#1208, `d8b088e`).
-3. RPC batch (built in #1208), SSE and sync rendering (§1).
-4. MCP: `Credential` and refusal rendering (§1, §4).
+2. `AuthRefusal`, REST and RPC unary: **built** (#1208, in #1246).
+3. RPC batch, SSE, middleware and sync rendering (§1): **built** in #1246.
+4. MCP refusal rendering and `CredentialPresence` (§1, §4): **built** in #1246. The defaulted
+   `AuthProvider::credential` method moves to story 7, with the chain that needs it.
 5. The principal contract, builder and readers; `hasRole` over `roles` (§2).
 6. The canonical-request rule and its tests; the sync and WebTransport call sites (§3).
-7. The first-success chain (§5).
+7. The first-success chain (§5), with the defaulted `AuthProvider::credential` method (§4).
 8. The conformance kit (§6).
 9. `SignedRequestAuthProvider` and `CoseAuthProvider` onto the public seam, passing the kit.
 10. The independence guard, with #1245's `examples/auth-pluggable` (§7).
