@@ -281,8 +281,8 @@ COSE key thumbprint goes into `cnf` (Q7).
 ### 3. Canonical request versus wire request (D3)
 
 A provider that verifies a signature needs to know exactly which request it is given. Today that is
-true by construction in the generated code, but it is written down only in code comments, and two
-callers (sync, WebTransport) pass the wire path instead.
+true by construction in the generated code, but it is written down only in code comments, and one
+caller (sync) passes the wire path instead.
 
 **The rule.** The `RequestContext` a provider receives is the **canonical request** of the operation,
 and a client signs the same thing:
@@ -294,7 +294,8 @@ and a client signs the same thing:
    `/api/rpc/<op_id>`. A client signs its request path minus the base URL's path. The internal
    `/$procs/...` path never appears on `transport rpc` either.
 3. **`query`** is the raw query string exactly as received, where the operation reads one (REST model
-   reads), and `None` everywhere else.
+   reads, and a WebTransport CONNECT, whose `?codec=cbor|json` is the fallback for a client that cannot
+   negotiate the subprotocol), and `None` everywhere else.
 4. **`body`** is the exact bytes the router received, before decoding, and never re-encoded. Behind
    the COSE envelope layer that is the opened payload. A provider that needs the sealed message reads
    the recorded `VerifiedSigner`, not the body.
@@ -312,13 +313,14 @@ Per transport:
 | SSE subscription | `GET` | `/rpc/subscribe/<op_id>` | `None` | empty |
 | MCP Streamable HTTP | `POST` | the path of the configured resource identifier, fixed at build time | raw query | wire bytes (bounded) |
 | sync | the route's method | `/sync/register`, `/sync/push`, `/sync/pull` or `/sync/poke` | raw query | wire bytes |
-| WebTransport | `CONNECT` | `/rpc/wt` | `None` | empty |
+| WebTransport | `CONNECT` | the configured session path (`/rpc/wt`, or `/$wt` for REST schemas) | raw query | empty |
 | WebSocket (design) | `GET` | `/rpc/ws` | `None` | empty |
 
 Three call sites change to meet it: sync passes `parts.uri.path()` and should pass its constant route;
-WebTransport passes the CONNECT's wire path and an empty `extensions` and should pass `/rpc/wt` and at
-least the peer address; and the REST model `/<id>` segment is the *decoded* id, not the wire bytes
-(Q6).
+WebTransport passes an empty `extensions` and should pass at least the peer address; and the REST model
+`/<id>` segment is the *decoded* id, not the wire bytes (Q6). WebTransport's path already meets the
+rule: a CONNECT to any other path is refused with `404` before authentication, and the binding is its
+own QUIC listener, so there is no mount prefix to strip.
 
 ### 4. MCP credential presence (D4)
 
@@ -515,7 +517,7 @@ deny-list in `deny.toml` is the alternative if more libraries need guarding.
 | Q1 | Confirm the batch rendering: the epic says "per-frame for batch", #1208 built a whole-batch refusal | Whole batch, as built (§1) |
 | Q2 | Which `cratestack-auth` mapper is the default: today's product shape plus the contract names, or the contract-only mapper? | Today's shape plus contract names for one release, then decide with Webank |
 | Q3 | Is `key_role` needed, or is it derivable from `amr` (`hwk` plus `user` for a user-present signature)? | Keep it: `amr` describes the authentication event, `key_role` the key behind this one request; #1244's step-up rules need the second |
-| Q4 | WebTransport and WebSocket: which close code for a 403 refusal? `4403` today means "re-authentication named another principal" | `4403` for both, since the `{id: 0, err}` frame before the close says which |
+| Q4 | WebTransport and WebSocket: which close code for a 403 refusal? `4403` today means "re-authentication named another principal" | `4403` for both, since the `{id: 0, err}` frame before the close says which. A client reads that frame, when present, rather than the close code alone: `4401` also closes a session that sent no `Init` within `init_timeout` (10 s), which is not a provider's verdict |
 | Q5 | Should `RpcErrorBody` carry challenges, so a frame-based transport can deliver them? | Not now. No frame-based client parses challenges, and #1244's step-up signal travels in `details` |
 | Q6 | The REST model `/<id>` path segment is the decoded id, not the wire bytes. Keep it, or sign the percent-encoded form? | Keep the decoded id and document it; the kit pins it |
 | Q7 | Under which `cnf` member does a COSE key thumbprint (RFC 9679) go? | The confirmation-method name RFC 9679 registers in the CWT registry (`ckt`, to be checked against the RFC's IANA section before acceptance), lowercase hex as `CoseAuthProvider` emits today, or base64url to match `jkt` |
