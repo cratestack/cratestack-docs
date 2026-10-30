@@ -155,6 +155,7 @@ let mcp = StreamableHttpServer::builder(tools, auth_provider, origins, resource)
 
 * `CredentialPresence::bearer()` is the default, unchanged.
 * `CredentialPresence::provider_decides()` sends every request to your provider.
+* `CredentialPresence::ask_provider()` asks your provider's own [`credential`](./auth-provider#saying-whether-a-request-carries-a-credential) method, before the body is read. `Absent` gets the 401 challenge, `Malformed` a 400 `invalid_request`, and `Present` or `Unknown` reaches your provider. A `Present { redact }` value is cut out of your provider's logged error detail.
 * `CredentialPresence::when(|parts| ...)` tests the request head (method, URI, headers and extensions, never the body).
 * `with_credential_headers` names the headers that carry the credential. They are removed before the MCP server sees the request, as `Authorization` is, and their values are cut out of your provider's logged error detail.
 
