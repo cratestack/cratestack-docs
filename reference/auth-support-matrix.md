@@ -551,7 +551,7 @@ mutation procedure adminPulse(args: InspectPostInput): Post
 
 Notes:
 
-* `hasRole('...')` checks the top-level `role` claim and falls back to `actor.role`
+* `hasRole('...')` is true when the `roles` list contains the role, or the top-level `role` claim equals it, or `actor.role` does. *(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* `roles` is new, and `role` and `actor.role` are each read on their own: through 0.17.0 a present `role` hid `actor.role`. A `roles` that is not a list of strings never grants. Every path agrees: procedure policies, model policies lowered to SQL, and the create-time check. See [The principal contract](../guides/auth-provider#the-principal-contract)
 * `inTenant('...')` checks the structured `tenant.id` claim
 * both functions are boolean terms that can participate in grouped `&&` / `||` expressions
 * only a single string literal argument is supported today
