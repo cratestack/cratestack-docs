@@ -25,6 +25,9 @@ canonical request are all visible to clients and to authors of auth libraries.
 ## Date
 
 - 2026-10-28: proposed. The refusal envelope (§1) is built for REST, RPC unary and RPC batch.
+- 2026-10-30: stories 6 and 7 built: the canonical-request rule is stated on `RequestContext` and
+  pinned by tests (sync now passes its declared route), and the first-success chain, the defaulted
+  `AuthProvider::credential` (default `Unknown`, §4) and `CredentialPresence::ask_provider()` exist.
 - 2026-10-29: updated for cratestack#1246, which also renders refusals on MCP Streamable HTTP and sync,
   fixes sync's leak of `Internal` detail, and builds MCP credential presence as a builder option
   (`CredentialPresence`) rather than the trait method first proposed in §4.
@@ -349,27 +352,36 @@ no trait, and lets a deployment use a provider it does not own (an external libr
 wrapping it. Its limit: the provider cannot say *why* a credential is malformed (`Malformed` below),
 and nothing outside MCP can ask a provider whether it has a credential.
 
-#### Still proposed: a defaulted trait method, for the chain (D5)
+#### As built: a defaulted trait method, for the chain (D5)
 
 The first-success chain (§5) must skip a provider that has no credential without calling it, which
-needs the provider, not the deployment, to answer. So `AuthProvider` would gain a defaulted method:
+needs the provider, not the deployment, to answer. So `AuthProvider` gains a defaulted method
+(cratestack#1243, story 7):
 
 ```rust
 fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
-    Credential::bearer(request.headers) // today's check, unchanged
+    Credential::Unknown
 }
 
+#[non_exhaustive]
 pub enum Credential<'r> {
+    Unknown,
     Absent,
     Present { redact: Option<&'r str> },
     Malformed(&'static str),
 }
 ```
 
-Adding a defaulted method is not a breaking change, and the default is exactly today's check, so no
-existing provider changes behaviour anywhere. A device-signature provider answers `Present` when its
-signature header is there; `CoseAuthProvider` answers `Present` when a verified signer is in the
-extensions.
+**The default is `Unknown`, not `Credential::bearer` as first proposed.** With a bearer default, a
+provider that reads a cookie or a signature and does not implement the method would be skipped,
+silently, by every chain it is put in. `Unknown` means "call me": a chain always calls such a member,
+and MCP under `ask_provider()` (below) sends the request on, as `provider_decides()` does. Adding a
+defaulted method is not a breaking change, and no existing provider changes behaviour anywhere.
+`Credential::bearer(headers)` and `Credential::header(headers, name)` are helpers a provider returns.
+A device-signature provider answers `Present` when its signature header is there; `CoseAuthProvider`
+answers `Present` when a verified signer is in the extensions.
+
+The answer is read from the request head: the body may be empty when the provider is asked.
 
 **ADR 0002's posture is kept.** ADR 0002 makes the MCP endpoint an OAuth 2.1 resource server: a 401
 with `WWW-Authenticate` naming `resource_metadata`, Protected Resource Metadata, an identity required
@@ -378,20 +390,21 @@ authorization specification, so it is opt-in:
 
 - By default the MCP service uses `Credential::bearer` whatever the provider says. The MCP conformance
   job keeps testing a spec-conformant server.
-- A deployment that opts in on the Streamable HTTP builder asks `provider.credential(..)` instead.
+- A deployment that opts in with `CredentialPresence::ask_provider()` asks `provider.credential(..)` instead.
   `Absent` still gets the Bearer challenge with `resource_metadata`, so OAuth clients still discover
   the authorization server; `Malformed` is a 400 `invalid_request`; `Present { redact }` runs the
-  provider and redacts that string from logged detail.
+  provider and redacts that string from logged detail; `Unknown` runs the provider, as
+  `provider_decides()` does.
 - An anonymous answer is still a 401, the query-token refusal stays, and refusals render as in §1.
 
-This touches MCP deliberately, as ADR 0002 D5 requires for any extension of MCP. Once the method
-exists, `CredentialPresence::provider_decides()` can ask `provider.credential(..)` before the body is
-read, instead of always calling `authenticate`, and the builder option stays as the deployment's
-override.
+This touches MCP deliberately, as ADR 0002 D5 requires for any extension of MCP. As built,
+`ask_provider()` is a fourth `CredentialPresence` rule rather than a change to `provider_decides()`,
+which keeps always calling `authenticate`: a deployment chooses which, and the default stays `bearer()`
+(Q10).
 
 ### 5. Composition (D5)
 
-`cratestack-core` gains a first-success chain, replacing hand-written wrappers such as
+*Built in story 7 (cratestack#1243).* `cratestack-core` gains a first-success chain, replacing hand-written wrappers such as
 `CoseAuthProvider`'s:
 
 ```rust

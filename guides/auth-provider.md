@@ -100,6 +100,83 @@ The Rust types gained a field for this: `CratestackErrorResponse` and `RpcErrorB
 
 The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.
 
+## What the provider is given
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+`RequestContext` is the **canonical request** of the operation. A provider that verifies a
+signature can rely on it, and a client signs the same thing:
+
+| Transport | `method` | `path` | `query` | `body` |
+|---|---|---|---|---|
+| REST procedure | `POST` | the declared route, e.g. `/$procs/whoAmI` | `None` | the wire bytes |
+| REST model | the route's method | the declared route, with the **decoded** `/<id>` | the raw query | the wire bytes, or empty |
+| RPC unary | `POST` | `/rpc/<op_id>` | `None` | the raw frame bytes |
+| RPC batch | `POST` | `/rpc/batch` | `None` | the whole batch body, authenticated once |
+| SSE subscription | `GET` | `/rpc/subscribe/<op_id>` | `None` | empty |
+| MCP Streamable HTTP | `POST` | the path of the resource identifier | the raw query | the wire bytes |
+| sync | the route's method | `/sync/register`, `/sync/push`, `/sync/pull` or `/sync/poke` | the raw query | the wire bytes |
+
+**A mount prefix never appears.** A router nested under `/api` hands the provider `/rpc/<op_id>`,
+not `/api/rpc/<op_id>`, so a client signs its request path minus its base URL's path. The body is
+the bytes the router received, before decoding and never re-encoded; behind a COSE envelope layer
+it is the opened payload.
+
+## Saying whether a request carries a credential
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* A provider
+may also say, without authenticating, whether a request carries its kind of credential:
+
+```rust
+use cratestack::{AuthProvider, Credential, RequestContext};
+
+impl AuthProvider for DeviceSignatureProvider {
+    // type Error and authenticate(...) as above
+
+    fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
+        Credential::header(request.headers, "x-signature")
+    }
+}
+```
+
+* `Credential::Unknown` is the default when a provider does not implement the method: it is always called, as before.
+* `Credential::Absent`: the request carries none of this provider's credentials.
+* `Credential::Present { redact }`: it carries one. `redact` is a value to cut out of logged error detail, such as a token.
+* `Credential::Malformed(reason)`: it carries one the provider will not read.
+* `Credential::bearer(headers)` reads an `Authorization: Bearer` token as MCP does, and `Credential::header(headers, name)` a credential carried in one header.
+
+The answer is read from the request head. The body may be empty when the provider is asked, so a
+provider never looks for its credential there. Two things ask: a
+[first-success chain](#composing-providers), and MCP under
+[`CredentialPresence::ask_provider()`](./mcp#a-provider-that-does-not-use-bearer-tokens).
+
+## Composing providers
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* An
+application that accepts more than one kind of credential composes its providers into one:
+
+```rust
+use cratestack::first_success;
+
+let auth = first_success(oauth).or(device_signature).or(cose_signer);
+let router = cratestack_schema::axum::router(db, procedures, CborCodec, auth);
+```
+
+Each member is asked in order:
+
+1. If its `credential` is `Absent`, it is skipped without being called.
+2. If it returns an authenticated context, that is the answer.
+3. If it returns an error, that is the answer. **A credential one member refuses is never rescued by another**: the chain fails closed.
+4. If it returns an anonymous context, the next member is asked.
+
+When no member authenticates, the chain answers anonymous and the schema's policies decide. A
+request that carries two credentials is resolved by order: the first member that authenticates it
+wins. A member that does not implement `credential` (`Unknown`) is always called, so put a strict
+provider that refuses a request without its credential after the members it should not shadow, or
+give it a `credential` method.
+
+The chain is static (`first_success(a).or(b)` is a `FirstSuccess<Or<A, B>>`), because
+`AuthProvider` is not object-safe. Its error type is `CratestackError`.
+
 ## Internal callers
 
 Non-HTTP Rust callers can bind auth directly:
