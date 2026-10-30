@@ -98,6 +98,29 @@ RPC sends the same status, members and header, with the RPC code (`{"code": "una
 
 The Rust types gained a field for this: `CratestackErrorResponse` and `RpcErrorBody` carry the members in `extra`, and an envelope read from the wire collects there every member it does not know. An envelope without extra members is encoded byte for byte as before, in JSON and in CBOR.
 
+### Reading a refusal in a generated client
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* Every generated client types the same five things on both transports: the wire `code`, `message`, `details`, every other member (`extra`, never dropped, CBOR or JSON) and the `WWW-Authenticate` challenges (raw, unparsed).
+
+| Client | REST error | RPC error |
+|---|---|---|
+| Rust | `ClientError::Remote`: `remote_error()` (the `CratestackErrorResponse`: `code`, `message`, `details`, `extra`) and `challenges()` | `RpcClientError::Remote(RpcRemoteError)`: `body` (`RpcErrorBody`: `code`, `message`, `details`, `extra`) and `challenges`; `RpcClientError::challenges()` |
+| Dart | `CratestackRestException`: `code`, `message`, `details`, `extra`, `challenges`, `headers` (and the raw `body`) | `CratestackRpcException`: `code`, `message`, `details`, `extra`, `challenges`, `headers`; `RpcErrorBody.extra` |
+| TypeScript | `CratestackHttpError`: `body` (`CratestackErrorResponse`), `code`, `details`, `extra`, `challenges` (and the raw `payload`) | `CratestackRpcError`: `code`, `details`, `body`, `extra`, `headers`, `challenges` |
+
+```dart
+try {
+  await client.accounts.get(7);
+} on CratestackRpcException catch (e) {
+  if (e.code == CratestackRpcErrorCodes.unauthenticated &&
+      e.extra['error'] == 'attestation_expired') {
+    // renew the credential and send again, once
+  }
+}
+```
+
+Two refusal lines of `WWW-Authenticate` reach Rust as two values. The Dart HTTP seam and the browser's `Headers` join a repeated header with `, `, so Dart and TypeScript see one value holding both. An error inside a batch frame or a stream's final item has no headers of its own, so its `challenges` is empty. The `--rtk` REST error (`RtkRestQueryError`) carries `code`, `extra` and `challenges`; `--swr` hooks surface the same error instances. In Rust, `ClientError::Remote` and `RpcRemoteError` gained a `challenges` field, so a pattern that names every field without `..` needs one.
+
 The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.
 
 ## What the provider is given
