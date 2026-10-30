@@ -182,6 +182,10 @@ audience check.
    *(since 0.14.0)* The MCP key holds a SHA-256 of the caller's id, not the id itself. After
    upgrading from 0.13.0 with a shared store, MCP idempotency records written by 0.13.0 no longer
    replay and MCP rate-limit buckets start fresh.
+   *(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+   id is the context's `subject()`: `sub`, then `actor.id`, then `id` (see
+   [The principal contract](/guides/auth-provider#the-principal-contract)). A provider that adds
+   `sub` next to a different `id` moves its callers to a new namespace once.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
    then your implementation. Its ORM calls carry `@@allow` in their SQL.
    *(Since 0.14.1.)* For a procedure that declares
