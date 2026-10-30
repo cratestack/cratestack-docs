@@ -168,7 +168,8 @@ Each member is asked in order:
 3. If it returns an error, that is the answer. **A credential one member refuses is never rescued by another**: the chain fails closed.
 4. If it returns an anonymous context, the next member is asked.
 
-When no member authenticates, the chain answers anonymous and the schema's policies decide. A
+When no member authenticates, the chain answers with the first anonymous context a member returned
+(so its extensions, such as a client IP, are kept), and the schema's policies decide. A
 request that carries two credentials is resolved by order: the first member that authenticates it
 wins. A member that does not implement `credential` (`Unknown`) is always called, so put a strict
 provider that refuses a request without its credential after the members it should not shadow, or

@@ -25,12 +25,12 @@ canonical request are all visible to clients and to authors of auth libraries.
 ## Date
 
 - 2026-10-28: proposed. The refusal envelope (§1) is built for REST, RPC unary and RPC batch.
-- 2026-10-30: stories 6 and 7 built: the canonical-request rule is stated on `RequestContext` and
-  pinned by tests (sync now passes its declared route), and the first-success chain, the defaulted
-  `AuthProvider::credential` (default `Unknown`, §4) and `CredentialPresence::ask_provider()` exist.
 - 2026-10-29: updated for cratestack#1246, which also renders refusals on MCP Streamable HTTP and sync,
   fixes sync's leak of `Internal` detail, and builds MCP credential presence as a builder option
   (`CredentialPresence`) rather than the trait method first proposed in §4.
+- 2026-10-30: stories 6 and 7 built: the canonical-request rule is stated on `RequestContext` and
+  pinned by tests (sync now passes its declared route), and the first-success chain, the defaulted
+  `AuthProvider::credential` (default `Unknown`, §4) and `CredentialPresence::ask_provider()` exist.
 
 ## The standing decision this ADR serves
 
@@ -420,9 +420,11 @@ The rules, in order, for each member:
    refuses is never rescued by another**: that is `CoseAuthProvider`'s rule 1, and it fails closed.
 4. If it returns an anonymous context, go on to the next.
 
-If no member authenticates, the chain answers anonymous and policy decides. The chain's own
+If no member authenticates, the chain answers with the first anonymous context a member returned
+(so what a provider put in it is kept), and policy decides. The chain's own
 `credential()` is `Present` if any member's is, carrying the first member's `redact`. It is
-generic and static (nested `Chain<A, B>` types, no `dyn`), because `AuthProvider` returns
+generic and static (nested types: `first_success(a).or(b).or(c)` is a
+`FirstSuccess<Or<Or<A, B>, C>>`, no `dyn`), because `AuthProvider` returns
 `impl Future` and is not object-safe. A request that presents two credentials is resolved by order
 (Q8).
 
