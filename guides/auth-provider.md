@@ -178,6 +178,49 @@ give it a `credential` method.
 The chain is static (`first_success(a).or(b)` is a `FirstSuccess<Or<A, B>>`), because
 `AuthProvider` is not object-safe. Its error type is `CratestackError`.
 
+## Testing a provider: the conformance kit
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+`cratestack-auth-conformance` crate checks that a provider behaves the same on every transport. Add
+it as a dev-dependency and write one test:
+
+```toml
+[dev-dependencies]
+cratestack-auth-conformance = "0.17"
+```
+
+```rust
+use cratestack_auth_conformance::{Expected, auth_conformance};
+
+#[tokio::test]
+async fn my_provider_conforms() {
+    auth_conformance(MyProvider::new(keys))
+        .accepts("user-42", |canonical| sign(canonical))        // a credential it accepts
+        .refuses("expired", |canonical| expired(canonical),     // a credential it refuses
+                 Expected::refusal(&expected_refusal))
+        .run()
+        .await;
+}
+```
+
+The kit compiles its own small schemas and sends every case through REST, RPC unary and RPC batch
+(each mounted at the root and under a prefix) and MCP Streamable HTTP (with
+`CredentialPresence::ask_provider()`). It fails, listing every difference, unless:
+
+* an accepted credential succeeds everywhere as the same subject;
+* a refused one reads the same everywhere: status, code, message, members, `details` and challenges (on MCP, the guard's own `Bearer` challenge comes first);
+* the provider is handed the [canonical request](#what-the-provider-is-given) exactly, without the mount prefix;
+* the provider is called once per request, a batch included, and not at all on MCP when its `credential` says `Absent`.
+
+A signer is handed the `Canonical` request (method, path, query, body) before it is sent, so a
+signing provider signs exactly what it will verify. It returns headers, or `Credentials` with
+request extensions for a credential an in-process layer records, such as the COSE envelope's
+verified signer. `Expected::refusal(&refusal)`, `Expected::unauthorized(message)` and
+`Expected::forbidden(message)` describe a refusal. On MCP a plain (non-`AuthRefusal`) error reads
+with MCP's own fixed message, so the kit compares only its status and code there.
+
+The kit does not drive SSE model subscriptions or the sync endpoints yet, which need a database.
+
 ## Internal callers
 
 Non-HTTP Rust callers can bind auth directly:
