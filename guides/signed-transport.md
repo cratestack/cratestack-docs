@@ -351,6 +351,13 @@ The rules run in this order:
    request, including for a device signer, even with the gate off (the service registry is asked
    first). This fails closed.
 
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* These are
+the rules of a [first-success chain](./auth-provider#composing-providers): `CoseAuthProvider` is now
+`first_success(header_provider).or(CoseSignerProvider)`, and `CoseSignerProvider` (the verified
+signer alone, with the same `authenticate_devices` and `with_service_keys` options) is public, so you
+can put the signer in a chain of your own, for instance after an OAuth provider and a device-signature
+provider. Its credential is present exactly when the envelope layer recorded a verified signer.
+
 The principal is `cose:<thumbprint>` with the default prefix, the same id the envelope's
 `ThumbprintPrincipal` charges the signer to. The context carries `kind` (`service` or `device`),
 `thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id).

@@ -31,6 +31,9 @@ canonical request are all visible to clients and to authors of auth libraries.
 - 2026-10-30: stories 6 and 7 built: the canonical-request rule is stated on `RequestContext` and
   pinned by tests (sync now passes its declared route), and the first-success chain, the defaulted
   `AuthProvider::credential` (default `Unknown`, §4) and `CredentialPresence::ask_provider()` exist.
+- 2026-10-30: stories 8–10: the conformance kit (§6) and the independence guard (§7) are built, and
+  `CoseAuthProvider` is a first-success chain (§5). `CoseAuthProvider` and
+  `SignedRequestAuthProvider` pass the kit.
 
 ## The standing decision this ADR serves
 
@@ -433,6 +436,12 @@ generic and static (nested types: `first_success(a).or(b).or(c)` is a
 
 ### 6. The conformance kit (D6)
 
+*Built in story 8 (cratestack#1243), as the crate `cratestack-auth-conformance`.* Two departures from
+the text below: the kit is a dev-dependency of its own, not a `testing` feature of the facades (the
+kit compiles schemas with `include_server_schema!`, so it depends on a facade, and a facade feature
+re-exporting it would be a dependency cycle); and it drives REST, RPC unary, RPC batch and MCP but
+not yet SSE model subscriptions or sync, which need a database. `CoseAuthProvider` passes it.
+
 A provider author, in-house or external, writes one test:
 
 ```rust
@@ -471,6 +480,12 @@ one) is Q9. Database-backed cases follow the repository's PG-test convention: th
 (§7).
 
 ### 7. The independence guarantee (D7)
+
+*The guard is built (cratestack#1243): `.ci/auth-independence-check.sh`, CI job `auth library
+independence (ADR 0021)`, fails when the workspace's `Cargo.lock` holds an `authkestra*` package.
+The lockfile is the resolved graph of every member under every feature, so one check covers the
+`cargo metadata` and `cargo tree` assertions below. The example-side assertions arrive with
+cratestack#1245's `examples/auth-pluggable`.*
 
 **No framework crate depends on any authentication library**, directly or transitively, under any
 feature. The seam's types (`AuthRefusal`, the principal contract, `Credential`, the chain) live in
