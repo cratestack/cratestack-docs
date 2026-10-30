@@ -255,6 +255,97 @@ Current auth-derived create defaults are intentionally conservative:
 
 For the broader supported policy matrix, precedence rules, and explicit not-supported cases, see `../reference/auth-support-matrix.md`.
 
+## The principal contract
+
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243), ADR 0021 §2.)* A few top-level claim names are reserved, each with a fixed type. A provider that sets one must give it that type; every other name stays free-form.
+
+| Name | Type | Meaning |
+|---|---|---|
+| `sub` | string | The subject: what the framework itself uses as "who" |
+| `roles` | list of strings | The caller's roles |
+| `role` | string | Legacy single role, still read |
+| `tenant.id` | string | The tenant, in the `tenant` facet |
+| `auth_time` | integer, seconds since the epoch | When the user last actively authenticated |
+| `amr` | list of strings | Authentication methods (RFC 8176: `hwk`, `user`, `pwd`, `otp`, …) |
+| `acr` | string | Authentication context class |
+| `cnf` | map | Proof-of-possession confirmation (RFC 7800 members). `cnf.jkt` is the JWK SHA-256 thumbprint, base64url |
+| `key_role` | `ambient` or `user_present` | Which device key proved this request |
+| `exp` | integer, seconds since the epoch | When the authentication expires |
+
+`id` is **not** reserved: `auth User { id Int }` keeps working.
+
+### Building a context
+
+`CratestackContext::builder(sub)` builds a context from these names without knowing the facet layout:
+
+```rust
+use cratestack::{CratestackContext, KeyRole, Value};
+
+let ctx = CratestackContext::builder("user-42")         // sub
+    .roles(["admin", "teller"])
+    .tenant("acme")                                     // tenant.id
+    .auth_time(1_793_000_000)
+    .amr(["hwk", "user"])
+    .acr("urn:example:loa:2")
+    .cnf_jkt(jwk_thumbprint)                            // base64url
+    .key_role(KeyRole::UserPresent)
+    .expires_at(1_793_000_600)                          // exp
+    .claim("kycStatus", Value::String("verified".into())) // free-form
+    .build();
+```
+
+* `build()` fills `auth` and `principal` exactly as `CratestackContext::from_principal` does for the same claims, so `auth().<path>` in a policy and every existing reader see the result.
+* `.cnf(member, value)` sets any other `cnf` member. `.tenant(..)` and the `cnf` setters merge into an existing map; every other setter replaces the earlier value.
+* It never makes a system context (`auth().isSystem()` stays false) and never records a verified signer.
+
+### Typed readers
+
+Each returns `None` for an absent claim **and** for a claim of the wrong type, so a reader fails closed:
+
+| Reader | Returns |
+|---|---|
+| `subject()` | `Option<Cow<str>>`: `sub`, then `actor.id`, then `id`; an integer `actor.id` or `id` as its decimal digits |
+| `roles()`, `amr()` | `Option<Vec<&str>>`; `None` if any element is not a string |
+| `auth_time()`, `expires_at()` | `Option<i64>` |
+| `acr()`, `cnf_jkt()` | `Option<&str>` |
+| `cnf(member)` | `Option<&Value>` |
+| `key_role()` | `Option<KeyRole>` |
+
+`subject()` is the one "who" the framework reads: the [audit log](./audit-log)'s actor id, the MCP idempotency and rate-limit namespace, and the sync engine's default principal (`SyncPrincipal::from_subject`, `cratestack_sync::server::subject_resolver`). `principal_actor_id()` answers the same and now returns `Option<Cow<str>>`.
+
+### `hasRole` over `roles`
+
+`hasRole("r")` is true when `roles` contains `"r"`, or `role` equals `"r"`, or `actor.role` equals `"r"`. The two legacy reads stay, and each is read on its own. A `roles` that is not a list of strings never grants.
+
+### The `auth` block
+
+A schema may declare a reserved name in its `auth` block, so a policy can read it with `auth().<name>`, but only with the contract's type:
+
+```cstack
+auth User {
+  id        Int
+  roles     String[]
+  auth_time Int?
+}
+```
+
+`cratestack check` refuses `roles String`, `auth_time String`, `cnf String`, or a `tenant` type whose `id` is not a string. `String`, `Cuid`, `Uuid` and a string enum count as strings; a `type` or `Json` counts as a map.
+
+### `cratestack-auth`
+
+`SignedRequestAuthProvider` takes the mapping from a verified principal to a context as configuration:
+
+```rust
+use cratestack_auth::{PrincipalMapper, SignedRequestAuthProvider};
+
+let provider = SignedRequestAuthProvider::new(verifier)
+    .principal_mapper(PrincipalMapper::contract(["kycStatus"]));
+```
+
+* `PrincipalMapper::product()`, the default, is today's shape (`actor`, `session`, `id`, `role`, `kycStatus`, …) plus the contract names: `sub` (the user id, or `svc:<key id>` for a service caller), `roles` (the verified `role`) and, for a user, `cnf` (`kid`, and `jkt` when the id token carried the key).
+* `PrincipalMapper::contract([...])` emits only the contract names plus the product claims you name.
+* `PrincipalMapper::custom(f)` takes your own function.
+
 ## Compatibility note
 
 Exact auth keys still win before dotted traversal.
