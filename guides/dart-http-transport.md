@@ -108,6 +108,8 @@ Three families, and they do not overlap:
 
 `CratestackRestException.body` is the decoded error body (CBOR or JSON), the text of a body of any other `Content-Type`, or `null` when there was none or it did not decode. Before this change REST had no typed remote error at all and a raw `DioException` leaked out of `execute`.
 
+*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* Both exceptions also take the answer's `headers` and type an `AuthProvider` refusal: `CratestackRestException` gains `code`, `message` and `details` getters over `body`, and both expose `extra` (every member of the body but those three, never dropped) and `challenges` (the `WWW-Authenticate` value, raw; the seam joins two header lines with `, `, so they arrive as one entry). `RpcErrorBody` gains `extra`. See [Reading a refusal in a generated client](/guides/auth-provider#reading-a-refusal-in-a-generated-client).
+
 `CratestackTransportException` is sealed, with four kinds:
 
 | Kind | Meaning | Safe to resend? |
