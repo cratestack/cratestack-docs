@@ -207,7 +207,7 @@ The kit compiles its own small schemas and sends every case through REST, RPC un
 (each mounted at the root and under a prefix) and MCP Streamable HTTP (with
 `CredentialPresence::ask_provider()`). It fails, listing every difference, unless:
 
-* an accepted credential succeeds everywhere as the same subject;
+* an accepted credential succeeds everywhere as the same subject (`CratestackContext::subject()`);
 * a refused one reads the same everywhere: status, code, message, members, `details` and challenges (on MCP, the guard's own `Bearer` challenge comes first);
 * the provider is handed the [canonical request](#what-the-provider-is-given) exactly, without the mount prefix;
 * the provider is called once per request, a batch included, and not at all on MCP when its `credential` says `Absent`.
@@ -218,6 +218,10 @@ request extensions for a credential an in-process layer records, such as the COS
 verified signer. `Expected::refusal(&refusal)`, `Expected::unauthorized(message)` and
 `Expected::forbidden(message)` describe a refusal. On MCP a plain (non-`AuthRefusal`) error reads
 with MCP's own fixed message, so the kit compares only its status and code there.
+
+CrateStack's own providers pass it: `CoseAuthProvider` (`tests/in_house_cose.rs`) and
+`SignedRequestAuthProvider` (`tests/in_house_signed.rs`), whose signer signs `Canonical` and so
+never sees the mount prefix. Both files are a starting point for a test of your own.
 
 The kit does not drive SSE model subscriptions or the sync endpoints yet, which need a database.
 

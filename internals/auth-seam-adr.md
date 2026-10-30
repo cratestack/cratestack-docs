@@ -32,7 +32,8 @@ canonical request are all visible to clients and to authors of auth libraries.
   pinned by tests (sync now passes its declared route), and the first-success chain, the defaulted
   `AuthProvider::credential` (default `Unknown`, §4) and `CredentialPresence::ask_provider()` exist.
 - 2026-10-30: stories 8–10: the conformance kit (§6) and the independence guard (§7) are built, and
-  `CoseAuthProvider` is a first-success chain (§5).
+  `CoseAuthProvider` is a first-success chain (§5). `CoseAuthProvider` and
+  `SignedRequestAuthProvider` pass the kit.
 
 ## The standing decision this ADR serves
 
