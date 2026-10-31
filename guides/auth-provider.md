@@ -62,7 +62,7 @@ Generated CRUD and procedure routes will call `authenticate(...)` for each reque
 
 ## Refusing a request
 
-*(Unreleased, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* A provider refuses by returning an error. `CratestackError::Unauthorized` and `Forbidden` give the standard envelope and nothing more:
+*(Since 0.17.1, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* A provider refuses by returning an error. `CratestackError::Unauthorized` and `Forbidden` give the standard envelope and nothing more:
 
 ```json
 { "code": "UNAUTHORIZED", "message": "no credential", "details": null }
@@ -100,7 +100,7 @@ The Rust types gained a field for this: `CratestackErrorResponse` and `RpcErrorB
 
 ### Reading a refusal in a generated client
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* Every generated client types the same five things on both transports: the wire `code`, `message`, `details`, every other member (`extra`, never dropped, CBOR or JSON) and the `WWW-Authenticate` challenges (raw, unparsed).
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* Every generated client types the same five things on both transports: the wire `code`, `message`, `details`, every other member (`extra`, never dropped, CBOR or JSON) and the `WWW-Authenticate` challenges (raw, unparsed).
 
 | Client | REST error | RPC error |
 |---|---|---|
@@ -123,7 +123,7 @@ Two refusal lines of `WWW-Authenticate` reach Rust as two values. The Dart HTTP 
 
 ### A step-up refusal in a generated client
 
-*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* An operation can require a fresher or stronger authentication than the caller presented. The server refuses it with an `AuthRefusal`: `401` on REST (code `UNAUTHORIZED`), code `unauthenticated` on RPC (unary and per batch frame), the extra member `error: "insufficient_user_authentication"` ([RFC 9470](https://www.rfc-editor.org/rfc/rfc9470)) and a `details` object:
+*(Since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* An operation can require a fresher or stronger authentication than the caller presented. The server refuses it with an `AuthRefusal`: `401` on REST (code `UNAUTHORIZED`), code `unauthenticated` on RPC (unary and per batch frame), the extra member `error: "insufficient_user_authentication"` ([RFC 9470](https://www.rfc-editor.org/rfc/rfc9470)) and a `details` object:
 
 ```json
 {
@@ -134,7 +134,7 @@ Two refusal lines of `WWW-Authenticate` reach Rust as two values. The Dart HTTP 
 }
 ```
 
-`max_age` (seconds), `acr_values` and `amr` appear only when the operation requires them; `unmet` names which of `max_age`, `acr` and `amr` the caller failed. REST also sends `WWW-Authenticate: Bearer error="insufficient_user_authentication", ...`. The server side that declares the requirement and sends this refusal is a separate #1244 change; the clients below only read it.
+`max_age` (seconds), `acr_values` and `amr` appear only when the operation requires them; `unmet` names which of `max_age`, `acr` and `amr` the caller failed. REST also sends `WWW-Authenticate: Bearer error="insufficient_user_authentication", ...`. A procedure declares the requirement with [`@authn`](/reference/auth-support-matrix#authentication-requirements-authn), and the generated server sends this refusal on every path to it; [Step-up examples](/guides/step-up-examples) runs the whole path.
 
 Every generated client types the refusal as `StepUpRequired`. An error is a step-up only when its status is `401` (REST) or its code `unauthenticated` (RPC) **and** its `error` member is `insufficient_user_authentication`; anything else reads as none. Reading never throws: a missing or mistyped field reads as absent or empty.
 
@@ -163,11 +163,20 @@ let receipt = retry_after_step_up(
 
 In Rust, `call` may return anything `.await` takes, so a generated RPC method's call fits as is. The riverpod providers store the exception itself in `AsyncError`, so `stepUp` reads the same there; the fespalier preset's refusals reach the same exception classes. The `--rtk` REST error (`RtkRestQueryError`) gains an optional `stepUp`, and `--swr` hooks surface the same error instances.
 
+::: warning Known issue: a retry under the same `Idempotency-Key`
+On 0.17.1 the [idempotency layer](./idempotency) records a `401` like any other error, the step-up
+refusal included, and replays it to the next request under the same key. A retry that resends the
+refused call with the key it was first sent with therefore gets the stored `401` back instead of
+running ([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open). The same
+holds for a retry after renewing an expired credential. A call without an `Idempotency-Key` is not
+affected.
+:::
+
 The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.
 
 ## What the provider is given
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
 `RequestContext` is the **canonical request** of the operation. A provider that verifies a
 signature can rely on it, and a client signs the same thing:
 
@@ -188,7 +197,7 @@ it is the opened payload.
 
 ## Saying whether a request carries a credential
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* A provider
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* A provider
 may also say, without authenticating, whether a request carries its kind of credential:
 
 ```rust
@@ -216,7 +225,7 @@ provider never looks for its credential there. Two things ask: a
 
 ## Composing providers
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* An
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* An
 application that accepts more than one kind of credential composes its providers into one:
 
 ```rust
@@ -245,7 +254,7 @@ The chain is static (`first_success(a).or(b)` is a `FirstSuccess<Or<A, B>>`), be
 
 ## Testing a provider: the conformance kit
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
 `cratestack-auth-conformance` crate checks that a provider behaves the same on every transport. Add
 it as a dev-dependency and write one test:
 
@@ -292,7 +301,7 @@ The kit does not drive SSE model subscriptions or the sync endpoints yet, which 
 
 For a whole service run against several providers, see
 [`examples/auth-pluggable`](https://github.com/cratestack/cratestack/tree/main/examples/auth-pluggable)
-*(Unreleased, [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: one schema
+*(Since 0.17.1, [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: one schema
 and one test suite (the kit, then the example's own `hasRole` policy) against three providers, each
 one file:
 
@@ -384,7 +393,7 @@ For the broader supported policy matrix, precedence rules, and explicit not-supp
 
 ## The principal contract
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243), ADR 0021 §2.)* A few top-level claim names are reserved, each with a fixed type. A provider that sets one must give it that type; every other name stays free-form.
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243), ADR 0021 §2.)* A few top-level claim names are reserved, each with a fixed type. A provider that sets one must give it that type; every other name stays free-form.
 
 | Name | Type | Meaning |
 |---|---|---|
@@ -473,7 +482,7 @@ let provider = SignedRequestAuthProvider::new(verifier)
 * `PrincipalMapper::contract([...])` emits only the contract names plus the product claims you name.
 * `PrincipalMapper::custom(f)` takes your own function.
 
-*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* Both built-in
+*(Since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* Both built-in
 mappers also emit `amr` and, for a user, `auth_time`, which a procedure's
 [`@authn`](/reference/auth-support-matrix#authentication-requirements-authn) requirement reads:
 

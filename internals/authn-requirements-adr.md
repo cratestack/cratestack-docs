@@ -9,8 +9,10 @@ description: A procedure states how recently and how strongly its caller must ha
 
 **Proposed**, 2026-10-31. It is the first child story of epic
 [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244). The server side described here
-is built in the framework PR for #1244 (§1–§4, §6). The typed client value (§5) is a second PR of the
-same epic. Nothing here is a supported surface until this ADR is accepted.
+is built in the framework PR for #1244 (§1–§4, §6), and the typed client value (§5) in a second PR of
+the same epic. Both shipped in CrateStack 0.17.1 (2026-10-31), with the end-to-end examples of
+[cratestack#1245](https://github.com/cratestack/cratestack/issues/1245); acceptance is still the
+maintainer's decision.
 
 The number is the next free one across both repositories, after
 [ADR 0021](/internals/auth-seam-adr) (the `AuthProvider` seam). This ADR builds on 0021's refusal
@@ -20,6 +22,8 @@ grammar and the wire signal are user-visible.
 ## Date
 
 - 2026-10-31: proposed, with §1–§4 and §6 built.
+- 2026-10-31: §5 built ([cratestack#1256](https://github.com/cratestack/cratestack/pull/1256)), and
+  everything here released in CrateStack 0.17.1.
 
 ## Decisions for the maintainer
 
@@ -29,7 +33,7 @@ grammar and the wire signal are user-visible.
 | D2 | What does it mean? | **Checked after `@allow`/`@deny`**, against the principal contract's `auth_time`, `amr` and `acr`. A missing fact fails closed. | built |
 | D3 | What does a refusal look like? | **RFC 9470**: a 401 `AuthRefusal` with `error: "insufficient_user_authentication"`, a `details` naming what is required and what was unmet, and a `Bearer` challenge on REST. | built |
 | D4 | Which paths enforce it? | **Every path to the procedure**: REST, RPC unary, each RPC batch frame, MCP tool calls and non-HTTP callers. All of them go through the procedure's one authorize step. | built |
-| D5 | How do clients react? | **A typed `StepUpRequired { maxAge, acrValues, amr, unmet }`** in Rust, Dart and TypeScript (and the riverpod, swr and fespalier layers). Each also gets a helper that retries **at most once** after a successful re-proof. | second PR |
+| D5 | How do clients react? | **A typed `StepUpRequired { maxAge, acrValues, amr, unmet }`** in Rust, Dart and TypeScript (and the riverpod, swr and fespalier layers). Each also gets a helper that retries **at most once** after a successful re-proof. | built (second PR) |
 | D6 | Who fills the facts? | **The provider.** `cratestack-auth` fills `auth_time` and `amr` (adding `pop` for a signed request), and COSE signers report `amr: ["pop"]`. Authkestra's providers map their own claims. | built |
 
 ## Context
@@ -147,7 +151,7 @@ it.
 | Path | Refusal |
 |---|---|
 | REST | 401, envelope and challenge as in §3 |
-| RPC unary | 401, `code: "unauthenticated"`, the same `details` and `error` member, no challenge |
+| RPC unary | 401, `code: "unauthenticated"`, the same `details` and `error` member. The challenge rides along: RPC dispatch re-enters the REST handler, and its re-encoding keeps the handler's `WWW-Authenticate` (`cratestack-axum/src/rpc/error_encode.rs`) |
 | RPC batch | **per frame**: the frame that needs a step-up carries the error, and its neighbours run. The envelope authenticated once, so `auth_time` is the envelope's. |
 | MCP tool | an `isError` result whose text is the REST envelope, and the tool never runs. ADR 0002 D5 exempts MCP from transport parity, but the requirement lives in the authorize step MCP already calls, so an `@mcp(tool)` procedure cannot skip it. |
 | Non-HTTP callers | the `CratestackError::AuthRefused` the authorize step returns |
@@ -164,7 +168,12 @@ Each generated client gains:
 
 The riverpod, swr and fespalier layers surface the typed value unchanged. fespalier maps it onto its
 session, so the app re-proves (a user-present key, a passkey) and retries; that mapping is tracked in
-fespalier's epic. This half of the epic is a separate PR.
+fespalier's epic. This half of the epic was a separate PR, built in
+[cratestack#1256](https://github.com/cratestack/cratestack/pull/1256).
+
+A retry under the same `Idempotency-Key` meets the recorded `401` on 0.17.1: the idempotency layer
+records a refusal like any other answer and replays it
+([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open).
 
 ### 6. Who fills the facts (D6)
 
@@ -221,9 +230,10 @@ An issuer that re-mints a token without a fresh user proof must keep the earlier
 2. Parser, LSP and the op contract: built.
 3. Enforcement on REST and RPC unary: built.
 4. Enforcement per RPC batch frame, and on MCP tools: built.
-5. Rust client `StepUpRequired`.
-6. Dart client, with the riverpod and fespalier layers.
-7. TypeScript client, with swr.
+5. Rust client `StepUpRequired`: built.
+6. Dart client, with the riverpod and fespalier layers: built.
+7. TypeScript client, with swr: built.
 8. In-house providers fill `auth_time` and `amr`: built.
 
-Items 5–7 are the clients PR.
+Items 5–7 are the clients PR ([cratestack#1256](https://github.com/cratestack/cratestack/pull/1256)).
+Every item shipped in 0.17.1.

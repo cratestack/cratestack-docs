@@ -134,7 +134,7 @@ The token is removed from the request once your provider has run. Every call the
 
 ### A provider that does not use bearer tokens
 
-*(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The table
+*(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The table
 above is the default rule: a request needs `Authorization: Bearer` before your provider runs. A
 provider that authenticates another way (a device signature, a COSE envelope, mTLS in the request's
 extensions) sets the rule on the builder:
@@ -159,7 +159,7 @@ let mcp = StreamableHttpServer::builder(tools, auth_provider, origins, resource)
 * `CredentialPresence::when(|parts| ...)` tests the request head (method, URI, headers and extensions, never the body).
 * `with_credential_headers` names the headers that carry the credential. They are removed before the MCP server sees the request, as `Authorization` is, and their values are cut out of your provider's logged error detail.
 
-The `mcp-operator` example's endpoint runs with `ask_provider()` *(Unreleased,
+The `mcp-operator` example's endpoint runs with `ask_provider()` *(since 0.17.1,
 [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: its provider accepts the
 same token in an `X-Agent-Token` header as well as `Authorization: Bearer`, names it for redaction,
 and refuses it exactly as it refuses a bearer token.
@@ -187,12 +187,20 @@ audience check.
    *(since 0.14.0)* The MCP key holds a SHA-256 of the caller's id, not the id itself. After
    upgrading from 0.13.0 with a shared store, MCP idempotency records written by 0.13.0 no longer
    replay and MCP rate-limit buckets start fresh.
-   *(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
+   *(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* The
    id is the context's `subject()`: `sub`, then `actor.id`, then `id` (see
    [The principal contract](/guides/auth-provider#the-principal-contract)). A provider that adds
    `sub` next to a different `id` moves its callers to a new namespace once.
 4. The procedure's generated `invoke_with_db` runs `@allow` / `@deny` and any `@authorize(...)`,
    then your implementation. Its ORM calls carry `@@allow` in their SQL.
+   *(Since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* A
+   procedure that declares
+   [`@authn`](/reference/auth-support-matrix#authentication-requirements-authn) is checked right
+   after `@allow` / `@deny`. An unmet requirement is an `isError` result whose text is REST's
+   step-up envelope (`error: "insufficient_user_authentication"` and its `details`), and the tool
+   never runs. Like every other `isError` result, it is recorded under an idempotency key, so a
+   retry under the same key after a step-up replays it
+   ([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open).
    *(Since 0.14.1.)* For a procedure that declares
    [`@isolation`](/guides/transaction-isolation#procedure-level-isolation), all of this runs in
    one transaction at the declared level and is retried on a serialization failure or deadlock,
