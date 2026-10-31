@@ -44,7 +44,7 @@ cratestack = { package = "cratestack-api", version = "0.8" }
 
 `cratestack-api` is a third facade crate, structurally parallel to `cratestack-pg` and `cratestack-sqlite`: same rename-via-`package =` pattern, same re-exported macro surface, but `sqlx` and `cratestack-sqlx` are genuinely absent from its dependency graph — not a Cargo feature you have to remember to turn off.
 
-<Info>
+::: info
 Already on `cratestack-pg` and just want to shed `sqlx` from a database-free build without switching facades? `cratestack-pg`'s `postgres` feature is default-on and gates `cratestack-sqlx` out when you opt into `default-features = false`:
 
 ```toml
@@ -52,7 +52,7 @@ cratestack = { package = "cratestack-pg", version = "0.8", default-features = fa
 ```
 
 Both paths work and neither is being removed. `cratestack-api` is the leaner default for anyone starting a database-free service from scratch; `cratestack-pg` with `default-features = false` is there for teams that already standardized on that facade.
-</Info>
+:::
 
 ## Schema
 
@@ -71,7 +71,7 @@ procedure ping(args: PingArgs): PingReply
   @allow(auth() != null)
 ```
 
-<Note>
+::: info
 Procedure-level `@allow` / `@deny` policies never depended on a database connection to evaluate — they check `auth()` and argument shape, both of which exist independent of `provider`. They keep working unchanged on `provider = "none"` schemas.
 
 *(Since 0.14.1.)* Procedure attributes are a closed list, each in one exact spelling
@@ -81,7 +81,7 @@ signature up to the first blank line. Through 0.14.0 a misspelled or oddly space
 skipped without an error. `@isolation` is refused on a `provider = "none"` schema, since there is
 no transaction to isolate. See
 [Policy attribute spelling](/reference/auth-support-matrix#policy-attribute-spelling).
-</Note>
+:::
 
 ## Minimal Setup
 

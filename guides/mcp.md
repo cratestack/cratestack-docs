@@ -5,13 +5,13 @@ description: Serve selected procedures as MCP tools and selected models as read-
 
 # MCP: tools and resources for agents
 
-<Note>
+::: info
 **Since CrateStack 0.13.0.** Before 0.13.0 there is no MCP runtime. A few behaviours changed in
 0.14.0 and are marked *(since 0.14.0)* below. 0.13.x is yanked on crates.io, deprecated on npm and
 retracted on pub.dev: 0.13.1 shipped breaking changes as a patch release, and 0.14.0 carries them.
 Install 0.14 or later. The design is [ADR 0002](/internals/mcp-operator-adr); the tracking epic is
 [cratestack#1033](https://github.com/cratestack/cratestack/issues/1033).
-</Note>
+:::
 
 CrateStack can serve parts of a schema to AI agents over the
 [Model Context Protocol](https://modelcontextprotocol.io), revision `2026-07-28`. Procedures you
@@ -168,11 +168,11 @@ A request found without a credential still gets the 401 `resource_metadata` chal
 [`AuthRefusal`](./auth-provider#refusing-a-request) from your provider keeps its status, its envelope
 members and `details`, and its `WWW-Authenticate` challenges follow the guard's own.
 
-<Warning>
+::: warning
 **Your `AuthProvider` must check the token's audience** against the resource identifier. MCP
 requires it, and CrateStack ships no generic OAuth provider. The example's `src/token.rs` shows an
 audience check.
-</Warning>
+:::
 
 ## What a tool call goes through
 

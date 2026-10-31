@@ -20,7 +20,7 @@ Use this track as:
 These docs use the public `cratestack` naming. The framework code and docs are split into separate public repositories:
 
 1. the CrateStack workspace repository for the Rust workspace and editor package
-2. the CrateStack docs repository for this Mintlify documentation project
+2. the CrateStack docs repository for this VitePress documentation project
 
 ## Stability Guide
 

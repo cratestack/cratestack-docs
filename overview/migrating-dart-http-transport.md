@@ -5,13 +5,13 @@ description: The four *DioAdapter classes are removed. How to move a generated D
 
 # Migrating the Dart client to the HTTP transport
 
-<Warning>
+::: warning
   **Since 0.16.0, breaking** ([cratestack#1204](https://github.com/cratestack/cratestack/issues/1204)).
   This is a hard cutover with no aliases: `CratestackDioAdapter`, `CratestackCborDioAdapter`,
   `CratestackRpcDioAdapter` and `CratestackRpcCborDioAdapter` are removed from the generated
   `runtime.dart`. A regenerated package that still names one does not compile. It applies to the
   `default` and `riverpod` presets, REST and RPC alike.
-</Warning>
+:::
 
 Regenerate the package, then make the changes below. The wire output is unchanged: the same URLs, headers and body bytes go out, pinned by golden requests captured from the retired adapters.
 

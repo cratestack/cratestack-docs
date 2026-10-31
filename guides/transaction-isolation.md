@@ -150,7 +150,7 @@ dispatch. Without commit-time retry, callers would observe a transient
 
 ## Procedure-level isolation
 
-<Warning>
+::: warning
 **Since 0.14.1.** Enforcement of `@isolation` shipped in 0.14.1
 ([GHSA-r67q-4qqq-g9gm](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md),
 see the `## 0.14.1` section of the framework CHANGELOG). **In every release from 0.2.0 through
@@ -160,7 +160,7 @@ declared-serializable withdrawals of 100 from a balance of 100 both succeeded. E
 this page said a macro recorded the level for the handler to read; no such metadata ever existed.
 On 0.14.0 and earlier, wrap the body yourself in `run_in_isolated_tx(db.pool(), ..)` and run its
 SQL, and the write builders' `run_in_tx(&mut tx, ctx)`, through that transaction.
-</Warning>
+:::
 
 Procedures declare their required isolation level inline:
 

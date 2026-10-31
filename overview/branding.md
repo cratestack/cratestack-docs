@@ -12,9 +12,10 @@ transparent background. They are the same drawing, not two logos.
 
 ## The mark
 
-<Frame caption="The CrateStack app icon — the mark on its tile, as used for the VS Code extension listing.">
+<figure>
   <img src="/images/branding/cratestack-app-icon-256.png" alt="The CrateStack mark: three stacked isometric orange crates on a dark rounded-square tile" width="192" height="192" />
-</Frame>
+  <figcaption>The CrateStack app icon — the mark on its tile, as used for the VS Code extension listing.</figcaption>
+</figure>
 
 This is the gallery/app mark. It is what the `cratestack-vscode` extension shows
 on its Marketplace listing. The `#1E222E` rounded square is part of *this* asset,
@@ -43,18 +44,20 @@ The file-type icon is the same three crates redrawn as geometry — so it stays
 crisp at the 16×16 an editor's file explorer actually renders — with **no
 background plate**. It ships in two theme variants.
 
-<Columns cols={2}>
-  <Frame caption="Dark variant — the mark's palette unchanged, shown here over the tile navy.">
-    <div style={{ background: "#1E222E", padding: "2rem", textAlign: "center" }}>
+<div class="figure-row">
+  <figure>
+    <div class="brand-plate" style="background: #1E222E">
       <img src="/images/branding/cratestack-file-icon-dark.svg" alt="The .cstack file icon, dark-theme variant: three stacked orange crates on a transparent background" width="96" height="96" />
     </div>
-  </Frame>
-  <Frame caption="Light variant — each tone deepened one step, shown here over a near-white background.">
-    <div style={{ background: "#F5F5F4", padding: "2rem", textAlign: "center" }}>
+    <figcaption>Dark variant — the mark's palette unchanged, shown here over the tile navy.</figcaption>
+  </figure>
+  <figure>
+    <div class="brand-plate" style="background: #F5F5F4">
       <img src="/images/branding/cratestack-file-icon-light.svg" alt="The .cstack file icon, light-theme variant: three stacked orange crates in deepened tones on a transparent background" width="96" height="96" />
     </div>
-  </Frame>
-</Columns>
+    <figcaption>Light variant — each tone deepened one step, shown here over a near-white background.</figcaption>
+  </figure>
+</div>
 
 The light variant is a **legibility adjustment, not a second palette**: the hue is
 unchanged, each value is deepened one step so the pale top face does not wash out
@@ -104,13 +107,13 @@ surrounding theme.
 | SVG | [cratestack-file-icon-dark.svg](/images/branding/cratestack-file-icon-dark.svg) | [cratestack-file-icon-light.svg](/images/branding/cratestack-file-icon-light.svg) |
 | PNG | [16](/images/branding/cratestack-file-icon-dark-16.png) · [32](/images/branding/cratestack-file-icon-dark-32.png) · [64](/images/branding/cratestack-file-icon-dark-64.png) · [128](/images/branding/cratestack-file-icon-dark-128.png) | [16](/images/branding/cratestack-file-icon-light-16.png) · [32](/images/branding/cratestack-file-icon-light-32.png) · [64](/images/branding/cratestack-file-icon-light-64.png) · [128](/images/branding/cratestack-file-icon-light-128.png) |
 
-<Note>
+::: info
 **JPEG has no transparency.** The logomark JPEGs are flattened onto a named
 background, which is why there are two and why each says which. If you need the
 mark over anything else, take the PNG or the SVG — do not flatten a JPEG onto a
 colour it was not rendered for. There is no JPEG of the file icon for the same
 reason: a file icon is transparent by definition.
-</Note>
+:::
 
 ## Usage
 
@@ -125,10 +128,10 @@ reason: a file icon is transparent by definition.
 - **Do not redraw or restretch the mark.** Scale it uniformly; the isometric
   geometry breaks under non-uniform scaling.
 
-<Note>
+::: info
 Both variants are the canonical `.cstack` file-type asset, and the
 `cratestack-vscode` extension registers them as the language icon for `.cstack`
 files — see [Editor Tooling](/tooling/editor-tooling). That language-icon
 contribution is not in a published extension release yet; the assets themselves
 are canonical regardless.
-</Note>
+:::

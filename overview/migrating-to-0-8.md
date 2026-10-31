@@ -51,14 +51,14 @@ matching the tables above. A plain global `Cool`→`Cratestack` text substitutio
 have unrelated identifiers containing "Cool" elsewhere in your codebase; scope the replacement to the
 exact names above.
 
-<Warning>
+::: warning
 `CratestackContext` is not the same type as `RequestContext`. Both exist on `cratestack::AuthProvider`
 today: `RequestContext` is the inbound request view your `authenticate(...)` implementation reads
 (`method`/`path`/`headers`/`body`), and `CratestackContext` is the auth/principal result it produces.
 Renaming `CoolContext` usages to `CratestackContext` is correct; don't conflate either with
 `RequestContext`, which was never `Cool`-prefixed and is unaffected by this rename. See
 [Auth Provider](../guides/auth-provider) for the full shape.
-</Warning>
+:::
 
 ## 2. Decimal backends are now additive, and schemas with a `Decimal` field need a macro argument
 

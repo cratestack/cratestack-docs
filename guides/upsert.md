@@ -206,7 +206,7 @@ deliberate, banking-friendly sequence:
 10. **Enqueue the event and the audit entry** reflecting what the database
     actually did, then commit and drain the outbox
 
-<Note>
+::: info
 **Why the database decides, not the probe** ([#745](https://github.com/cratestack/cratestack/issues/745)).
 Before 0.8.14 the Created-vs-Updated decision came from the pre-statement
 probe and was never reconciled against what actually happened. When a
@@ -226,7 +226,7 @@ which classifies correctly but only *after* the prior row has been
 overwritten and is unrecoverable — and is a Postgres storage detail with
 no counterpart elsewhere, where `ON CONFLICT DO NOTHING … RETURNING` is
 documented behaviour SQLite mirrors verbatim.
-</Note>
+:::
 
 The extra round-trip for `SELECT … FOR UPDATE` is the price of clean
 event / audit semantics without leaning on Postgres `xmax` — keeping the
@@ -303,7 +303,7 @@ what makes "return what the probe found, untouched" safe without a second statem
 Models with `@@soft_delete` treat tombstoned rows as "not present" for
 the probe step, and the two upsert paths diverge from there.
 
-<Warning>
+::: warning
 **The `DO UPDATE` path overwrites a tombstone, reports it as a create, and
 leaves it hidden.** Because `select_for_update_by_conflict_target`
 deliberately treats a tombstone as "no row", a tombstone at the conflict
@@ -331,7 +331,7 @@ readable afterwards. When you genuinely want revive-on-upsert semantics,
 clear the tombstone yourself first (`UPDATE … SET deleted_at = NULL` in
 SQL; unless the model declares a `deleted_at` field, the generated
 `.update(...)` cannot set it).
-</Warning>
+:::
 
 ### Auth-derived defaults are insert-only
 

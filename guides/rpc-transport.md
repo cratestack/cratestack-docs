@@ -7,7 +7,7 @@ description: Pick `transport rpc` in your `.cstack` schema to swap REST routes f
 
 A `.cstack` schema's `TransportStyle` has two variants — REST and RPC. The default is REST — per-model `/users`, `/users/{id}`, `/$procs/<name>` routes, the shape this framework was built around. This guide covers the second style, **RPC** — a single `POST /rpc/{op_id}` route per callable, a `POST /rpc/batch` endpoint that takes N frames at a time, and content-negotiated streaming on the same unary route. One binding per schema; the macro emits exactly one binding's worth of routes and client surface. There is no runtime flip and no schema runs both.
 
-<Note>
+::: info
 There used to be a third variant. **Protobuf/gRPC support was removed in
 0.8.5** ([ADR 0017](https://github.com/cratestack/cratestack/blob/main/docs/adr/0017-remove-grpc-protobuf.md));
 `transport grpc` and the `@pb` attribute no longer parse at all. A schema
@@ -18,7 +18,7 @@ still declaring it gets a compile error pointing here:
 (see docs/adr/0017-remove-grpc-protobuf.md). Migrate the schema to `transport rest`
 or `transport rpc` and regenerate its clients
 ```
-</Note>
+:::
 
 This guide covers what the RPC binding does today and when to pick it. The full design is in [ADR 0005](../internals/rpc-transport-adr).
 
@@ -74,7 +74,7 @@ The router mounts two paths:
 - `POST /rpc/{op_id}` — unary for every CRUD verb + every procedure
 - `POST /rpc/batch` — sequence of `RpcRequest` frames
 
-<Warning>
+::: warning
   **A JSON-only `CodecSet` will reject a default-generated TypeScript RPC client.** Since issue
   [#746](https://github.com/cratestack/cratestack/issues/746), `cratestack generate-typescript`
   defaults `transport rpc` clients to the native `@cratestack/cbor` codec, sending
@@ -83,7 +83,7 @@ The router mounts two paths:
   response. Mount `CodecSet::new(CborCodec, JsonCodec)` as shown above, or generate the client with
   `--no-native-cbor` if the server genuinely stays JSON-only. See [TypeScript client
   generation](/guides/typescript-client-generation#the-cbor-codec) for the client side of this.
-</Warning>
+:::
 
 ## Op identity
 
@@ -454,7 +454,7 @@ This is **RPC-transport (`transport rpc`) only.** The REST binding (`transport r
 
 ### Automatic call coalescing with `@cratestack/api`
 
-[`@cratestack/api`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-api) is a new, hand-written (not generated) npm package, published standalone with provenance, inspired by [batshit](https://github.com/yornaath/batshit). It ships `createBatchLink()` — a batshit/tRPC-`httpBatchLink`/Apollo-`BatchHttpLink`-style automatic batch scheduler, implemented as an `RpcLink` so it composes with `createLoggerLink()` or any other link instead of being a `fetch` override that would clobber them. It transparently collapses multiple unary RPC calls issued within the same tick into one `POST /rpc/batch` request — the same batch envelope described [above](#batch-post-rpcbatch), just assembled for you instead of hand-built.
+[`@cratestack/api`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-api) is a new, hand-written (not generated) npm package, published standalone with provenance, inspired by [batshit](https://github.com/yornaath/batshit). It ships `createBatchLink()` — a batshit/tRPC-`httpBatchLink`/Apollo-`BatchHttpLink`-style automatic batch scheduler, implemented as an `RpcLink` so it composes with `createLoggerLink()` or any other link instead of being a `fetch` override that would clobber them. It transparently collapses multiple unary RPC calls issued within the same tick into one `POST /rpc/batch` request — the same batch envelope described [above](#batch-post-rpc-batch), just assembled for you instead of hand-built.
 
 ```ts
 import { createBatchLink, createLoggerLink } from "@cratestack/api";

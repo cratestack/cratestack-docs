@@ -5,13 +5,13 @@ description: "`@computed` — response-time fields backed by a generated resolve
 
 # Computed Fields
 
-<Note>
+::: info
 `@computed` (with per-request `computedParams` and the typed client surfaces)
 is available since **v0.8.11**; RPC `get` selection parity and the
 `<Model>ComputedParams` builders since **v0.8.12**. It replaces the earlier
 `@custom` attribute, which generated a resolver trait nothing ever called; a
 schema still using `@custom` fails to parse with a pointer to `@computed`.
-</Note>
+:::
 
 Some fields are not stored and cannot be: a signed CDN URL that expires in
 fifteen minutes, a display string assembled from three columns and the caller's

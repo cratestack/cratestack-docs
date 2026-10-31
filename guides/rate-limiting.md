@@ -46,7 +46,7 @@ The two `X-RateLimit-*` headers ride on **allowed** responses only — a 429
 carries `Retry-After` and no budget headers. There is no
 `X-RateLimit-Reset`.
 
-<Warning>
+::: warning
   **The 429 body is a typed error envelope, not a string.** Every response
   this layer emits itself now carries the framework's own codec-negotiated
   error envelope — the REST `CratestackErrorResponse` `{code, message, details}`
@@ -60,7 +60,7 @@ carries `Retry-After` and no budget headers. There is no
 
   The code is `TOO_MANY_REQUESTS` over REST and `resource_exhausted` over
   RPC, backed by the `CratestackError::TooManyRequests` variant.
-</Warning>
+:::
 
 Content negotiation never rewrites the status of these responses. `Accept`
 is caller-controlled, so passing a negotiation failure through would let any
@@ -282,14 +282,14 @@ refusing there would turn a limiter hiccup into a simultaneous outage of
 every rate-limited route, which is why it is the one class that degrades to
 unlimited.
 
-<Warning>
+::: warning
   **`StoreErrorPolicy::Deny` restores the pre-0.11.0 behaviour** — every
   store failure, transport included, refuses the request. That is what
   deployments using the limiter as a *security* control (a paywall, a
   brute-force guard) rather than a *capacity* control want. `RateLimitConfig`
   has no env-driven surface, so this is a builder-only knob; there is no
   environment variable to set.
-</Warning>
+:::
 
 Key derivation itself stays fail-closed under **both** policies: a request
 the layer cannot identify is refused with `412 Precondition Failed` before
@@ -308,7 +308,7 @@ measured at 9.46 s, doubled to 18.92 s by the retry. Nineteen seconds of
 blocking is worse for the caller than the refusal it replaced, and is itself
 a denial-of-service lever.
 
-<Warning>
+::: warning
   **Check the 500 ms default against your Redis latency.** A store whose p99
   `consume` exceeds the budget is classified transport-unavailable and, under
   the default `Allow`, served **unthrottled** — so an under-provisioned or
@@ -316,7 +316,7 @@ a denial-of-service lever.
   slow one. Raise the budget with `with_store_timeout`, or set `Deny`, rather
   than taking the default on faith. The condition is visible in the logs
   below, but only if someone is reading them.
-</Warning>
+:::
 
 ### What gets logged
 

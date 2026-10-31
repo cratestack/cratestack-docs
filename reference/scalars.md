@@ -67,7 +67,7 @@ placeholder-vs-real one:
 
 Default: `decimal-rust-decimal`.
 
-<Info>
+::: info
 **Changed in 0.8.0 (cratestack#505).** The two Cargo features used to be
 mutually exclusive — enabling both was a hard `compile_error!`. As of
 0.8.0 they are **additive**: a build can enable both, and two independent
@@ -77,7 +77,7 @@ well-formed crates, each choosing a different backend on its own terms,
 used to force a combined build that neither one alone controlled. See
 [Migrating to 0.8.0](../overview/migrating-to-0-8) for what changed and
 what to update.
-</Info>
+:::
 
 Enabling **neither** feature is still not an error (cratestack#421/#505)
 — it matters for a consumer that uses `default-features = false` to

@@ -93,7 +93,7 @@ If your changes are upstream-friendly, please open a PR to
 
 ## Bundle the UI into the binary
 
-<Note>
+::: info
 This section is about building **`cratestack-cli` itself** from a
 `cratestack/cratestack` git checkout — relevant to framework
 contributors, or anyone who wants a locally-modified UI baked into
@@ -103,7 +103,7 @@ the UI bundled — see above. That works with zero Trunk/wasm setup
 because the *published* `cratestack-studio` crate ships with its
 Trunk build already baked in; a fresh git checkout doesn't have that
 build yet, which is what this section produces.
-</Note>
+:::
 
 The framework repo's own local-dev story
 (`cratestack studio run` + `trunk serve` in two terminals) is fine

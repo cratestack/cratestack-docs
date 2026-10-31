@@ -5,11 +5,11 @@ description: Runnable examples of a schema-declared step-up (`@authn`) from the 
 
 # Step-up examples
 
-<Note>
+::: info
 **Unreleased.** These examples ship with the `@authn` attribute and the typed `StepUpRequired`
 refusal of [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244) ([ADR 0022](/internals/authn-requirements-adr)). They
 are stories 5 to 7 of [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245).
-</Note>
+:::
 
 A procedure can say how recently and how strongly the caller must have authenticated:
 
@@ -103,10 +103,10 @@ const result = await retryAfterStepUp(() => trigger({ args: { boardId } }), ask)
 The flows are tested without a server: `app/test/step_up_test.dart` (Flutter widget tests) and
 `web/test/step-up.test.ts` (`pnpm --filter react-vite-swr-web test`).
 
-<Warning>
+::: warning
 In these two apps the session's facts travel as plain headers (`x-auth-time`, `x-auth-amr`), next
 to the `x-auth-id` the example server already trusted, and "confirming with a security key" only
 updates them. That keeps the apps about the client surface. A real provider must never trust such
 headers: it reads `auth_time` and `amr` from a credential it verified, as
 `step-up-procedures` does.
-</Warning>
+:::

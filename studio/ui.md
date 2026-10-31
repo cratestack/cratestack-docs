@@ -10,7 +10,7 @@ served by Trunk. It's a thin CSR app that consumes the
 [read API](./read-api) — every action you can do in the browser
 maps one-to-one to a JSON endpoint.
 
-<Note>
+::: info
 The UI ships as a sibling crate at `crates/cratestack-studio-ui/` in
 the framework repo. It is deliberately excluded from the Cargo
 workspace (it targets `wasm32-unknown-unknown`), so it has its own
@@ -22,7 +22,7 @@ binary project with the UI already bundled in — no Trunk needed.
 Pass `--with-ui` to also unpack the Leptos+Trunk sources into a
 [writable directory you can fork](./eject#customizing-the-ui-with-ui)
 and iterate on with `trunk serve`.
-</Note>
+:::
 
 ## Running the UI locally
 
@@ -91,16 +91,18 @@ The UI is one page, four panes:
 | Main pane        | Records table for the selected model, with cursor-based pagination (Previous / Next).                 |
 | Right drawer     | Selected row's fields, a relation-follow input, and a "Copy Rust query" button.                       |
 
-<Frame caption="The catalog target's Post model. Sidebar lists the schema's models; the tools row and RW affordances sit above the records table.">
+<figure>
   <img src="/images/studio/studio-records.png" alt="CrateStack Studio showing the Post model's records table with five rows and a pagination footer" />
-</Frame>
+  <figcaption>The catalog target's Post model. Sidebar lists the schema's models; the tools row and RW affordances sit above the records table.</figcaption>
+</figure>
 
 Selecting a row opens the drawer on the right with that row's fields,
 the relation picker, and the write affordances (on `rw` targets):
 
-<Frame caption="Row p1 selected. The drawer shows every field, a relation picker, and Edit / Delete / Copy Rust query.">
+<figure>
   <img src="/images/studio/studio-drawer.png" alt="Studio drawer showing the selected Post row's fields alongside Edit, Delete and Copy Rust query buttons" />
-</Frame>
+  <figcaption>Row p1 selected. The drawer shows every field, a relation picker, and Edit / Delete / Copy Rust query.</figcaption>
+</figure>
 
 ### Pagination
 
@@ -208,19 +210,20 @@ dropdown without a second fetch. *(Since 0.17.0)* For an
 `enum_ordinals`, in `enum_variants` order. A write accepts the variant's
 name or its number and stores the number.
 
-<Frame caption="Edit mode on row p1. Each field gets the control its declared scalar calls for — `views` is a number input, not a text box.">
+<figure>
   <img src="/images/studio/studio-edit.png" alt="Studio drawer in edit mode with typed inputs per field and Save / Cancel buttons" />
-</Frame>
+  <figcaption>Edit mode on row p1. Each field gets the control its declared scalar calls for — <code>views</code> is a number input, not a text box.</figcaption>
+</figure>
 
 The `@id` field and relation/list fields are not editable and are
 omitted from the form — the primary key identifies the row you're
 PATCHing, so it isn't part of the patch.
 
-<Note>
+::: info
 Leaving an optional field's input blank sends `null` for that field,
 which is how you clear a column from the UI. A field that was already
 `NULL` stays `NULL` when you save without touching it.
-</Note>
+:::
 
 ## Power tools
 
@@ -251,9 +254,10 @@ See the [tools reference](./tools) for the underlying endpoints.
 Tick **Explain** first and Studio also returns the driver's query
 plan underneath it:
 
-<Frame caption="`list` on Post with Explain ticked: the rendered SQL, its bound parameters, and SQLite's `EXPLAIN QUERY PLAN` output.">
+<figure>
   <img src="/images/studio/studio-explain.png" alt="Studio SQL preview panel showing rendered SQL, bound parameters, and a query plan reading SCAN posts USING INDEX" />
-</Frame>
+  <figcaption><code>list</code> on Post with Explain ticked: the rendered SQL, its bound parameters, and SQLite's <code>EXPLAIN QUERY PLAN</code> output.</figcaption>
+</figure>
 
 Explain is off by default on purpose: rendering SQL is pure and
 instant, while planning it is a round trip to the database, so you opt
@@ -265,15 +269,17 @@ instead of a plan.
 
 ### Schema search
 
-<Frame caption="Searching `author` matches both the FK scalar and the relation field, each labelled with its model and type.">
+<figure>
   <img src="/images/studio/studio-search.png" alt="Studio header search dropdown showing two field hits for the query author" />
-</Frame>
+  <figcaption>Searching <code>author</code> matches both the FK scalar and the relation field, each labelled with its model and type.</figcaption>
+</figure>
 
 ### Audit overlay
 
-<Frame caption="The audit overlay after two edits to `catalog/Post`, newest first.">
+<figure>
   <img src="/images/studio/studio-audit.png" alt="Studio audit overlay listing two UPDATE entries against catalog/Post with timestamps" />
-</Frame>
+  <figcaption>The audit overlay after two edits to <code>catalog/Post</code>, newest first.</figcaption>
+</figure>
 
 The overlay lists the most recent 100 entries. By default the log
 lives in process memory and is lost on restart; set

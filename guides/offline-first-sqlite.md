@@ -13,9 +13,9 @@ CrateStack's embedded backend, `cratestack-sqlite` (backed by the `cratestack-ru
 
 The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.40`.
 
-<Info>
+::: info
 The architecture is **"Rust as real frontend, UI as UI-only"**: Rust owns state, persistence, and business logic on the device or in the browser tab; the UI (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`. The same `.cstack` schema definition compiles to both the server (Postgres via `cratestack-pg`) and the embedded target (SQLite via `cratestack-sqlite`, implemented on top of `cratestack-rusqlite`).
-</Info>
+:::
 
 ## What Changes Per Target
 
@@ -58,23 +58,21 @@ a specific reason to.
 
 `sqlite-wasm-rs` (used by `rusqlite 0.40` on wasm32) compiles SQLite's C source to WebAssembly via `cc-rs`. That requires a **wasm-capable clang** on `PATH` — Apple's stock Xcode clang does **not** include the wasm32 backend.
 
-<Tabs>
-  <Tab title="macOS">
-    ```bash
-    brew install llvm
-    export CC=/opt/homebrew/opt/llvm/bin/clang   # Apple Silicon
-    # export CC=/usr/local/opt/llvm/bin/clang    # Intel
-    ```
-  </Tab>
-  <Tab title="Linux">
-    ```bash
-    sudo apt-get install clang lld   # Clang 14+
-    ```
-  </Tab>
-  <Tab title="Emscripten">
-    Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) and point `CC` at `emcc`.
-  </Tab>
-</Tabs>
+::: code-group
+
+```bash [macOS]
+brew install llvm
+export CC=/opt/homebrew/opt/llvm/bin/clang   # Apple Silicon
+# export CC=/usr/local/opt/llvm/bin/clang    # Intel
+```
+
+```bash [Linux]
+sudo apt-get install clang lld   # Clang 14+
+```
+
+:::
+
+With Emscripten instead, install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) and point `CC` at `emcc`.
 
 Then:
 
@@ -106,13 +104,13 @@ model Note {
 }
 ```
 
-<Note>
+::: info
 The embedded runtime ignores `auth` blocks and `@@allow` / `@@deny` policies at SQL render time. They still parse and validate; they just don't gate reads or writes. Declare them as if you were on the server — your schema stays portable.
-</Note>
+:::
 
-<Note>
+::: info
 Nothing on the device fills an `@default(auth().field)` or a database-generated default, so the embedded `Create…Input` keeps those fields: `auth()` ones as required, `dbgenerated()` and registered-function ones as an `Option` *(since 0.17.0, [cratestack#1234](https://github.com/cratestack/cratestack/issues/1234))*. Literal defaults and `now()`/`uuid()`/`cuid()` are filled by the runtime. See [Defaults on the embedded runtime](/reference/field-attributes#defaults-on-the-embedded-runtime).
-</Note>
+:::
 
 ## Minimal Setup — Native
 
@@ -182,9 +180,9 @@ async fn open_store() -> Result<RusqliteRuntime, Box<dyn std::error::Error>> {
 
 Main-thread code can still use `RusqliteRuntime::open_in_memory()` for ephemeral state when OPFS isn't available.
 
-<Warning>
+::: warning
 Calling `opfs::install_opfs_vfs` on the **main thread** returns `OpfsInstallError::NotSupported`. Spawn a Dedicated Worker, run the runtime there, and `postMessage` between main thread and worker.
-</Warning>
+:::
 
 ## Filtering, Ordering, Paging
 
@@ -228,9 +226,9 @@ Embedded apps live or die by data fidelity, so the binding layer commits to cano
 
 The DDL generator declares every column with `BLOB` affinity to preserve those storage classes. TEXT or NUMERIC affinities would silently convert numeric-looking text and lose Decimal precision; BLOB is the only affinity that respects what you bind.
 
-<Warning>
+::: warning
 Because columns use BLOB affinity, integer primary keys do **not** alias the SQLite rowid. Production schemas typically use UUID PKs anyway. If you specifically need auto-increment, apply your own `CREATE TABLE` statement via `RusqliteRuntime::with_connection` instead of the generic DDL helper.
-</Warning>
+:::
 
 ## Soft Delete and Audit
 
