@@ -198,9 +198,11 @@ audience check.
    [`@authn`](/reference/auth-support-matrix#authentication-requirements-authn) is checked right
    after `@allow` / `@deny`. An unmet requirement is an `isError` result whose text is REST's
    step-up envelope (`error: "insufficient_user_authentication"` and its `details`), and the tool
-   never runs. Like every other `isError` result, it is recorded under an idempotency key, so a
-   retry under the same key after a step-up replays it
-   ([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open).
+   never runs. On 0.17.1 it is recorded under an idempotency key like every other `isError`
+   result, so a retry under the same key after a step-up replays it. *(Unreleased,
+   [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A refusal of this step (`@allow` / `@deny`, `@authn`, `@authorize`) is
+   no longer recorded: admission releases the key, and the caller who stepped up runs the tool once
+   under the same key. A refusal the implementation returns is still recorded.
    *(Since 0.14.1.)* For a procedure that declares
    [`@isolation`](/guides/transaction-isolation#procedure-level-isolation), all of this runs in
    one transaction at the declared level and is retried on a serialization failure or deadlock,

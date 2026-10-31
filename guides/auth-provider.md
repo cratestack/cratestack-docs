@@ -163,13 +163,17 @@ let receipt = retry_after_step_up(
 
 In Rust, `call` may return anything `.await` takes, so a generated RPC method's call fits as is. The riverpod providers store the exception itself in `AsyncError`, so `stepUp` reads the same there; the fespalier preset's refusals reach the same exception classes. The `--rtk` REST error (`RtkRestQueryError`) gains an optional `stepUp`, and `--swr` hooks surface the same error instances.
 
-::: warning Known issue: a retry under the same `Idempotency-Key`
+::: warning A retry under the same `Idempotency-Key`
 On 0.17.1 the [idempotency layer](./idempotency) records a `401` like any other error, the step-up
 refusal included, and replays it to the next request under the same key. A retry that resends the
 refused call with the key it was first sent with therefore gets the stored `401` back instead of
-running ([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open). The same
-holds for a retry after renewing an expired credential. A call without an `Idempotency-Key` is not
-affected.
+running. The same holds for a retry after renewing an expired credential. A call without an
+`Idempotency-Key` is not affected.
+
+*(Unreleased, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A refusal the generated dispatch produces before any procedure
+body runs is no longer recorded: the provider's (`authenticate`), `@allow` / `@deny`'s and
+`@authn`'s. The layer releases the key, so the retry under the same key runs the call once. See
+[Refusals before the body are not recorded](./idempotency#refusals-before-the-body-are-not-recorded).
 :::
 
 The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.

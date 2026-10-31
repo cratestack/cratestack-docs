@@ -103,20 +103,34 @@ that caller may have committed work of its own. MCP's idempotency admission foll
 The `409` in the list above is the layer's own in-flight refusal, with code `CONFLICT`, not this
 one.
 
-::: warning Known issue: a `401` is recorded
-"Errors included" covers an `AuthProvider` refusal and the
-[step-up refusal](./auth-provider#a-step-up-refusal-in-a-generated-client) of an `@authn`
-procedure *(since 0.17.1)*. Both are `401`s, and the layer records them like any other answer. A
-client that renews its credential or steps up and then resends the call under the same key gets the
-recorded `401` replayed, and the call does not run. This includes the generated clients'
-`retry_after_step_up` / `retryAfterStepUp` when the call they retry carries a fixed key. Tracked in
-[cratestack#1261](https://github.com/cratestack/cratestack/issues/1261) (open).
-:::
-
 The request hash is SHA-256 over method, full path **including query
 string**, content-type, and body. `POST /transfer?dry_run=true` and `POST
 /transfer?dry_run=false` therefore hash differently — replays don't cross
 query-string-encoded operation modes.
+
+### Refusals before the body are not recorded
+
+*(Unreleased, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A `401` or `403` that the generated dispatch produces **before any
+procedure body runs** is not persisted either. Nothing ran, so the layer releases the reservation,
+and a client that renews its credential or [steps up](./auth-provider#a-step-up-refusal-in-a-generated-client)
+and resends the call under the same key runs it once. That is what the generated clients'
+`retry_after_step_up` / `retryAfterStepUp` do when the call carries a fixed key. It covers:
+
+- the `AuthProvider`'s refusal (`authenticate` returned an error), for procedures and model routes;
+- the procedure's `@allow` / `@deny` check, its `@authn` requirement and any `@authorize` model
+  check.
+
+A refusal that a **procedure body returns** is persisted and replayed as before, because the body
+may have written first: sending the same key again must not run that write twice. REST, RPC unary
+and MCP tools follow the same rule; `/rpc/batch` refuses an `Idempotency-Key` header outright. The
+response itself does not change by a byte.
+
+::: warning 0.17.1 and earlier record every refusal
+On 0.17.1 and earlier, "errors included" covers an `AuthProvider` refusal and the step-up refusal
+of an `@authn` procedure *(since 0.17.1)*. The layer records them like any other answer, so a
+client that renews its credential or steps up and then resends the call under the same key gets the
+recorded `401` replayed, and the call does not run.
+:::
 
 ## Error bodies are typed
 
