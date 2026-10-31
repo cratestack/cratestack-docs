@@ -38,7 +38,8 @@
             "group": "Get Started",
             "pages": [
               "getting-started/quickstart",
-              "guides/auth-provider"
+              "guides/auth-provider",
+              "guides/step-up-examples"
             ]
           },
           {
