@@ -159,6 +159,11 @@ let mcp = StreamableHttpServer::builder(tools, auth_provider, origins, resource)
 * `CredentialPresence::when(|parts| ...)` tests the request head (method, URI, headers and extensions, never the body).
 * `with_credential_headers` names the headers that carry the credential. They are removed before the MCP server sees the request, as `Authorization` is, and their values are cut out of your provider's logged error detail.
 
+The `mcp-operator` example's endpoint runs with `ask_provider()` *(Unreleased,
+[cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: its provider accepts the
+same token in an `X-Agent-Token` header as well as `Authorization: Bearer`, names it for redaction,
+and refuses it exactly as it refuses a bearer token.
+
 A request found without a credential still gets the 401 `resource_metadata` challenge. An
 [`AuthRefusal`](./auth-provider#refusing-a-request) from your provider keeps its status, its envelope
 members and `details`, and its `WWW-Authenticate` challenges follow the guard's own.

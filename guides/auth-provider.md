@@ -121,6 +121,48 @@ try {
 
 Two refusal lines of `WWW-Authenticate` reach Rust as two values. The Dart HTTP seam and the browser's `Headers` join a repeated header with `, `, so Dart and TypeScript see one value holding both. An error inside a batch frame or a stream's final item has no headers of its own, so its `challenges` is empty. The `--rtk` REST error (`RtkRestQueryError`) carries `code`, `extra` and `challenges`; `--swr` hooks surface the same error instances. In Rust, `ClientError::Remote` and `RpcRemoteError` gained a `challenges` field, so a pattern that names every field without `..` needs one.
 
+### A step-up refusal in a generated client
+
+*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* An operation can require a fresher or stronger authentication than the caller presented. The server refuses it with an `AuthRefusal`: `401` on REST (code `UNAUTHORIZED`), code `unauthenticated` on RPC (unary and per batch frame), the extra member `error: "insufficient_user_authentication"` ([RFC 9470](https://www.rfc-editor.org/rfc/rfc9470)) and a `details` object:
+
+```json
+{
+  "code": "UNAUTHORIZED",
+  "message": "step-up authentication required",
+  "details": { "max_age": 300, "acr_values": ["aal2", "aal3"], "unmet": ["max_age"] },
+  "error": "insufficient_user_authentication"
+}
+```
+
+`max_age` (seconds), `acr_values` and `amr` appear only when the operation requires them; `unmet` names which of `max_age`, `acr` and `amr` the caller failed. REST also sends `WWW-Authenticate: Bearer error="insufficient_user_authentication", ...`. The server side that declares the requirement and sends this refusal is a separate #1244 change; the clients below only read it.
+
+Every generated client types the refusal as `StepUpRequired`. An error is a step-up only when its status is `401` (REST) or its code `unauthenticated` (RPC) **and** its `error` member is `insufficient_user_authentication`; anything else reads as none. Reading never throws: a missing or mistyped field reads as absent or empty.
+
+| Client | The refusal | Retry once after a re-proof |
+|---|---|---|
+| Rust (`cratestack_client_rust`, or `cratestack::client_rust` through a facade) | `StepUpRequired { max_age: Option<u64>, acr_values, amr, unmet: Vec<String> }`; `ClientError::step_up()`, `RpcClientError::step_up()`, `RpcRemoteError::step_up()` (a batch frame's error), the `StepUpError` trait over the three | `retry_after_step_up(call, reprove)` |
+| Dart (every preset) | `StepUpRequired` (`maxAge`, `acrValues`, `amr`, `unmet`); `stepUp` on `CratestackRestException` and `CratestackRpcException`, `null` when not a step-up | `retryAfterStepUp(call, reprove)` |
+| TypeScript | `StepUpRequired` (`maxAge`, `acrValues`, `amr`, `unmet`); `stepUp` on `CratestackHttpError` and `CratestackRpcError`; `stepUpOf(error)`, which in the RPC runtime also reads a batch frame's `error` body | `retryAfterStepUp(call, reprove)` |
+
+The retry helper runs `call`. When it fails with a step-up, it hands the refusal to `reprove`, your re-authentication. When `reprove` answers `true`, it runs `call` **once** more and returns whatever that gives, a second refusal included: it never loops. When `reprove` answers `false` (the user declined, or the re-proof failed), the first refusal is returned (Rust) or rethrown (Dart, TypeScript). Any other error propagates unchanged and never asks for a re-proof.
+
+```dart
+final receipt = await retryAfterStepUp(
+  () => api.procedures.transfer(args),
+  (stepUp) => session.reauthenticate(maxAge: stepUp.maxAge),
+);
+```
+
+```rust
+let receipt = retry_after_step_up(
+    || client.procedures().transfer(&args),
+    |step_up| async move { session.reauthenticate(step_up.max_age).await.is_ok() },
+)
+.await?;
+```
+
+In Rust, `call` may return anything `.await` takes, so a generated RPC method's call fits as is. The riverpod providers store the exception itself in `AsyncError`, so `stepUp` reads the same there; the fespalier preset's refusals reach the same exception classes. The `--rtk` REST error (`RtkRestQueryError`) gains an optional `stepUp`, and `--swr` hooks surface the same error instances.
+
 The MCP transport renders a refusal the same way (status, members, `details`, challenges after its own `resource_metadata` one); see [MCP](./mcp#a-provider-that-does-not-use-bearer-tokens). So do the prototype sync endpoints, whose error body carries the members next to its `code`, with a new `forbidden` code for a `403`.
 
 ## What the provider is given
@@ -247,6 +289,21 @@ CrateStack's own providers pass it: `CoseAuthProvider` (`tests/in_house_cose.rs`
 never sees the mount prefix. Both files are a starting point for a test of your own.
 
 The kit does not drive SSE model subscriptions or the sync endpoints yet, which need a database.
+
+For a whole service run against several providers, see
+[`examples/auth-pluggable`](https://github.com/cratestack/cratestack/tree/main/examples/auth-pluggable)
+*(Unreleased, [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: one schema
+and one test suite (the kit, then the example's own `hasRole` policy) against three providers, each
+one file:
+
+* `inhouse`: `SignedRequestAuthProvider`, then a COSE-verified signer, as one chain;
+* `authkestra-devsig`: Authkestra's device signatures (`authkestra_devsig::verify`), refusing with
+  `401 {"error": "<code>"}`;
+* `authkestra-oidc`: Authkestra's `JwtStrategy` with DPoP-bound access tokens, mapped onto the
+  [principal contract](#the-principal-contract); its tests start `authkestra-op` in-process.
+
+Its README lists what each Authkestra provider has to do itself, such as rebuilding
+`http::request::Parts` for `JwtStrategy` and giving a refusal its code.
 
 ## Internal callers
 
@@ -415,6 +472,18 @@ let provider = SignedRequestAuthProvider::new(verifier)
 * `PrincipalMapper::product()`, the default, is today's shape (`actor`, `session`, `id`, `role`, `kycStatus`, …) plus the contract names: `sub` (the user id, or `svc:<key id>` for a service caller), `roles` (the verified `role`) and, for a user, `cnf` (`kid`, and `jkt` when the id token carried the key).
 * `PrincipalMapper::contract([...])` emits only the contract names plus the product claims you name.
 * `PrincipalMapper::custom(f)` takes your own function.
+
+*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* Both built-in
+mappers also emit `amr` and, for a user, `auth_time`, which a procedure's
+[`@authn`](/reference/auth-support-matrix#authentication-requirements-authn) requirement reads:
+
+* `amr` is the id token's `amr` claim plus `pop` (RFC 8176 proof of possession), since every request
+  is signed with the bound key.
+* `auth_time` is the token's `auth_time` claim. `default_id_token_claims` sets it to the mint time.
+* A service caller's `amr` is `["pop"]`, with no `auth_time`.
+
+`IdTokenClaims` and `UserPrincipal` gain `auth_time` and `amr`. An issuer that re-mints a token
+without a fresh user proof keeps the earlier `auth_time`.
 
 ## Compatibility note
 

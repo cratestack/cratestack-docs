@@ -105,14 +105,14 @@ did not become a rule, `include_*_schema!` fails with a `compile_error!`.
 | --- | --- |
 | model | `@@allow("action", expression)`, `@@deny("action", expression)`; either quote; action one of `all`, `read`, `list`, `detail`, `create`, `update`, `delete` |
 | view | `@@allow("read", expression)`; `@@deny("read" or "all", expression)`; either quote (a single-quoted view `@@allow`, refused through 0.14.0, is accepted) |
-| procedure | `@allow(expression)`, `@deny(expression)`, `@authorize(Model, action, args.path)` with exactly three arguments and an action of `detail`, `read`, `update` or `delete` |
+| procedure | `@allow(expression)`, `@deny(expression)`, `@authorize(Model, action, args.path)` with exactly three arguments and an action of `detail`, `read`, `update` or `delete`; *(Unreleased, cratestack#1244)* `@authn(maxAge: seconds, amr: ["..."], acr: ["..."])`, see [below](#authentication-requirements-authn) |
 | query | `@allow(expression)`, `@deny(expression)` |
 
 The line ends at the closing `)`, apart from a trailing `// comment`, which is dropped before
 anything reads the attribute (`//` inside a string literal is not a comment).
 
 A procedure accepts only `@allow`, `@deny`, `@authorize`, `@api_version`, `@status`,
-`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation` and `@mcp`; a query
+`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp` and (Unreleased) `@authn`; a query
 only `@@sql`, `@allow` and `@deny`. Any other name, case or typo is refused with a suggestion, and
 so are whitespace before `(`, anything after the closing `)`, a missing argument list where one
 is required, and an argument list on `@stream`, `@no_idempotency` or `@no_rate_limit`. Several
@@ -171,6 +171,43 @@ declaration as having run without it, and review its access history for the call
 names. The framework CHANGELOG entry lists `grep` commands for finding candidates before
 upgrading; a misspelled name or one hiding an invisible character does not match them, so only
 `cratestack check` finds those.
+
+## Authentication requirements (`@authn`)
+
+*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244);
+[ADR 0022](/internals/authn-requirements-adr).)* A procedure can state how recently and how
+strongly its caller must have authenticated:
+
+```text
+mutation procedure payOrder(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk", "user"], acr: ["aal2", "aal3"])
+```
+
+* `maxAge`: at most that many seconds since `auth_time` (1 to one year).
+* `amr`: every listed method is in the caller's `amr`.
+* `acr`: the caller's `acr` is one of the listed classes.
+* Each key is optional, but at least one is required, and each appears at most once.
+* Values are letters, digits and `._:/~+-`.
+
+It is checked after `@allow`/`@deny`. A caller the policy refuses gets 403, never a step-up. The facts
+come from the [principal contract](/guides/auth-provider#the-principal-contract), and a missing one
+fails closed.
+
+Every path enforces it: REST, RPC unary, each RPC batch frame on its own, MCP tool calls, and
+non-HTTP callers of the generated `authorize`/`invoke`. An unmet requirement is RFC 9470's step-up
+refusal:
+
+* a `401` (RPC `unauthenticated`) with `error: "insufficient_user_authentication"`;
+* a `details` with `max_age`, `acr_values` and `amr` (each only when required), and `unmet` (which of
+  `max_age`, `acr` and `amr` failed);
+* on REST, `WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="step-up authentication required", max_age="300", acr_values="aal2 aal3"`.
+
+| Provider | `auth_time` | `amr` |
+| --- | --- | --- |
+| `cratestack-auth`, user with an id token | the token's `auth_time` (the mint time by default) | the token's `amr`, plus `pop` |
+| `cratestack-auth`, service key | none | `["pop"]` |
+| `cratestack-cose`, verified signer | none | `["pop"]` |
 
 ## Relation filters and sorts
 

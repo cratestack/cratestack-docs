@@ -34,6 +34,10 @@ canonical request are all visible to clients and to authors of auth libraries.
 - 2026-10-30: stories 8–10: the conformance kit (§6) and the independence guard (§7) are built, and
   `CoseAuthProvider` is a first-success chain (§5). `CoseAuthProvider` and
   `SignedRequestAuthProvider` pass the kit.
+- 2026-10-31: cratestack#1245 builds the external-library example of §7, `examples/auth-pluggable`:
+  one schema and one suite (the kit plus the example's own policies) against three providers,
+  in-house, Authkestra device signatures, and Authkestra OIDC with DPoP. Its CI job `auth-pluggable`
+  runs `.ci/auth-pluggable-check.sh`, the example-side assertions below.
 
 ## The standing decision this ADR serves
 
@@ -484,8 +488,11 @@ one) is Q9. Database-backed cases follow the repository's PG-test convention: th
 *The guard is built (cratestack#1243): `.ci/auth-independence-check.sh`, CI job `auth library
 independence (ADR 0021)`, fails when the workspace's `Cargo.lock` holds an `authkestra*` package.
 The lockfile is the resolved graph of every member under every feature, so one check covers the
-`cargo metadata` and `cargo tree` assertions below. The example-side assertions arrive with
-cratestack#1245's `examples/auth-pluggable`.*
+`cargo metadata` and `cargo tree` assertions below. The example side is built too (cratestack#1245):
+`.ci/auth-pluggable-check.sh`, in CI job `auth-pluggable`, runs `cargo tree` inside
+`examples/auth-pluggable` on every CrateStack crate in its graph and fails if one reaches an
+`authkestra*` package; it also requires that the example itself does, and that its `src/` names no
+`__private` path. The example's three providers pass the kit.*
 
 **No framework crate depends on any authentication library**, directly or transitively, under any
 feature. The seam's types (`AuthRefusal`, the principal contract, `Credential`, the chain) live in

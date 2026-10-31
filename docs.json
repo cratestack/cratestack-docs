@@ -162,7 +162,8 @@
               "internals/rpc-transport-adr",
               "internals/cose-envelope-adr",
               "internals/sync-engine-adr",
-              "internals/auth-seam-adr"
+              "internals/auth-seam-adr",
+              "internals/authn-requirements-adr"
             ]
           },
           {
