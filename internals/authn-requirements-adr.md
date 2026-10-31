@@ -172,8 +172,10 @@ fespalier's epic. This half of the epic was a separate PR, built in
 [cratestack#1256](https://github.com/cratestack/cratestack/pull/1256).
 
 A retry under the same `Idempotency-Key` meets the recorded `401` on 0.17.1: the idempotency layer
-records a refusal like any other answer and replays it
-([cratestack#1261](https://github.com/cratestack/cratestack/issues/1261), open).
+records a refusal like any other answer and replays it. *(Unreleased, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A refusal
+produced before any procedure body runs (the provider's, `@allow` / `@deny`'s, `@authn`'s) is
+marked as the dispatch's own and released instead, as an `@isolation` procedure's own
+`TRANSACTION_ABORTED` is; one a body returns is still recorded.
 
 ### 6. Who fills the facts (D6)
 
