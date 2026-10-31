@@ -105,14 +105,14 @@ did not become a rule, `include_*_schema!` fails with a `compile_error!`.
 | --- | --- |
 | model | `@@allow("action", expression)`, `@@deny("action", expression)`; either quote; action one of `all`, `read`, `list`, `detail`, `create`, `update`, `delete` |
 | view | `@@allow("read", expression)`; `@@deny("read" or "all", expression)`; either quote (a single-quoted view `@@allow`, refused through 0.14.0, is accepted) |
-| procedure | `@allow(expression)`, `@deny(expression)`, `@authorize(Model, action, args.path)` with exactly three arguments and an action of `detail`, `read`, `update` or `delete`; *(Unreleased, cratestack#1244)* `@authn(maxAge: seconds, amr: ["..."], acr: ["..."])`, see [below](#authentication-requirements-authn) |
+| procedure | `@allow(expression)`, `@deny(expression)`, `@authorize(Model, action, args.path)` with exactly three arguments and an action of `detail`, `read`, `update` or `delete`; *(Since 0.17.1, cratestack#1244)* `@authn(maxAge: seconds, amr: ["..."], acr: ["..."])`, see [below](#authentication-requirements-authn) |
 | query | `@allow(expression)`, `@deny(expression)` |
 
 The line ends at the closing `)`, apart from a trailing `// comment`, which is dropped before
 anything reads the attribute (`//` inside a string literal is not a comment).
 
 A procedure accepts only `@allow`, `@deny`, `@authorize`, `@api_version`, `@status`,
-`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp` and (Unreleased) `@authn`; a query
+`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp` and (since 0.17.1) `@authn`; a query
 only `@@sql`, `@allow` and `@deny`. Any other name, case or typo is refused with a suggestion, and
 so are whitespace before `(`, anything after the closing `)`, a missing argument list where one
 is required, and an argument list on `@stream`, `@no_idempotency` or `@no_rate_limit`. Several
@@ -174,7 +174,7 @@ upgrading; a misspelled name or one hiding an invisible character does not match
 
 ## Authentication requirements (`@authn`)
 
-*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244);
+*(Since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244);
 [ADR 0022](/internals/authn-requirements-adr).)* A procedure can state how recently and how
 strongly its caller must have authenticated:
 
@@ -588,7 +588,7 @@ mutation procedure adminPulse(args: InspectPostInput): Post
 
 Notes:
 
-* `hasRole('...')` is true when the `roles` list contains the role, or the top-level `role` claim equals it, or `actor.role` does. *(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* `roles` is new, and `role` and `actor.role` are each read on their own: through 0.17.0 a present `role` hid `actor.role`. A `roles` that is not a list of strings never grants. Every path agrees: procedure policies, model policies lowered to SQL, and the create-time check. See [The principal contract](../guides/auth-provider#the-principal-contract)
+* `hasRole('...')` is true when the `roles` list contains the role, or the top-level `role` claim equals it, or `actor.role` does. *(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243).)* `roles` is new, and `role` and `actor.role` are each read on their own: through 0.17.0 a present `role` hid `actor.role`. A `roles` that is not a list of strings never grants. Every path agrees: procedure policies, model policies lowered to SQL, and the create-time check. See [The principal contract](../guides/auth-provider#the-principal-contract)
 * `inTenant('...')` checks the structured `tenant.id` claim
 * both functions are boolean terms that can participate in grouped `&&` / `||` expressions
 * only a single string literal argument is supported today

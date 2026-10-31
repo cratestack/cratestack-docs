@@ -8,13 +8,14 @@ description: One public seam that CrateStack's own authentication and any extern
 ## Status
 
 **Proposed**, 2026-10-28. It is the first child story of epic
-[cratestack#1243](https://github.com/cratestack/cratestack/issues/1243). Nothing here is a supported
-surface until this ADR is accepted, except what
-[cratestack#1246](https://github.com/cratestack/cratestack/pull/1246) builds (open, not yet merged):
-the refusal envelope on REST, RPC, SSE, middleware errors, MCP and sync (§1,
-[cratestack#1208](https://github.com/cratestack/cratestack/issues/1208)), and MCP's pluggable
-credential-presence rule (§4). §1 and §4 record what that PR does; the rest of this ADR decides what
-comes next.
+[cratestack#1243](https://github.com/cratestack/cratestack/issues/1243). Acceptance is still the
+maintainer's decision, but what the sections below record as built shipped in CrateStack 0.17.1
+(2026-10-31): the refusal envelope on REST, RPC, SSE, middleware errors, MCP and sync (§1,
+[cratestack#1208](https://github.com/cratestack/cratestack/issues/1208), in
+[cratestack#1246](https://github.com/cratestack/cratestack/pull/1246)), the principal contract (§2),
+the canonical-request rule (§3), MCP's pluggable credential presence and the defaulted
+`AuthProvider::credential` (§4), the first-success chain (§5), the conformance kit (§6) and the
+independence guard (§7). The guides document that surface as supported.
 
 The number is the next free one across both repositories. 0007–0010 are reserved by ADR 0001,
 0011–0019 are the framework's internal-shape series, and 0020 is the sync engine. The "ADR 0032" and
@@ -38,6 +39,8 @@ canonical request are all visible to clients and to authors of auth libraries.
   one schema and one suite (the kit plus the example's own policies) against three providers,
   in-house, Authkestra device signatures, and Authkestra OIDC with DPoP. Its CI job `auth-pluggable`
   runs `.ci/auth-pluggable-check.sh`, the example-side assertions below.
+- 2026-10-31: everything built above released in CrateStack 0.17.1, with the WebTransport binding
+  (cratestack#1238) that renders a refusal as an `{id: 0, err}` frame before it closes.
 
 ## The standing decision this ADR serves
 
@@ -55,13 +58,13 @@ it is a bug in this seam.
 
 | # | Question | Recommendation | Decision |
 |---|---|---|---|
-| D1 | How does a provider shape its refusal, and how does each transport render it? | **`AuthRefusal`, as built in #1208**: 401 or 403, extra top-level envelope members that never replace `code`/`message`/`details`, an optional `details`, and `WWW-Authenticate` challenges. The `code` stays framework-owned. Every transport that calls `AuthProvider` renders it (the matrix in §1). | built in #1246 for REST, RPC unary and batch, SSE, middleware errors, MCP and sync; open for WebTransport and WebSocket (Q4, Q5) |
-| D2 | What does a provider map the caller *to*? | **A principal contract**: a small set of reserved claim names with fixed types (`sub`, `roles`, `tenant.id`, `auth_time`, `amr`, `acr`, `cnf`, `key_role`, `exp`), a builder in `cratestack-core`, and typed readers that `hasRole`, `inTenant` and the framework's own code use. Everything else stays free-form. | open |
-| D3 | What request does a provider verify? | **The canonical request**: the route CrateStack declares, never the mount prefix, with the exact body bytes the router received. One rule, stated per transport, tested by the kit. | open |
-| D4 | How does MCP know a request carries a credential? | **The deployment chooses, on the MCP builder**: `CredentialPresence::bearer()` (the default, today's RFC 6750 check), `provider_decides()` or `when(predicate)`, plus `with_credential_headers` for the headers to strip and redact. MCP stays Bearer-only unless the deployment opts in, to keep ADR 0002's OAuth resource-server posture. A defaulted `AuthProvider::credential` method remains proposed for D5's chain (§4) | built in #1246 (builder); trait method open |
-| D5 | How are providers composed? | **A first-success chain in core**: a provider with no credential is skipped, the first authenticated answer wins, and a refusal stops the chain. | open |
-| D6 | How does a provider prove it behaves the same everywhere? | **A conformance kit behind a `testing` feature** that drives one provider through every transport and asserts identical verdicts, canonical requests and refusal rendering. | open |
-| D7 | How is independence enforced? | **No framework crate depends on any auth library**, checked in CI with `cargo tree` and `cargo metadata`. The external-library example lives outside the workspace with its own lockfile, like `examples/client-only-verification`. | open |
+| D1 | How does a provider shape its refusal, and how does each transport render it? | **`AuthRefusal`, as built in #1208**: 401 or 403, extra top-level envelope members that never replace `code`/`message`/`details`, an optional `details`, and `WWW-Authenticate` challenges. The `code` stays framework-owned. Every transport that calls `AuthProvider` renders it (the matrix in §1). | built in #1246 for REST, RPC unary and batch, SSE, middleware errors, MCP and sync, and in #1238 for WebTransport (`{id: 0, err}` before the close); open for WebSocket, which is design only (Q5). In 0.17.1 |
+| D2 | What does a provider map the caller *to*? | **A principal contract**: a small set of reserved claim names with fixed types (`sub`, `roles`, `tenant.id`, `auth_time`, `amr`, `acr`, `cnf`, `key_role`, `exp`), a builder in `cratestack-core`, and typed readers that `hasRole`, `inTenant` and the framework's own code use. Everything else stays free-form. | built in #1250 (story 5). In 0.17.1 |
+| D3 | What request does a provider verify? | **The canonical request**: the route CrateStack declares, never the mount prefix, with the exact body bytes the router received. One rule, stated per transport, tested by the kit. | built in #1248 (story 6). In 0.17.1 |
+| D4 | How does MCP know a request carries a credential? | **The deployment chooses, on the MCP builder**: `CredentialPresence::bearer()` (the default, today's RFC 6750 check), `provider_decides()` or `when(predicate)`, plus `with_credential_headers` for the headers to strip and redact. MCP stays Bearer-only unless the deployment opts in, to keep ADR 0002's OAuth resource-server posture. A defaulted `AuthProvider::credential` method remains proposed for D5's chain (§4) | built in #1246 (builder) and #1248 (the defaulted trait method, default `Unknown`, and `ask_provider()`). In 0.17.1 |
+| D5 | How are providers composed? | **A first-success chain in core**: a provider with no credential is skipped, the first authenticated answer wins, and a refusal stops the chain. | built in #1248 (story 7). In 0.17.1 |
+| D6 | How does a provider prove it behaves the same everywhere? | **A conformance kit behind a `testing` feature** that drives one provider through every transport and asserts identical verdicts, canonical requests and refusal rendering. | built in #1251 (story 8), as the crate `cratestack-auth-conformance`. In 0.17.1 |
+| D7 | How is independence enforced? | **No framework crate depends on any auth library**, checked in CI with `cargo tree` and `cargo metadata`. The external-library example lives outside the workspace with its own lockfile, like `examples/client-only-verification`. | built in #1251 (story 10) and #1254 (`examples/auth-pluggable`). In 0.17.1 |
 
 ## Context
 
@@ -190,7 +193,7 @@ and the batch case).
 | MCP Streamable HTTP | Before #1246: no Bearer token gave a `401` with the resource-metadata challenge before the provider ran, and a provider refusal was replaced by a canned `invalid_token` (401) or `insufficient_scope` (403), dropping members, `details` and challenges. **Built in #1246:** an `AuthRefusal` keeps its status, message, members and `details` in MCP's envelope, and its challenges follow MCP's own Bearer challenge (with `resource_metadata`, as ADR 0002 requires). Credential presence is the deployment's choice (§4). An anonymous answer stays a 401. Tests: `crates/cratestack-mcp/tests/http_refusal.rs`, `http_credential.rs` | As built |
 | MCP stdio | No provider: the application passes the context (ADR 0002 Q1, F2) | Unchanged |
 | `cratestack-sync` (`/sync/*`) | Before #1246: any provider error became `401` `unauthenticated` with `error.to_string()` as the message, so a 403 and an undecided provider's 5xx became 401s, members and challenges were lost, and an `Internal` error's private detail reached the client. **Built in #1246:** 401 stays `unauthenticated`, 403 becomes a new `forbidden` sync code, a 5xx becomes `internal`; the message is `public_message()`; members go into the sync error body under the same reserved-name rule (`RESERVED_SYNC_ERROR_MEMBERS`), challenges into the headers. Test: `crates/cratestack-sync/tests/auth_refusal.rs`, including `a_provider_failure_is_internal_and_leaks_nothing`. A provider `Unavailable` (503) reads as sync `internal` (500): sync has no 503 code | As built. Sync is exempt from REST/RPC parity (ADR 0020 D7), but not from this ADR, because it calls `AuthProvider` |
-| WebTransport session (#1238) | Authentication runs on the control stream's first frame (`Init`, for browsers) or on the CONNECT headers (native clients). A refusal closes the session with `4401` and a fixed reason; `4403` means a re-authentication named another principal, `4429` too many sessions, `4400` a protocol error. There is no envelope, so members, `details` and challenges are lost. CONNECT-level refusals (403 Origin, 404 path, 406 codec) are HTTP statuses and do not involve authentication | Before closing, the server writes `{id: 0, err: RpcErrorBody}` on the control stream, with the refusal's members and `details`, then closes with `4401`. `Init` is id 0 and `Ready{0}` acknowledges it, so the frame already exists in the protocol. The same applies to a refused re-authentication. Proposed by #1238's author; the close code for a 403 refusal is Q4 |
+| WebTransport session (#1238) | Authentication runs on the control stream's first frame (`Init`, for browsers) or on the CONNECT headers (native clients). A refusal closes the session with `4401` and a fixed reason; `4403` means a re-authentication named another principal, `4429` too many sessions, `4400` a protocol error. There is no envelope, so members, `details` and challenges are lost. CONNECT-level refusals (403 Origin, 404 path, 406 codec) are HTTP statuses and do not involve authentication | Built in #1238 (0.17.1): before closing, the server writes `{id: 0, err: RpcErrorBody}` on the control stream, with the refusal's members and `details`, then closes with `4401` for a 401, `4403` for a 403 or a changed principal, `4400` for a malformed `Init` and `4500` when the provider could not decide (`cratestack-webtransport/src/admission.rs`). `Init` is id 0 and `Ready{0}` acknowledges it, so the frame already exists in the protocol. The same applies to a refused re-authentication. Challenges are not carried (Q5) |
 | WebTransport subscription (op level) | A policy or setup refusal from the `SubscriptionDispatcher` is an `err` frame built by `RpcErrorBody::from_cratestack`, so #1208's members already reach the client | As built |
 | WebSocket (design only, `docs/design/subscriptions-websocket.md` §6.3) | Designed to close with `4401` | Mirrors WebTransport: `Error{id: 0}` with the refusal's body, then close |
 | COSE envelope layer (ADR 0006) | Not an `AuthProvider`. A request that does not verify gets one coarse, unsigned 401, whatever the envelope reported (ADR 0006 §10, D4) | Unchanged, by ADR 0006. The kit does not cover it |
@@ -571,14 +574,17 @@ The epic's child stories, in dependency order:
 3. RPC batch, SSE, middleware and sync rendering (§1): **built** in #1246.
 4. MCP refusal rendering and `CredentialPresence` (§1, §4): **built** in #1246. The defaulted
    `AuthProvider::credential` method moves to story 7, with the chain that needs it.
-5. The principal contract, builder and readers; `hasRole` over `roles` (§2).
-6. The canonical-request rule and its tests; the sync and WebTransport call sites (§3).
-7. The first-success chain (§5), with the defaulted `AuthProvider::credential` method (§4).
-8. The conformance kit (§6).
-9. `SignedRequestAuthProvider` and `CoseAuthProvider` onto the public seam, passing the kit.
-10. The independence guard, with #1245's `examples/auth-pluggable` (§7).
+5. The principal contract, builder and readers; `hasRole` over `roles` (§2): **built** in #1250.
+6. The canonical-request rule and its tests; the sync and WebTransport call sites (§3): **built** in #1248.
+7. The first-success chain (§5), with the defaulted `AuthProvider::credential` method (§4): **built** in #1248.
+8. The conformance kit (§6): **built** in #1251.
+9. `SignedRequestAuthProvider` and `CoseAuthProvider` onto the public seam, passing the kit: **built** in #1251.
+10. The independence guard, with #1245's `examples/auth-pluggable` (§7): **built** in #1251 and #1254.
 11. Generated clients: the refusal's members and `details` typed on `CratestackRestException` and
-    `CratestackRpcException`, in Rust, Dart and TypeScript together (transport parity).
+    `CratestackRpcException`, in Rust, Dart and TypeScript together (transport parity): **built** in
+    #1249.
+
+Every story above shipped in CrateStack 0.17.1.
 
 Each story that adds a `### ` entry under the framework's `## Unreleased` declares its docs and skills
 companions ([cratestack-docs#139](https://github.com/cratestack/cratestack-docs/issues/139),

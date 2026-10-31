@@ -52,7 +52,7 @@ For every `create`, `update`, and `delete` the runtime writes a row to
    (see [Trusted Proxy / Client IP](./trusted-proxy) for how that IP is
    resolved, and the bootstrap step it's silently `None` without). The id is
    `subject()`: `sub`, then `actor.id`, then `id`, an integer as its digits
-   *(Unreleased, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243); through 0.17.0 only a string `id`)*
+   *(Since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243); through 0.17.0 only a string `id`)*
 6. `tenant` from `PrincipalContext.tenant.id` when present
 7. `before` snapshot (null on create) and `after` snapshot (null on delete)
 8. `request_id` for trace stitching

@@ -6,9 +6,9 @@ description: Runnable examples of a schema-declared step-up (`@authn`) from the 
 # Step-up examples
 
 ::: info
-**Unreleased.** These examples ship with the `@authn` attribute and the typed `StepUpRequired`
-refusal of [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244) ([ADR 0022](/internals/authn-requirements-adr)). They
-are stories 5 to 7 of [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245).
+**Since 0.17.1.** These examples ship with the `@authn` attribute and the typed `StepUpRequired`
+refusal of [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244) ([ADR 0022](/internals/authn-requirements-adr)), all in
+CrateStack 0.17.1. They are stories 5 to 7 of [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245).
 :::
 
 A procedure can say how recently and how strongly the caller must have authenticated:
