@@ -113,9 +113,9 @@ The generated package is build output, not hand-edited source — treat it the s
 
 Every generated package ships the layout below. `--swr` **adds** a second, file-per-model layout beside it under `src/swr/` — it does not replace anything, and the files described here are identical whether or not you pass it.
 
-<Note>
+::: info
 This replaced a `--preset <default|swr>` flag, where picking `swr` meant giving up the default layout. Teams who wanted both were running the generator twice into two directories and depending on two packages. One run now produces both. If you have `--preset swr` in a script, drop it and pass `--swr`; if you have `--preset default`, just remove it.
-</Note>
+:::
 
 ### The default layout
 
@@ -192,9 +192,9 @@ function WidgetList({ runtime }: { runtime: CratestackRuntime }) {
 
 **Why hooks are a separate file, not exports at the bottom of `widget.ts`.** ES modules resolve every top-level static `import` eagerly, the moment the module loads — regardless of which export the importer actually asked for. If `useWidgets` lived in `widget.ts` alongside `listWidgets`, importing `listWidgets` alone from a script, a server action, or a test would still pull in `import useSWR from "swr"` (and transitively React) at module-load time, even though nothing in that code path touches React. Splitting the hooks into `widget.hooks.ts` — and leaving that file out of `src/index.ts`'s barrel export — means a consumer who wants only the plain functions never resolves `swr`/`react` at all. Install `swr` and `react` as peer dependencies only if you import a `.hooks` module.
 
-<Warning>
+::: warning
 **Build your shared runtime from `/swr` if you use the SWR hooks.** The default layout's `CratestackRuntime` and the one under `/swr` are structurally identical but *nominally distinct* TypeScript classes (they carry private fields), so passing a root-imported runtime into a `/swr` hook is a type error. This could not happen under the old `--preset swr`, where a package only ever contained one layout — it is new with `--swr`, and it is the first thing to check if `tsc` complains about two types that look the same.
-</Warning>
+:::
 
 **Cache keys and invalidation.** Every hook builds its key exclusively through `swrKeys` (`src/swr/swr-keys.ts`) — never a hand-written literal — nested under each model's/procedure's own schema-unique route, so two differently-named operations can never collide on a key. Mutation hooks invalidate on a fixed rule, applied identically for every model:
 
@@ -515,21 +515,21 @@ This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-r
 
 `@cratestack/cbor-web`'s wasm-bindgen build has no platform gap — it runs anywhere a browser or a WASM-capable JS runtime does.
 
-<Note>
+::: info
   **Alpine works now** ([#850](https://github.com/cratestack/cratestack/issues/850)). The failure it fixes was not a fallback to something slower — it was fatal. The generated `native.mjs` detects musl and looks only at the `-musl` package names; the `-gnu` binary sitting next to it is never attempted, so the loader ended at *"Cannot find native binding. npm has a bug related to optional dependencies…"*, which points at npm rather than at the missing platform.
 
   Alpine consumers are not gated on the platform subpackages being bootstrapped on npm: the main `@cratestack/cbor-node` tarball bundles every `.node` binary and the loader prefers the bundled file over the subpackage, so a released package initializes on Alpine either way. That bundling is deliberate, not an oversight.
 
   The target list in `packages/cratestack-cbor-node/package.json`'s `napi.targets` and the CI build matrix are checked against each other by `just verify-napi-targets` — adding a target in one place without the other fails the build rather than shipping a silently missing platform.
-</Note>
+:::
 
-<Warning>
+::: warning
   **Windows arm64 is why `--no-native-cbor` still exists for TypeScript.** A default-generated RPC client's `dependencies` on `@cratestack/cbor` resolves to `@cratestack/cbor-node` in Node, which has no prebuild for that target. If your deployment target is Windows arm64, pass `--no-native-cbor` at generation time and the client falls back to the pure-TypeScript `jsonRpcCodec` — no native binary required, runs anywhere Node or a browser does.
-</Warning>
+:::
 
-<Warning>
+::: warning
   **Regenerating a `--swr` + `transport rpc` client changes its wire codec from JSON to CBOR.** Until 0.8.14, `src/swr/runtime.ts` ignored `native_cbor` entirely and always emitted the `jsonRpcCodec` fallback, so a `--swr` package shipped two runtimes that disagreed: `src/runtime.ts` on `application/cbor`, `src/swr/runtime.ts` on `application/json`. [#765](https://github.com/cratestack/cratestack/issues/765) fixed that — both runtimes now resolve `createCborCodec()` by default, and `--no-native-cbor` turns both off identically. This is the same breaking change [#752](https://github.com/cratestack/cratestack/issues/752) already made for the default layout, now applied to `--swr` for real: a server on a JSON-only `CodecSet` will reject a regenerated `--swr` client with `406`/`415`. Confirm the server accepts CBOR before regenerating, or pass `--no-native-cbor`. Anyone relying on the previous split behaviour was relying on the bug.
-</Warning>
+:::
 
 ## Side-by-side: TypeScript, Dart, and Rust
 

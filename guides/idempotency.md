@@ -125,7 +125,7 @@ An unsatisfiable or malformed `Accept` falls back to the default codec and
 is caller-controlled, and a caller must not be able to rewrite the status of
 a refusal aimed at it.
 
-<Note>
+::: info
   **This layer gets no fail-open policy.** Unlike
   [rate limiting](./rate-limiting#when-the-store-fails), a failed idempotency
   store must keep failing the request — that is the entire point of having
@@ -134,7 +134,7 @@ a refusal aimed at it.
   `ConnectionManager`, so it fails fast instead of awaiting an unbounded
   reconnect. It also gets no retry-once, because a double-apply is exactly
   what it exists to prevent.
-</Note>
+:::
 
 ## Replay fidelity
 

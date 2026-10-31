@@ -11,7 +11,7 @@ with a fixed set of methods (`getList`, `getOne`, `create`, `update`,
 `deleteOne`, …) that every refine hook and component calls through instead
 of talking to your API directly.
 
-<Note>
+::: info
 **Most readers want [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) instead of this guide.**
 It ships a tested `DataProvider` for both transports —
 `createCratestackDataProvider` (REST) and `createCratestackRpcDataProvider`
@@ -24,7 +24,7 @@ all.
 This guide is the **hand-wired** version of the same thing. Read it when
 you need to understand what the package does under the hood, or when you
 want to adapt the approach rather than take the dependency.
-</Note>
+:::
 
 ## Using the package
 
@@ -91,14 +91,14 @@ const client = new ExampleApiClientClient("https://api.example.com", {
 const dataProvider = createCratestackRpcDataProvider(cratestackRefineResources(client));
 ```
 
-<Note>
+::: info
 **Batching never weakens `@version` optimistic locking.** `createBatchLink`
 partitions queued calls by their full transport envelope — headers
 included — so two updates carrying different `If-Match` values can't be
 merged into one request with one header set. They go out as separate
 requests automatically. The upside is on reads: `getList`/`getMany`
 collapse; version-carrying writes correctly do not.
-</Note>
+:::
 
 ### RPC over axios
 

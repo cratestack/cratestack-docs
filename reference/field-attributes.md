@@ -415,7 +415,7 @@ SQLite supports the same `WHERE` syntax (partial indexes since 3.8.0). The
 divergence between backends is what a predicate may legally *reference*,
 not the syntax.
 
-<Note>
+::: info
 Partial indexes round-trip through `cratestack migrate` without churn.
 Postgres normalizes a stored predicate — `idempotency_key IS NOT NULL`
 reads back as `(idempotency_key IS NOT NULL)`, and literal comparisons
@@ -425,7 +425,7 @@ string equality. Writing the predicate in a different but equivalent
 spelling than Postgres would store may still produce one drop-and-recreate;
 ambiguous cases deliberately fail toward recreating the index rather than
 toward silently leaving a stale one in place.
-</Note>
+:::
 
 ## Validators
 
@@ -477,7 +477,7 @@ The macro applies them in this evaluation order:
 
 ## Spelling and placement
 
-<Warning>
+::: warning
 **Since 0.14.1.** The rules in this section shipped in 0.14.1 (framework
 [CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## 0.14.1`:
 "Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)" and
@@ -485,7 +485,7 @@ The macro applies them in this evaluation order:
 Both are breaking, and 0.14.1 is a patch release, so `cargo update` from 0.14.0 brings them in:
 run `cratestack check` on your schemas before you take it. Through 0.14.0 most spellings refused
 below pass `cratestack check` with `schema OK` and have **no effect**.
-</Warning>
+:::
 
 Generators recognise most attributes by their exact text, so an attribute written any other way
 used to be skipped silently. A schema is now refused, with an error that names the attribute,

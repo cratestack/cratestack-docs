@@ -52,9 +52,10 @@ curl 'http://127.0.0.1:7878/api/targets/catalog/models/Post/sql?op=list&explain=
 # }
 ```
 
-<Frame caption="The same request from the UI — tick **Explain** next to **Show SQL**.">
+<figure>
   <img src="/images/studio/studio-explain.png" alt="Studio SQL preview showing rendered SQL, bound parameters, and a SQLite query plan" />
-</Frame>
+  <figcaption>The same request from the UI — tick <strong>Explain</strong> next to <strong>Show SQL</strong>.</figcaption>
+</figure>
 
 This is the one part of the preview endpoint that reaches the
 database, which is why it's opt-in rather than on by default:
@@ -192,9 +193,10 @@ Entries are returned newest-first:
 The UI's "Audit" button in the header opens an overlay listing the
 most recent 100 entries:
 
-<Frame caption="The audit overlay after two edits to `catalog/Post`, newest first.">
+<figure>
   <img src="/images/studio/studio-audit.png" alt="Studio audit overlay listing two UPDATE entries against catalog/Post with timestamps" />
-</Frame>
+  <figcaption>The audit overlay after two edits to <code>catalog/Post</code>, newest first.</figcaption>
+</figure>
 
 ### Persisting the log
 

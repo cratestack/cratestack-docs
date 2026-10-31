@@ -162,13 +162,13 @@ key index is never partial. The invalid combination is deliberately
 representable so it is rejected with a message instead of being
 unwriteable.
 
-<Note>
+::: info
 `ConflictTarget` grew from two variants to four in 0.8.14 and is now
 `#[non_exhaustive]`. Construction is unaffected — `PrimaryKey`,
 `Columns(...)` and the `.columns(..).where_index(..)` builder all work as
 before. Only external code that `match`es `ConflictTarget`
 **exhaustively without a wildcard arm** needs a `_ =>` arm added.
-</Note>
+:::
 
 There's still no query-builder helper for "look up by this tuple" —
 finding a row by its composite unique key is a hand-written `WHERE`

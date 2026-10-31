@@ -5,7 +5,7 @@ description: Open signed requests and seal every response of a generated REST or
 
 # Signed transport (COSE envelope layer)
 
-<Warning>
+::: warning
 **Since CrateStack 0.14.0** ([cratestack#1006](https://github.com/cratestack/cratestack/issues/1006));
 it was first published as 0.13.1, which is yanked because it made breaking changes in a patch release.
 The design is
@@ -17,7 +17,7 @@ is a breaking wire change:** the AAD binds the digest of the op being called ins
 schema's, so a server-only schema edit no longer refuses every signed client, and a version 2
 server refuses version 1 messages. Upgrade servers and clients together, and see
 [Evolving a schema under signed clients](#evolving-a-schema-under-signed-clients).
-</Warning>
+:::
 
 `EnvelopeLayer` is a tower layer for the generated REST and RPC routers. It opens
 signed requests (COSE_Sign1 or COSE_Mac0 bodies), hands the router the plain CBOR payload
@@ -366,13 +366,13 @@ The principal is `cose:<thumbprint>` with the default prefix, the same id the en
 enrolled device signer is anonymous, and the device registry is not consulted (a failing service
 registry still errors, as above). A service key authenticates either way.
 
-<Warning>
+::: warning
 `with_service_keys` must hold service keys only; a device key placed there authenticates as a
 service whatever the gate. The service registry is asked first and ignores
 `authenticate_devices`, so passing it a resolver that also holds device keys (for example the same
 `RegistryVerifierResolver` the envelope verifies with, where devices enrol) makes every enrolled
 device a `kind: service` caller with the gate off.
-</Warning>
+:::
 
 **Security.** With `authenticate_devices(true)`, any request sealed by an enrolled device key is
 authenticated, with no user (no `id_jwt`), on every method, whatever the header provider's
@@ -390,7 +390,9 @@ Two more limits:
 
 ## Payload media types
 
-<Note>Since CrateStack 0.15.4 ([cratestack#1168](https://github.com/cratestack/cratestack/issues/1168)).</Note>
+::: info
+Since CrateStack 0.15.4 ([cratestack#1168](https://github.com/cratestack/cratestack/issues/1168)).
+:::
 
 The payload inside a seal is CBOR unless the client says otherwise, so a service whose public
 payloads are not CBOR (a Stripe-shaped API: form-encoded requests, JSON responses) can move to

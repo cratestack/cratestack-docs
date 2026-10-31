@@ -45,14 +45,14 @@ Field policies — **rejected at parse time**:
   `@allow` / `@deny` and model/view-level `@@allow` / `@@deny` are
   untouched
 
-<Note>
+::: info
 Only half of [#679](https://github.com/cratestack/cratestack/issues/679) is
 closed. Unknown field attributes are still accepted generally, so a
 misspelled `@raedonly` silently drops `@readonly` and leaves the field
 writable. Catching that needs a generic unknown-attribute pass, which is
 an intentional non-choice today — so don't rely on the parser to catch a
 typo'd exposure attribute.
-</Note>
+:::
 
 Auth-derived defaults:
 
@@ -63,7 +63,7 @@ Auth-derived defaults:
 
 ## Policy attribute spelling
 
-<Warning>
+::: warning
 **Since 0.14.1.** These rules shipped in 0.14.1 (framework
 [CHANGELOG](https://github.com/cratestack/cratestack/blob/main/CHANGELOG.md), `## 0.14.1`,
 "Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j)", breaking).
@@ -72,7 +72,7 @@ Auth-derived defaults:
 **Affected:** procedure `@allow` / `@deny` / `@authorize` and model `@@allow` / `@@deny` in every
 release 0.2.0–0.14.0, view `@@allow` / `@@deny` from 0.4.2, and `query` `@allow` / `@deny` in
 0.11.0–0.14.0.
-</Warning>
+:::
 
 Through 0.14.0 the generator applied a policy attribute only when its text was exactly the
 documented form and **silently skipped** anything else, while `cratestack check` reported

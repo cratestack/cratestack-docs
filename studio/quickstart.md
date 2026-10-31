@@ -15,7 +15,7 @@ Studio replaces the older `generate-studio` codegen scaffold from the
 0.3.x line. If you were generating a Leptos+Axum project per schema set,
 see the [migration](#migration-from-generate-studio) section.
 
-<Note>
+::: info
 The rewrite is complete. Studio today gives you typed create + edit
 forms (enum dropdowns, JSON textarea, `datetime-local`, numeric
 inputs), plus
@@ -33,7 +33,7 @@ Reference pages: [Studio Read API](./read-api),
 [Studio Write API](./write-api),
 [Studio UI](./ui), [Studio Power Tools](./tools),
 [Studio Eject](./eject).
-</Note>
+:::
 
 ## 1. Install The CLI
 
@@ -127,16 +127,17 @@ curl http://127.0.0.1:7878/api/health
 Open `http://127.0.0.1:7878` and you get the browser UI against those
 targets:
 
-<Frame caption="Studio browsing a `rw` target. Sidebar = models in the schema; the RW badge and `+ New` only appear on read/write targets.">
+<figure>
   <img src="/images/studio/studio-records.png" alt="CrateStack Studio records table showing the Post model with five rows" />
-</Frame>
+  <figcaption>Studio browsing a <code>rw</code> target. Sidebar = models in the schema; the RW badge and <code>+ New</code> only appear on read/write targets.</figcaption>
+</figure>
 
-<Tip>
+::: tip
 Want to see this without wiring up a database first? The framework
 repo ships a dev harness that boots Studio against an in-memory SQLite
 workspace with seeded rows — see
 [Try it with demo data](./ui#try-it-with-demo-data).
-</Tip>
+:::
 
 ## 4. Multiple Schemas
 
@@ -223,11 +224,11 @@ both:
   policy or route-suppression enforcement. See
   [`[target.db]` is a direct database connection](./read-api#target-db-is-a-direct-database-connection).
 
-  <Warning>
+  ::: warning
   `[target.api].prefer_for` is **parsed but not consulted by anything
   today** — it does not redirect procedures, reads or writes to the API.
   Don't configure it expecting a split channel.
-  </Warning>
+  :::
 
 ## Read-only vs read/write
 

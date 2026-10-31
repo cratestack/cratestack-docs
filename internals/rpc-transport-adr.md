@@ -140,7 +140,7 @@ A unit test forces the indirect translation table (`cratestack_error_code_to_rpc
 
 These are explicit non-features in v1. Each becomes a real ADR when a concrete use case appears.
 
-1. **WebSocket binding + subscriptions.** Wire-side design fully captured (see ["Next cool upgrade"](../architecture/transport-architecture#next-cool-upgrade-websocket-binding-subscriptions) in the transport architecture). Pending a concrete subscription use case — see below.
+1. **WebSocket binding + subscriptions.** Wire-side design fully captured (see ["Next cool upgrade"](../architecture/transport-architecture#subscriptions-shipped-over-sse-not-websocket) in the transport architecture). Pending a concrete subscription use case — see below.
 2. **In-batch transactional mode.** Each batch frame is its own tx.
 3. **Resumable subscriptions.** Even when subscriptions ship, the v1 will be fire-and-forget — no cursors, no replay buffer.
 4. **Batch parallelization.** Server processes frames sequentially. The design permits parallelization once contention is observable.

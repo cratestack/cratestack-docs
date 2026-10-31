@@ -103,14 +103,14 @@ show up under `cargo check`, not against a running server.
 at required arity only. Optional (`T?`) and list (`T[]`) parameters are not
 supported.
 
-<Note>
+::: info
   **`Decimal` is not a supported parameter type.** Its Rust type depends on
   the schema's [`decimal =` macro argument](../reference/scalars#the-decimal-macro-argument),
   and whether that type implements `sqlx::Encode` depends on the backend
   crate's feature set — a matrix that has to be pinned down first. A money
   *result column* is unaffected; only parameters are restricted. Widening
   the list later is additive.
-</Note>
+:::
 
 ## Calling it
 
@@ -210,7 +210,7 @@ made but not yet committed: it observes the pre-transaction state and, for
 a single-row query, may return `NotFound` for a row the closure just wrote.
 Read after the transaction commits.
 
-<Warning>
+::: warning
   **On a small pool this is a stall, not just a stale read.** The query
   takes a *second* connection for its duration. With no free slot the
   acquire blocks for `acquire_timeout` and then fails with "pool timed out
@@ -218,7 +218,7 @@ Read after the transaction commits.
   isolation surprise. Composing a query with an enclosing transaction is
   not supported in v1, and would be contradictory anyway: the query's
   transaction is `READ ONLY` and the enclosing one is not.
-</Warning>
+:::
 
 ### Postgres and server-only
 

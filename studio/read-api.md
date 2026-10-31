@@ -23,14 +23,14 @@ Stable codes: `UNKNOWN_TARGET`, `UNKNOWN_MODEL`, `UNKNOWN_FIELD`,
 and `UNSAFE_DB_WRITE` are only ever returned for writes; see the
 [write API](./write-api) page for the mutation surface.
 
-<Note>
+::: info
 Studio supports Postgres and SQLite (via `rusqlite`) natively, plus
 API-backed targets that proxy through a deployed CrateStack service.
 Relation follow works against the two DB-backed drivers; API-backed
 targets return `UNSUPPORTED` for follow, and many-to-many through a
 junction table returns `UNSUPPORTED` on every driver — see
 [What's not here yet](#whats-not-here-yet).
-</Note>
+:::
 
 ## `[target.db]` is a direct database connection
 
@@ -69,14 +69,14 @@ suppressed verb has no route to call (`405`, or `404` when every verb on
 the path is suppressed) and policies are evaluated server-side against the
 identity in `[target.api].auth`.
 
-<Warning>
+::: warning
 **`[target.db]` wins when a target declares both.** The workspace loader
 takes `[target.db]` whenever the target declares one, so a target carrying
 both blocks is a `[target.db]` target for **every** read and write.
 Adding `[target.api]` alongside an existing `[target.db]` buys no
 enforcement — to get policy and route-suppression enforcement, the target
 must declare `[target.api]` and **no** `[target.db]`.
-</Warning>
+:::
 
 Prefer an `[target.api]`-only target for a schema whose policies you need
 enforced, and scope which network can reach a `[target.db]`-backed Studio

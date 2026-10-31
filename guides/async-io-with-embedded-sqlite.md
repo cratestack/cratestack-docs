@@ -69,9 +69,9 @@ Three things to notice:
 2. **Two `?` operators.** `spawn_blocking(...).await` returns `Result<Result<T, RusqliteError>, JoinError>`. The first `?` propagates panics from the blocking task as `JoinError`; the second propagates the underlying `RusqliteError`. You can collapse these with a helper if you'd rather, but the shape is informative.
 3. **The closure is `Send + 'static`.** Anything captured by the closure crosses thread boundaries, so request-derived state (`input`, the cloned `Arc`) needs to satisfy `Send`. `RusqliteRuntime` already does — it's `Send + Sync`.
 
-<Info>
+::: info
 Conceptually `spawn_blocking` is "promote synchronous code to async-friendly by paying a thread-pool hop." It's the same pattern you'd use to call a blocking C library from a tokio handler, or to read a stdlib `File` outside `tokio::fs`. There is nothing CrateStack-specific about it — it just happens to be the seam embedded users hit first.
-</Info>
+:::
 
 ## Sharing the runtime
 
@@ -98,9 +98,9 @@ async fn main() -> anyhow::Result<()> {
 
 The `Arc<RusqliteRuntime>` is the **handle** that gets passed around. `Mutex<Connection>` inside the runtime serializes actual SQL access. SQLite in WAL mode allows concurrent readers with at most one writer — but the in-process mutex enforces single-writer at the runtime layer, which is the simplest correct default. If you need a connection pool, open multiple `RusqliteRuntime` instances against the same file (each carries its own connection) and arbitrate access yourself.
 
-<Warning>
+::: warning
 Do **not** share a `&RusqliteRuntime` across `spawn_blocking` boundaries via a non-`'static` borrow — the closure has to own the handle. Clone the `Arc` per call. It's a refcount increment, not a connection copy.
-</Warning>
+:::
 
 ## Bridging non-tokio threads
 

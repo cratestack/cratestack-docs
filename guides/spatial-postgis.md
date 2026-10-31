@@ -81,10 +81,10 @@ Each accepts a `Z`, `M`, or `ZM` suffix for 3D and measured geometries —
 and `Point` all work) and is normalised into the migration snapshot, so
 re-casing a subtype is not treated as a column change.
 
-<Note>
+::: info
 The index attribute takes a **bare** access method name — `using: gist`,
 not `using: "gist"`. A quoted value is rejected.
-</Note>
+:::
 
 ## Generated DDL
 

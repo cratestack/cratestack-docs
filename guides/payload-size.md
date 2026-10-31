@@ -171,10 +171,10 @@ on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 
 ## Enum ordinals
 
-<Note>
+::: info
 **Since 0.17.0.** On 0.16.0 and earlier, `Pending = 1` is a parse error. The design and its measurements are in
 [`docs/design/enum-ordinals.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/enum-ordinals.md).
-</Note>
+:::
 
 Number every variant, and the enum is stored and sent as that number instead of its name:
 

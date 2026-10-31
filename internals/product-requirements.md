@@ -1,6 +1,6 @@
 # CrateStack v0 PRD
 
-> **Staleness notice:** this PRD's "v0" framing, its Non-Goals list, and its crate layout (§9.1) predate several major additions to CrateStack — the facade-pattern crate split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), RPC and gRPC transports, and the Studio admin product. This is a historical planning document, not a live spec; it is not being fully rewritten to track current source. For what's actually true today, see `overview/current-state.mdx`.
+> **Staleness notice:** this PRD's "v0" framing, its Non-Goals list, and its crate layout (§9.1) predate several major additions to CrateStack — the facade-pattern crate split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), RPC and gRPC transports, and the Studio admin product. This is a historical planning document, not a live spec; it is not being fully rewritten to track current source. For what's actually true today, see [Current State](/overview/current-state).
 
 ## 0.3.0 macro-split update
 
@@ -1346,7 +1346,7 @@ Framework integrations should extract or construct `CoolContext` from request ex
 
 ## 9.1 Crate Layout
 
-> **Stale:** this layout predates the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC transport, and the Studio product, among other additions. See `internals/package-selection.md` for the (also-stale-but-more-detailed) crate inventory, or `overview/current-state.mdx` for what's current — this list is not duplicated here.
+> **Stale:** this layout predates the facade split (`cratestack-pg` / `cratestack-api` / `cratestack-sqlite`), gRPC transport, and the Studio product, among other additions. See `internals/package-selection.md` for the (also-stale-but-more-detailed) crate inventory, or [Current State](/overview/current-state) for what's current — this list is not duplicated here.
 
 Recommended workspace:
 
