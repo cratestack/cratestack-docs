@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Emit every CrateStack brand SVG from one geometry definition.
 
-Usage:  python3 scripts/gen-brand-svg.py images/branding
+Usage:  python3 scripts/gen-brand-svg.py public/images/branding
 
 The rasters beside them (PNG/JPEG at each size) are rendered from these
 SVGs; regenerate those with any SVG rasteriser if a source changes.

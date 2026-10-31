@@ -1,6 +1,6 @@
 import type { DefaultTheme } from "vitepress";
 
-// The sidebar, in the order and grouping the Mintlify `docs.json` had: one
+// The sidebar, in the order and grouping the Mintlify site's `docs.json` had: one
 // sidebar per former tab. VitePress picks the deepest key that matches the
 // page's path, so `/studio/` and `/internals/` win over `/`.
 //
