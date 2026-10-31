@@ -248,6 +248,21 @@ never sees the mount prefix. Both files are a starting point for a test of your 
 
 The kit does not drive SSE model subscriptions or the sync endpoints yet, which need a database.
 
+For a whole service run against several providers, see
+[`examples/auth-pluggable`](https://github.com/cratestack/cratestack/tree/main/examples/auth-pluggable)
+*(Unreleased, [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245))*: one schema
+and one test suite (the kit, then the example's own `hasRole` policy) against three providers, each
+one file:
+
+* `inhouse`: `SignedRequestAuthProvider`, then a COSE-verified signer, as one chain;
+* `authkestra-devsig`: Authkestra's device signatures (`authkestra_devsig::verify`), refusing with
+  `401 {"error": "<code>"}`;
+* `authkestra-oidc`: Authkestra's `JwtStrategy` with DPoP-bound access tokens, mapped onto the
+  [principal contract](#the-principal-contract); its tests start `authkestra-op` in-process.
+
+Its README lists what each Authkestra provider has to do itself, such as rebuilding
+`http::request::Parts` for `JwtStrategy` and giving a refusal its code.
+
 ## Internal callers
 
 Non-HTTP Rust callers can bind auth directly:
