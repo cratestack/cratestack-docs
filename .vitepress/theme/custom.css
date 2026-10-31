@@ -1,0 +1,102 @@
+/* CrateStack's additions to the vaam-apps Material 3 theme.
+ *
+ * Colour comes from the theme: the seed in .vitepress/config.ts generates every
+ * role in light and dark, so nothing here hard-codes a hue for chrome — use
+ * `var(--md-sys-color-*)` and the shape and motion tokens, and a rule follows
+ * light, dark and the Material 3 style for free. The two exceptions are the
+ * brand plates on overview/branding.md, whose colours are the subject of the
+ * page.
+ *
+ * What came over from the Mintlify `style.css`: only its intent. Its rules set
+ * `--mint-token-*` variables that exist in Mintlify alone, to fix contrast of
+ * Mintlify's code blocks in each mode. VitePress highlights with Shiki's
+ * github-light and github-dark themes, the palettes that file had settled on,
+ * so that part needs nothing. Its other goal, `.cstack` blocks keeping the
+ * teal identity, is the rule just below: VitePress inlines each token's colour
+ * per theme rather than per language, so the identity is carried by the block
+ * (a primary tint and rule), not by recolouring tokens.
+ */
+
+/* ---- `.cstack` code blocks ------------------------------------------------ */
+.vp-doc div.language-cstack {
+  background-color: color-mix(
+    in oklch,
+    var(--md-sys-color-primary-container) 22%,
+    var(--vp-code-block-bg)
+  );
+  box-shadow: inset 4px 0 0 var(--md-sys-color-primary);
+}
+
+/* ---- figures (Mintlify's <Frame>) ----------------------------------------- */
+.vp-doc figure {
+  margin: 24px 0;
+}
+
+.vp-doc figure img {
+  margin: 0 auto;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.vp-doc figure figcaption {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+  text-align: center;
+}
+
+/* Two figures side by side (Mintlify's <Columns cols={2}>). */
+.vp-doc .figure-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 16px;
+}
+
+.vp-doc .figure-row figure {
+  margin: 0;
+}
+
+/* A brand asset shown on the surface it is drawn for. The colour is the
+   subject of the page, so it is set on the element, not taken from the theme. */
+.vp-doc .brand-plate {
+  padding: 2rem;
+  text-align: center;
+  border-radius: var(--md-sys-shape-card);
+}
+
+.vp-doc .brand-plate img {
+  border: 0;
+  border-radius: 0;
+}
+
+/* ---- diagrams --------------------------------------------------------------- */
+.mermaid-figure {
+  margin: 24px 0;
+  padding: 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-card);
+  background: var(--md-sys-color-surface-container-low);
+  overflow-x: auto;
+}
+
+.mermaid-svg {
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-source {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.6;
+  white-space: pre-wrap;
+}
+
+.mermaid-error {
+  color: var(--md-sys-color-error);
+  font-size: 0.85rem;
+}

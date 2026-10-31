@@ -1,2 +1,5 @@
 .idea
 .playwright-cli
+node_modules
+.vitepress/cache
+.vitepress/dist
