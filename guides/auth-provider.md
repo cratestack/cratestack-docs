@@ -416,6 +416,18 @@ let provider = SignedRequestAuthProvider::new(verifier)
 * `PrincipalMapper::contract([...])` emits only the contract names plus the product claims you name.
 * `PrincipalMapper::custom(f)` takes your own function.
 
+*(Unreleased, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244).)* Both built-in
+mappers also emit `amr` and, for a user, `auth_time`, which a procedure's
+[`@authn`](/reference/auth-support-matrix#authentication-requirements-authn) requirement reads:
+
+* `amr` is the id token's `amr` claim plus `pop` (RFC 8176 proof of possession), since every request
+  is signed with the bound key.
+* `auth_time` is the token's `auth_time` claim. `default_id_token_claims` sets it to the mint time.
+* A service caller's `amr` is `["pop"]`, with no `auth_time`.
+
+`IdTokenClaims` and `UserPrincipal` gain `auth_time` and `amr`. An issuer that re-mints a token
+without a fresh user proof keeps the earlier `auth_time`.
+
 ## Compatibility note
 
 Exact auth keys still win before dotted traversal.
