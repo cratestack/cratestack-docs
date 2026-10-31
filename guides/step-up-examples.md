@@ -7,7 +7,7 @@ description: Runnable examples of a schema-declared step-up (`@authn`) from the 
 
 <Note>
 **Unreleased.** These examples ship with the `@authn` attribute and the typed `StepUpRequired`
-refusal of [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244) (ADR 0022). They
+refusal of [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244) ([ADR 0022](/internals/authn-requirements-adr)). They
 are stories 5 to 7 of [cratestack#1245](https://github.com/cratestack/cratestack/issues/1245).
 </Note>
 
