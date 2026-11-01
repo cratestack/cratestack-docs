@@ -1,6 +1,6 @@
 ---
 title: RPC transport
-description: Pick `transport rpc` in your `.cstack` schema to swap REST routes for `POST /rpc/{op_id}` + `POST /rpc/batch`. Unary, batch, and streaming work today, along with a composable `RpcLink` client middleware chain and `@cratestack/api`'s automatic batch-coalescing link; WebSocket + subscriptions are designed but not yet built.
+description: Pick `transport rpc` in your `.cstack` schema to swap REST routes for `POST /rpc/{op_id}` + `POST /rpc/batch`. Unary, batch, streaming and subscriptions work today, along with a composable `RpcLink` client middleware chain and `@cratestack/api`'s automatic batch-coalescing link.
 ---
 
 # RPC transport
@@ -490,17 +490,15 @@ Semantics worth knowing before you reach for it:
 | Multi-op batching in one round-trip | `transport rpc` |
 | One uniform error vocabulary across every op | `transport rpc` |
 | List/audit/feed streaming with a single content-type flip | Either — REST and RPC both serve `application/cbor-seq` on list-return shapes |
-| Subscriptions / push channels | Neither yet (see below) |
+| Subscriptions / push channels | Either — see [Subscriptions](./subscriptions) |
 | Server-to-server only, prefer one consistent op-id namespace | `transport rpc` |
 | Public API that benefits from HTTP-native caching at a CDN | `transport rest` |
 
 Schemas can't switch styles without migrating clients, so pick deliberately. If you're unsure, REST is the back-compat default.
 
-## What's not yet built — WebSocket + subscriptions
+## Subscriptions
 
-The HTTP surface of the RPC binding is feature-complete. The remaining direction is a **WebSocket binding** that would unlock subscriptions — `model.<X>.subscribe` ops that stream `ModelEvent<X>` frames over a long-lived channel. The wire-side design is captured in [ADR 0005 §3.4](../internals/rpc-transport-adr); the runtime work is gated on a concrete subscription use case.
-
-Streaming shipped without ceremony because the shape was concrete — list-return procedures, audit feeds, paginated reads, all naturally producing finite sequences with an existing encoder ready to go. Subscriptions don't have that profile yet: CrateStack's audit and event-bus consumers today are server-to-server and poll or consume from the audit sink. External clients are the natural fit, but no concrete CrateStack consumer is asking for subscriptions right now. **When a concrete use case appears, the WS binding becomes the next cool upgrade.** Until then, the gap is deliberate.
+`model.<X>.subscribe` and `subscription procedure` ops are served on `/rpc/subscribe/{op_id}` (SSE), and, with their extensions, over a WebSocket at `/rpc/ws` and over WebTransport. *(Unreleased.)* See [Subscriptions](./subscriptions) for the delivery contract, the per-event read policy, the bindings and the clients.
 
 ## Read Next
 
