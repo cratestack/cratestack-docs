@@ -207,14 +207,29 @@ for await (const event of client.notes.subscribe({ operations: ["created"] }, { 
 
 A WebTransport attempt that is not ready within 3 s is remembered for 10 minutes, so a UDP-blocked
 network pays that wait once. Breaking out of the loop, or aborting `signal`, cancels the
-subscription. With `--swr`, `useSubscription(key, (signal) => client.notes.subscribe({}, { signal }))`
-wraps any subscription in `swr/subscription`.
+subscription. Each hook layer wraps any subscription:
+
+- `--swr`: `useSubscription(key, (signal) => client.notes.subscribe({}, { signal }))`, over
+  `swr/subscription`.
+- `--tanstack`: `useSubscriptionQuery(key, open, { onItem })`. The query's `data` is the latest
+  item, and the subscription ends when the query's last observer unmounts. To keep a list fresh,
+  invalidate its key in `onItem`.
 
 **Dart**: a `Stream`, over SSE through the same `CratestackHttpTransport` every call uses:
 
 ```dart
 client.notes.subscribe(onReady: () => setState(() => live = true)).listen(render);
 ```
+
+With `--preset riverpod` (or `fespalier`), each op also gets a stream provider:
+`ref.watch(noteEventsProvider(input: ...))` for a model feed, and `ref.watch(linesProvider(args))`
+for a subscription procedure. Watching an equal input reuses the same subscription.
+
+The Dart client has no WebSocket or WebTransport binding yet.
+
+`examples/realtime-chat` in the framework repository puts all of this together. It has a model
+feed, a topic behind a subscription procedure, and all three bindings. Its test proves in Chromium
+that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket with UDP blocked.
 
 ## Deploying WebTransport
 
