@@ -184,8 +184,23 @@ let mut notes = client.notes().subscribe(&Default::default()).await?;
 while let Some(event) = notes.recv().await { let event = event?; /* ModelEvent<Note> */ }
 ```
 
-`Auto` uses a WebSocket with the `ws` feature (`client-ws` on `cratestack-pg`/`cratestack-api`)
-and falls back to SSE only when no socket opens.
+`Auto` tries each binding the build has, in order, and moves on only when one cannot be opened:
+
+1. WebTransport, with the `client-webtransport` feature and the listener named in the config.
+2. A WebSocket, with the `client-ws` feature.
+3. SSE.
+
+Both features are native-only. On `cratestack-client` they are named `webtransport` and `ws`.
+
+```rust
+let config = ClientConfig::new(base).with_webtransport(
+    "https://api.example.com:4433/rpc/wt".parse()?,
+    ServerTrust::NativeRoots, // or CertificateHashes(vec![dev_cert.sha256]) in development
+);
+```
+
+A WebTransport session that is not open within 3 s counts as unreachable, and that is
+remembered for 10 minutes, so a UDP-blocked network pays the wait once.
 
 **TypeScript** (both REST and RPC packages):
 
