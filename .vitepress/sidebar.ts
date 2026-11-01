@@ -45,6 +45,7 @@ const documentation: DefaultTheme.SidebarItem[] = [
       { text: "Prepared Statements and Query Caching", link: "/guides/prepared-statements-and-caching" },
       { text: "Reducing payload size", link: "/guides/payload-size" },
       { text: "RPC transport", link: "/guides/rpc-transport" },
+      { text: "Subscriptions", link: "/guides/subscriptions" },
       { text: "MCP: tools and resources for agents", link: "/guides/mcp" },
       { text: "Procedures-Only Servers with No Database", link: "/guides/no-database-procedures" },
     ],
