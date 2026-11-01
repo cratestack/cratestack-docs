@@ -240,7 +240,23 @@ With `--preset riverpod` (or `fespalier`), each op also gets a stream provider:
 `ref.watch(noteEventsProvider(input: ...))` for a model feed, and `ref.watch(linesProvider(args))`
 for a subscription procedure. Watching an equal input reuses the same subscription.
 
-The Dart client has no WebSocket or WebTransport binding yet.
+The Dart client also speaks a WebSocket, on native and web, and WebTransport, on Flutter web
+only. Pass `CratestackSubscriptionOptions` to the client as `subscriptions:`. In the riverpod preset,
+override `<prefix>SubscriptionOptionsProvider` instead.
+
+```dart
+final client = MyCratestackClient(
+  adapter,
+  subscriptions: CratestackSubscriptionOptions(
+    credentials: () => {'authorization': 'Bearer $token'},
+    webTransportUrl: Uri.parse('https://api.example.com:4433/rpc/wt'), // web only
+  ),
+);
+```
+
+`auto` tries WebTransport, then the WebSocket, then SSE. A socket does not go through your HTTP
+transport, so it cannot carry the token a Dio interceptor adds. `credentials` supplies the headers
+the socket sends instead. Until you set it, `auto` stays on SSE.
 
 `examples/realtime-chat` in the framework repository puts all of this together. It has a model
 feed, a topic behind a subscription procedure, and all three bindings. Its test proves in Chromium
