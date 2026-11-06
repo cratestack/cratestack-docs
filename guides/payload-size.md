@@ -367,8 +367,22 @@ final adapter = CratestackHttpAdapter(
 );
 ```
 
-With [signed transport](./signed-transport), add the compact types to the envelope layer's
-`payload_media_types`, so a sealed body can carry them.
+With [signed transport](./signed-transport), a sealed body carries compact keys too: the
+compact type is the inner payload type, bound in the signature. Add the compact types to the
+envelope layer's `payload_media_types`, for requests and responses together:
+
+```rust
+const COMPACT_CBOR: &str = "application/vnd.cratestack.compact+cbor";
+
+let layer = cratestack_schema::axum::envelope_layer(envelope, EnvelopeMode::Required, "payments")
+    .payload_media_types(["application/cbor", COMPACT_CBOR], ["application/cbor", COMPACT_CBOR])
+    .build()?;
+```
+
+A Rust client with both `with_envelope` and `with_compact_keys` then negotiates exactly as an
+unsealed one does. Dart and web apps that seal their own calls pass the compact type on the
+`CallBinding`; see [the Dart client](./signed-transport#the-dart-client). Signed streams stay
+plain, because `+cbor-seq` is never sealable.
 
 ## Measuring your own API
 

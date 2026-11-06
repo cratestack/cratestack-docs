@@ -467,6 +467,21 @@ sealed; the layer's own sealed errors use that choice too. A service's own JSON 
 An unsigned, nonce-bound request under `Optional` negotiates its response type the same way
 (its request payload is not sealed, so only `Cratestack-Payload-Accept` is read).
 
+### Compact wire keys under a seal
+
+*(Unreleased.)* [Compact field keys](./payload-size) are a payload type like any other here:
+`application/vnd.cratestack.compact+cbor` (and `+json`) is sealed and bound in the AAD with the op
+contract digest, which fixes the key table. List the compact types in `payload_media_types` for
+requests **and** responses, together. A route permits a compact type exactly when it declares the
+plain one, so the generated routes need nothing else; `/rpc/batch` stays CBOR.
+
+A Rust client with `with_envelope` and `with_compact_keys` negotiates per op, as it does unsealed:
+it puts the compact types first in `Cratestack-Payload-Accept`, seals its request compact only
+after that op has answered compact once, and goes back to named after an unsigned `415` (that one
+call fails; it is not retried). A layer that never lists the compact types answers named, so the
+client never sends it a body it cannot read. Signed streams stay plain: no `+cbor-seq` type is
+sealable.
+
 ## Errors
 
 The layer's **own refusals go out unsigned**: they are decided before (or instead of) a
@@ -836,6 +851,44 @@ table.
 to the stripped Linux x86_64 library and about 270 KB to the web `.wasm`, for every app that uses
 `cratestack_cbor`, signed or not. `@cratestack/cbor-web` on npm is built without it and stays
 codec-only.
+
+### Compact keys in a sealed Dart call
+
+*(Unreleased.)* To seal compact keys yourself, name the payload types on the `CallBinding`, send the selector
+headers it needs, and pass the response's `Cratestack-Payload-Type` back when you open it:
+
+```dart
+const compact = 'application/vnd.cratestack.compact+cbor';
+final keys = await createCompactKeys(cratestackKeyTables);
+
+final binding = CallBinding(
+  method: 'POST',
+  route: 'procedure.echo',
+  contractSha: opContractDigest,
+  payloadType: compact, // omit until this op has answered compact once
+  payloadAccept: const [compact, 'application/cbor'],
+);
+final payload = keys.toCompact(cborPayload, 'procedure.echo', 'request');
+final sealed = await envelope.sealRequest(payload, binding);
+// send envelope.selectorHeaders(binding) along with the headers above
+final opened = await envelope.openResponse(
+  responseBody,
+  binding: binding,
+  sealedRequest: sealed,
+  status: 200,
+  responsePayloadType: responseHeaders['cratestack-payload-type'],
+);
+final named = opened.payloadType == compact
+    ? keys.fromCompact(opened.payload, 'procedure.echo', 'response')
+    : opened.payload;
+```
+
+A type that cannot be sealed (an envelope, a `+cbor-seq` stream, multipart) is `CoseMisuse`, and an
+answer sealed under a type the binding did not accept is `CoseRejected`. Without `payloadType` and
+`payloadAccept` the call is CBOR and byte-identical to before. The web build of the same sealer takes
+`payloadType` / `payloadAccept` on its binding object, has `selectorHeaders(binding)`, and its
+`openResponse(body, binding, sealedRequest, status, responsePayloadType?)` resolves with
+`payloadType`.
 
 ## Claim objects
 
