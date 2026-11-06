@@ -58,7 +58,14 @@ already allows. Some inputs are refused with `invalid_argument`:
 - relation and full-text filters;
 - a filter over a `@server_only` column.
 
-A row updated *out of* your filter produces no event for you. Refetch when you reconnect.
+**Rows that leave your feed.** When an update moves a row *out of* your filter, or out of what
+your read policy lets you see, you receive an `Updated` event with `matches: false`. Its `data` is
+the row as you last saw it, not the new values, so remove that row (by its key) from your local
+copy. Ordinary events leave `matches` out, which means `true`. You are not told why the row left,
+and nothing is sent about rows you never matched. There is no exit event for `update_many` or for
+a feed whose `operations` exclude `updated`, so still refetch after a bulk update and when you
+reconnect. In the clients: `ModelEvent.matches` (Rust), `matches?: boolean` (TypeScript; test
+`=== false`), `CratestackModelEvent.matches` (Dart).
 
 ### Subscription procedures and topics
 
