@@ -433,6 +433,15 @@ repeated or malformed is a `400`, a request type the op does not allow a `415`, 
 type a `406`, all unsigned and before any key lookup; a header that lies fails the signature (the coarse
 `401`). The client never decodes a type it did not request.
 
+**Why compact keys have no `+cose` type** (amended 2026-11-06). A sealed body with compact wire keys is
+`application/cose` outside and `application/vnd.cratestack.compact+cbor` (or `+json`) as its payload type,
+not `application/vnd.cratestack.compact+cose` or `application/cose; keys=compact`. The outer type names
+the COSE structure (Sign1 or Mac0), and the key mode belongs to the payload. Only the payload type is in the
+AAD (element 8), so it is the one place the mode is authenticated; an outer spelling would be unbound and
+would duplicate it. This is the same path JSON takes, which is why compact needed no binding-version change.
+The cost is that a sealed compact call shows in `Cratestack-Payload-Type`, not in `Content-Type`
+(cratestack `docs/design/compact-wire-keys.md` §5.1).
+
 Whether a request or response is sealed at all is still negotiated by the existing `Accept` and
 `Content-Type` headers (`application/cose`); the inner payload type is the selector headers above. The
 router gains a policy:
