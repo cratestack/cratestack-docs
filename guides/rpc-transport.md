@@ -80,8 +80,9 @@ The router mounts two paths:
   defaults `transport rpc` clients to the native `@cratestack/cbor` codec, sending
   `Content-Type: application/cbor` and `Accept: application/cbor`. If your router is mounted with
   `CodecSet::new(JsonCodec)` alone — no `CborCodec` — those requests get `406`/`415` instead of a
-  response. Mount `CodecSet::new(CborCodec, JsonCodec)` as shown above, or generate the client with
-  `--no-native-cbor` if the server genuinely stays JSON-only. See [TypeScript client
+  response. Mount `CodecSet::new(CborCodec, JsonCodec)` as shown above, or construct the client
+  with `codec: jsonRpcCodec` if the server genuinely stays JSON-only (`--no-native-cbor` is removed
+  *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*). See [TypeScript client
   generation](/guides/typescript-client-generation#the-cbor-codec) for the client side of this.
 :::
 
