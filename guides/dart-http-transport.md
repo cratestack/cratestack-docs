@@ -80,7 +80,7 @@ final adapter = CratestackRpcHttpAdapter(
 - **`useRustTransport`** (REST only) marks every request with `cratestackUseRustTransportExtraKey` in `CratestackHttpRequest.extra`, for a host interceptor that routes marked requests through the Rust runtime. It is never a header.
 - **`cborSeqDecoder`** (RPC only) swaps the boundary scanner that `stream()` uses; see [Streaming](#streaming).
 
-The CBOR codec is the native `cratestack_cbor`; the pure-Dart `package:cbor` fallback (`--no-native-cbor`) is removed *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. See [The CBOR codec](/guides/dart-client-generation#the-cbor-codec). The wire output is unchanged by the move to the seam.
+The CBOR codec is the native `cratestack_cbor`; the pure-Dart `package:cbor` fallback (`--no-native-cbor`) is removed *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. See [The CBOR codec](/guides/dart-client-generation#the-cbor-codec). The wire output is unchanged by the move to the seam.
 
 ## Dio is one transport
 

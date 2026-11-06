@@ -110,7 +110,7 @@ query-string-encoded operation modes.
 
 ### Refusals before the body are not recorded
 
-*(Unreleased, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A `401` or `403` that the generated dispatch produces **before any
+*(Since 0.17.2, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A `401` or `403` that the generated dispatch produces **before any
 procedure body runs** is not persisted either. Nothing ran, so the layer releases the reservation,
 and a client that renews its credential or [steps up](./auth-provider#a-step-up-refusal-in-a-generated-client)
 and resends the call under the same key runs it once. That is what the generated clients'

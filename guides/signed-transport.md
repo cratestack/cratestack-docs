@@ -469,7 +469,7 @@ An unsigned, nonce-bound request under `Optional` negotiates its response type t
 
 ### Compact wire keys under a seal
 
-*(Unreleased.)* [Compact field keys](./payload-size) are a payload type like any other here:
+*(Since 0.18.0.)* [Compact field keys](./payload-size) are a payload type like any other here:
 `application/vnd.cratestack.compact+cbor` (and `+json`) is sealed and bound in the AAD with the op
 contract digest, which fixes the key table. List the compact types in `payload_media_types` for
 requests **and** responses, together. A route permits a compact type exactly when it declares the
@@ -857,7 +857,7 @@ codec-only.
 
 ### Compact keys in a sealed Dart call
 
-*(Unreleased.)* To seal compact keys yourself, name the payload types on the `CallBinding`, send the selector
+*(Since 0.18.0.)* To seal compact keys yourself, name the payload types on the `CallBinding`, send the selector
 headers it needs, and pass the response's `Cratestack-Payload-Type` back when you open it:
 
 ```dart

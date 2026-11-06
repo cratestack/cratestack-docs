@@ -34,7 +34,7 @@ cargo run -p cratestack-cli -- generate-typescript \
 | `--full-selection` | no | off | emit fully-required model interfaces instead of the projection-driven optional-everywhere default — see [Full selection: fully-required model types](#full-selection-fully-required-model-types) |
 | `--swr` | no | off | *additionally* emit a file-per-model layout with SWR hooks under `src/swr/`, alongside the default layout — see [Adding the SWR layout with `--swr`](#adding-the-swr-layout-with---swr) |
 | `--refine` | no | off | *additionally* emit `src/refine.ts`, the [`@cratestack/refine`](https://www.npmjs.com/package/@cratestack/refine) resource manifest for the schema |
-| `--no-native-cbor` | — | — | **removed** *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. Up to 0.17.2 it fell back to the pure-TypeScript `jsonRpcCodec`. Native [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) is now the only generated RPC codec; pass `codec: jsonRpcCodec` for JSON on the wire — see [The CBOR codec](#the-cbor-codec) |
+| `--no-native-cbor` | — | — | **removed** *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. Up to 0.17.2 it fell back to the pure-TypeScript `jsonRpcCodec`. Native [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) is now the only generated RPC codec; pass `codec: jsonRpcCodec` for JSON on the wire — see [The CBOR codec](#the-cbor-codec) |
 
 The client class name is derived from `--package-name`: non-alphanumeric characters become spaces, the result is PascalCased, and `Client` is appended. `@example/blog-client` becomes `ExampleBlogClientClient`. Pick a package name with that in mind if the resulting class name matters to you.
 
@@ -235,7 +235,7 @@ npm run build   # runs `tsc -p tsconfig.json`, emits dist/
 
 The generated `package.json` lists `@tanstack/react-query` as a `peerDependency`, so `npm install` won't pull it in on its own — only install it if you're going to import the generated React Query hooks. With `--swr` the manifest additionally lists `swr` and `react`, needed only if you import a `.hooks` module — importing a model's plain functions or `src/swr/procedures.ts` needs neither.
 
-For a `transport rpc` schema, the manifest also lists `@cratestack/cbor` under real `dependencies` (not `peerDependencies`) — `npm install` pulls it in automatically, no opt-in step required — because the RPC runtime resolves it by default (see [The CBOR codec](#the-cbor-codec) below). Up to 0.17.2, `--no-native-cbor` dropped it; that flag is removed *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. REST-transport packages never carry it; `rest-runtime.ts.j2` has no codec seam.
+For a `transport rpc` schema, the manifest also lists `@cratestack/cbor` under real `dependencies` (not `peerDependencies`) — `npm install` pulls it in automatically, no opt-in step required — because the RPC runtime resolves it by default (see [The CBOR codec](#the-cbor-codec) below). Up to 0.17.2, `--no-native-cbor` dropped it; that flag is removed *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. REST-transport packages never carry it; `rest-runtime.ts.j2` has no codec seam.
 
 ## Full selection: fully-required model types
 
@@ -475,7 +475,7 @@ By default, a generated `transport rpc` client resolves [`@cratestack/cbor`](htt
 
 The constructor stays synchronous even though `createCborCodec()` is async: the runtime lazily creates and memoizes the codec promise, awaiting it right after `buildHeaders()` on each call, and a *rejected* resolution is not memoized — a transient init failure retries on the next call rather than permanently bricking the runtime instance. `codec:` in `CratestackRpcClientOptions` still overrides synchronously and skips resolution entirely, exactly as before.
 
-Native CBOR is the only codec the generator emits *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. Up to 0.17.2, `--no-native-cbor` generated a JSON-only runtime instead; that flag is removed, and passing it is an unknown-argument error. To put JSON on the wire, for a server whose `CodecSet` is JSON-only or a test double that speaks JSON, pass `jsonRpcCodec` at the call site:
+Native CBOR is the only codec the generator emits *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. Up to 0.17.2, `--no-native-cbor` generated a JSON-only runtime instead; that flag is removed, and passing it is an unknown-argument error. To put JSON on the wire, for a server whose `CodecSet` is JSON-only or a test double that speaks JSON, pass `jsonRpcCodec` at the call site:
 
 ```ts
 import { jsonRpcCodec } from "@example/widget-client";
@@ -514,7 +514,7 @@ This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-r
 :::
 
 ::: warning
-  **Windows arm64 is not supported for generated RPC clients** *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. A generated RPC client depends on `@cratestack/cbor`, which resolves to `@cratestack/cbor-node` in Node, and that has no prebuild for this target. The runtime imports it at the top level, so passing `codec: jsonRpcCodec` does not help: the import fails before your code runs. Up to 0.17.2, `--no-native-cbor` was the workaround; it is removed. REST-transport clients are unaffected.
+  **Windows arm64 is not supported for generated RPC clients** *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*. A generated RPC client depends on `@cratestack/cbor`, which resolves to `@cratestack/cbor-node` in Node, and that has no prebuild for this target. The runtime imports it at the top level, so passing `codec: jsonRpcCodec` does not help: the import fails before your code runs. Up to 0.17.2, `--no-native-cbor` was the workaround; it is removed. REST-transport clients are unaffected.
 :::
 
 ::: warning

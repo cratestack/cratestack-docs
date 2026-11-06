@@ -82,7 +82,7 @@ The router mounts two paths:
   `CodecSet::new(JsonCodec)` alone — no `CborCodec` — those requests get `406`/`415` instead of a
   response. Mount `CodecSet::new(CborCodec, JsonCodec)` as shown above, or construct the client
   with `codec: jsonRpcCodec` if the server genuinely stays JSON-only (`--no-native-cbor` is removed
-  *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*). See [TypeScript client
+  *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*). See [TypeScript client
   generation](/guides/typescript-client-generation#the-cbor-codec) for the client side of this.
 :::
 
@@ -499,7 +499,7 @@ Schemas can't switch styles without migrating clients, so pick deliberately. If 
 
 ## Subscriptions
 
-`model.<X>.subscribe` and `subscription procedure` ops are served on `/rpc/subscribe/{op_id}` (SSE), and, with their extensions, over a WebSocket at `/rpc/ws` and over WebTransport. *(Unreleased.)* See [Subscriptions](./subscriptions) for the delivery contract, the per-event read policy, the bindings and the clients.
+`model.<X>.subscribe` and `subscription procedure` ops are served on `/rpc/subscribe/{op_id}` (SSE), and, with their extensions, over a WebSocket at `/rpc/ws` and over WebTransport. *(Since 0.18.0.)* See [Subscriptions](./subscriptions) for the delivery contract, the per-event read policy, the bindings and the clients.
 
 ## Read Next
 
