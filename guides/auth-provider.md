@@ -170,7 +170,7 @@ refused call with the key it was first sent with therefore gets the stored `401`
 running. The same holds for a retry after renewing an expired credential. A call without an
 `Idempotency-Key` is not affected.
 
-*(Unreleased, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A refusal the generated dispatch produces before any procedure
+*(Since 0.17.2, [cratestack#1261](https://github.com/cratestack/cratestack/issues/1261).)* A refusal the generated dispatch produces before any procedure
 body runs is no longer recorded: the provider's (`authenticate`), `@allow` / `@deny`'s and
 `@authn`'s. The layer releases the key, so the retry under the same key runs the call once. See
 [Refusals before the body are not recorded](./idempotency#refusals-before-the-body-are-not-recorded).

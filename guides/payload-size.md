@@ -51,7 +51,7 @@ Read that table in both directions:
 Most procedure traffic is one object per request and one per response, a few hundred bytes each.
 The framework measures three such bodies on every CI run and fails the build when one changes size:
 `cratestack-api`'s `tests/payload_sizes.rs` encodes the generated request and response types through the real codecs and compares them with a
-committed baseline *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
+committed baseline *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
 In bytes:
 
 | Body | CBOR | CBOR + gzip | JSON | JSON + gzip |
@@ -113,7 +113,7 @@ Which clients use it:
 - **Dart client:** CBOR (`application/cbor`), through the native `cratestack_cbor`. See [Dart HTTP transport](./dart-http-transport).
 - **TypeScript, `transport rpc`:** native CBOR through `@cratestack/cbor`. Passing
   `codec: jsonRpcCodec` puts JSON on the wire. The `--no-native-cbor` generator flag is removed
-  *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
+  *(Since 0.18.0, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
 - **TypeScript, REST:** JSON only. The REST runtime has no codec seam
   ([TypeScript client generation](./typescript-client-generation#the-cbor-codec)). Compression
   is the lever for a REST browser client.
@@ -301,7 +301,7 @@ updated.
 
 ## Compact field keys
 
-*(Unreleased.)* On a single call, field names are a third to almost half of a body, and gzip
+*(Since 0.18.0.)* On a single call, field names are a third to almost half of a body, and gzip
 cannot remove them (see [Single calls](#single-calls)). With compact keys, each schema field
 travels as a small integer key instead, when client and server share the schema. The
 framework's payload gate measures this on every CI run:

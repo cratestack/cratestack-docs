@@ -5,11 +5,10 @@ description: Live data from a CrateStack server — model feeds (`@@subscribe`),
 
 # Subscriptions
 
-> **Unreleased.** Everything on this page is on `main` after 0.17.2 and in no published
-> crate yet: the backplane (cratestack#1266), refusal, filters and REST (cratestack#1267),
-> subscription procedures, topics, the WebSocket binding and the Rust client (cratestack#1268),
-> and the TypeScript and Dart clients. The design is
-> `docs/design/subscriptions-websocket.md` in the framework repository.
+> **Since 0.18.0.** Everything on this page shipped in 0.18.0: the backplane (cratestack#1266),
+> refusal, filters and REST (cratestack#1267), subscription procedures, topics, the WebSocket
+> binding and the Rust client (cratestack#1268), and the TypeScript and Dart clients. The design
+> is `docs/design/subscriptions-websocket.md` in the framework repository.
 
 A subscription is an op like any other. It has an op id, a policy, and an input. What it
 returns is a stream: once the server says **Ready**, nothing committed after that point is
