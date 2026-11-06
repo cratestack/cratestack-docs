@@ -32,6 +32,16 @@ selector headers, `Cratestack-Payload-Type` and `Cratestack-Payload-Accept`, def
 binding-version change**, no COSE header change, and a message that names no type is byte-identical to
 0.15.3's.
 
+**Amended 2026-11-06 (compact wire keys).** The compact payload types
+`application/vnd.cratestack.compact+cbor` and `application/vnd.cratestack.compact+json` are sealable
+payload types like any other (§2, "Payload types"). The AAD already binds the op contract digest,
+which fixes the key table, and the payload type, which fixes the key mode, so **no binding-version
+change** and nothing new is bound. A route permits a compact type exactly when it declares its plain
+counterpart; the layer's opt-in set must list the compact type itself. Any `+cbor-seq` type, the
+compact one included, is never sealable. The Rust client negotiates the mode per op, as unsealed
+calls do, and the Dart and wasm sealers take the payload type on their call binding
+([cratestack design `compact-wire-keys.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/compact-wire-keys.md)).
+
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
 bytes") and its processing order (`HTTP body → envelope.open → codec.decode`).
@@ -417,7 +427,8 @@ reads, in order). Absent means `application/cbor`. A request binding names the r
 response binding names the response payload's own type. A payload type is a lowercase `type/subtype` of
 token characters without parameters or wildcards; an envelope (`application/cose*`), a stream
 (`application/cbor-seq`, `text/event-stream`) and a multipart body are never sealable. What an op allows is
-the layer's opt-in set intersected with the types its route declares; `/rpc/batch` stays CBOR. A selector
+the layer's opt-in set intersected with the types its route declares (a compact type counts as declared when
+its plain counterpart is, amended 2026-11-06); `/rpc/batch` stays CBOR. A selector
 repeated or malformed is a `400`, a request type the op does not allow a `415`, and no acceptable response
 type a `406`, all unsigned and before any key lookup; a header that lies fails the signature (the coarse
 `401`). The client never decodes a type it did not request.
