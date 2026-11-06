@@ -196,7 +196,7 @@ Every row repeats every key, so `createdAt` costs 10 bytes per row before its va
 names, not short ones. On a list, `?fields=` and compression handle the rest. On a single call
 they do not, because there is nothing for gzip to find repeated
 ([Single calls](#single-calls)). That case is what the
-[compact field keys](#proposed-compact-field-keys) proposal is for. No attribute renames a field
+[compact field keys](#compact-field-keys) are for. No attribute renames a field
 on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 
 ## Enum ordinals
@@ -299,33 +299,76 @@ updated.
 - `cratestack migrate` reading a live Postgres reports drift on an ordinal column, because it
   does not map `SMALLINT` or parse the numeric `CHECK`.
 
-## Proposed: compact field keys
+## Compact field keys
 
-::: warning Proposal — not in any release
-This section describes a design under review,
-[cratestack#1281](https://github.com/cratestack/cratestack/pull/1281)
-(`docs/design/compact-wire-keys.md`). Nothing below exists in a released version, and no flag or
-API named here can be used yet.
-:::
+*(Unreleased.)* On a single call, field names are a third to almost half of a body, and gzip
+cannot remove them (see [Single calls](#single-calls)). With compact keys, each schema field
+travels as a small integer key instead, when client and server share the schema. The
+framework's payload gate measures this on every CI run:
 
-On a single call, field names are a third to almost a half of a CBOR body, and compression cannot
-remove them (see [Single calls](#single-calls)). The proposal sends each field as a small integer
-key instead, when client and server share the schema:
+| Body | CBOR | compact CBOR | JSON | compact JSON |
+|---|---|---|---|---|
+| create a product, request | 212 | 135 | 274 | 207 |
+| create a product, response | 312 | 213 | 404 | 321 |
+| money transfer, request | 130 | 67 | 193 | 136 |
+| money transfer, response | 242 | 132 | 346 | 248 |
+| 500-row event list, response | 47 443 | 31 443 | 66 441 | 52 941 |
 
-- **Opt-in, per call.** A client asks for compact keys through its media type. A server that does
-  not support them, or does not know the client's version of the operation, answers with names,
-  so nothing breaks.
-- **No schema change.** The numbering comes from the operation's contract digest, which already
-  fixes the field order. A newer server can still answer an older client compactly when its
-  contract lock accepts that client's version. You write no field numbers.
-- **Generated, not hand-written.** Codegen emits a key table beside the client. One Rust codec
-  does the remapping for Rust, Dart and TypeScript clients alike, through the bindings they
-  already use.
-- **Every body type.** CBOR, JSON, `application/cbor-seq` streams and signed (COSE) payloads.
+### How it works
 
-Measured on the bodies above with the proposal's prototype: CBOR single calls shrink by 32–47 %,
-and JSON single calls by 21–29 %. Lists shrink 34 % raw but only about 2 % once gzipped, because
-gzip already removes repeated keys.
+- **Opt-in, per client.** A client that enables it asks for
+  `application/vnd.cratestack.compact+cbor` (`+json`, and `+cbor-seq` for streams), and names
+  its version of the operation in the `Cratestack-Contract` header. A client that does not
+  enable it sends and receives exactly what it did before.
+- **The server needs nothing.** The generated router answers compact when it knows the client's
+  version of the operation, and answers with names otherwise. With a
+  [contract lock](./signed-transport) (`contracts =`), a newer server keeps answering older
+  clients compactly, each with its own numbering.
+- **No schema change.** Keys come from the operation's contract: fields in contract order,
+  procedure arguments in declaration order. You write no field numbers.
+- **Requests follow responses.** A client sends an operation's request body compact only after
+  that operation answered compact once. A server without the mode never receives a body it
+  cannot read.
+- **What stays named:** `/rpc/batch` frames, error bodies, the `Page` wrapper's own keys, query
+  strings, and outbox and audit payloads.
+- **One implementation.** The remapping is Rust code in the codec crates. The Dart and
+  TypeScript clients reach it through `cratestack_cbor` and `@cratestack/cbor`
+  (`createCompactKeys`).
+
+### Turning it on
+
+Rust, on the generated client:
+
+```rust
+let client = Client::with_compact_keys(runtime);
+```
+
+TypeScript, on the RPC or REST client options. A REST client also needs `@cratestack/cbor`
+installed, as an optional peer dependency:
+
+```ts
+const client = new ShopClient("https://api.example.com", { compactKeys: true });
+```
+
+The client detects `createCompactKeys` on `@cratestack/cbor` and stays named on a version that
+lacks it.
+
+Dart, by wiring the generated hooks to `cratestack_cbor` (CBOR format only):
+
+```dart
+final keys = await createCompactKeys(cratestackKeyTables);
+final adapter = CratestackHttpAdapter(
+  transport,
+  compact: CratestackCompactHooks(
+    toCompact: keys.toCompact,
+    fromCompact: keys.fromCompact,
+    selector: keys.selector,
+  ),
+);
+```
+
+With [signed transport](./signed-transport), add the compact types to the envelope layer's
+`payload_media_types`, so a sealed body can carry them.
 
 ## Measuring your own API
 
