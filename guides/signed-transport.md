@@ -482,6 +482,9 @@ call fails; it is not retried). A layer that never lists the compact types answe
 client never sends it a body it cannot read. Signed streams stay plain: no `+cbor-seq` type is
 sealable.
 
+A runnable server and client pair is in
+[`examples/signed-compact`](https://github.com/cratestack/cratestack/tree/main/examples/signed-compact).
+
 ## Errors
 
 The layer's **own refusals go out unsigned**: they are decided before (or instead of) a
