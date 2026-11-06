@@ -132,6 +132,28 @@ client that renews its credential or steps up and then resends the call under th
 recorded `401` replayed, and the call does not run.
 :::
 
+## Preserve a request before the first attempt
+
+::: warning Unreleased proposal
+The prepared-call APIs below are in [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297), not in the current release. Their API and behavior may change before merge.
+:::
+
+A keyed retry must preserve the request hash inputs even if compact negotiation changes or the process restarts. Preparation encodes one unary mutation without sending it. Commit its snapshot to durable storage **before the first send**, then execute it; after restart, restore and execute that same snapshot with the matching service, client codec, operation contract and key tables. It retains the original inner bytes and media type, route, query, key and `If-Match`. It does not queue work or install a server idempotency store.
+
+```rust
+let call = runtime.prepare_call(
+    "POST", route, path, &input, &[], &[("Idempotency-Key", key)],
+)?;
+let bytes = call.to_bytes()?;
+// Durably commit bytes here before executing the first attempt.
+let restored = cratestack_client_rust::PreparedCall::from_bytes(&bytes)?;
+let response = runtime.execute_prepared(&restored).await?;
+```
+
+Rust requires compact key tables for the operation, including when the frozen body is named. Only unary mutations with a non-empty key are supported; batch and streams are outside this API. Malformed, oversized or incompatible descriptors are refused before network I/O. The caller owns the journal, its integrity and access controls, and the business decision that the operation remains authorized. A saved descriptor contains sensitive business data; protect it accordingly. This mechanism alone is not a financial guarantee.
+
+Credentials and reusable COSE envelopes are not stored. The Rust client reauthorizes and, when configured, reseals each attempt with fresh claims. Dart sealing belongs to the transport: create a fresh seal and matching `PendingResponse` on each attempt. TypeScript RPC prepared calls reject custom unary links, so a sealing link cannot currently be used there. See the [TypeScript](./typescript-client-generation#prepared-requests-unreleased) and [Dart](./dart-client-generation#prepared-requests-unreleased) guides.
+
 ## Error bodies are typed
 
 Every response this layer emits itself carries the framework's own

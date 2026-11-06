@@ -9,6 +9,10 @@ description: Generate a typed Dart/Flutter package — CRUD APIs, procedures, an
 
 This guide covers generating the package, the `default`, `riverpod` and `fespalier` presets, what the `riverpod` preset actually generates and why it's shaped the way it is, and a full getting-started walkthrough from schema to a running Flutter screen. How a generated client sends HTTP (the transport seam, Dio, typed errors, abort) has its own page: [Dart HTTP transport](/guides/dart-http-transport).
 
+## Prepared requests (unreleased)
+
+[cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) proposes `CratestackHttpAdapter.prepare(request, options: ...)` and `CratestackRpcHttpAdapter.prepareCall(opId, input, options: ...)` for keyed unary mutations. Commit `call.toJson()` to durable storage before the first `executePrepared(call)`; after restart restore with `CratestackPreparedCall.fromJson(...)` and execute with the matching service, format, contract and key tables. Preparation sends nothing. The snapshot preserves the original encoded inner body and does not include credentials. If a transport seals requests, it must seal each attempt afresh and use the corresponding `PendingResponse` to open its response. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
+
 ## Generate the package
 
 ### From the CLI

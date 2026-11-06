@@ -42,6 +42,8 @@ compact one included, is never sealable. The Rust client negotiates the mode per
 calls do, and the Dart and wasm sealers take the payload type on their call binding
 ([cratestack design `compact-wire-keys.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/compact-wire-keys.md)).
 
+**Prepared retries (unreleased proposal, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297)).** A durable prepared call retains the inner payload, not a reusable outer envelope. Each sealed attempt needs fresh claims and the matching response-opening state; see [idempotency](../guides/idempotency#preserve-a-request-before-the-first-attempt).
+
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
 and Key Management". It keeps 0001's envelope principle ("COSE is not a codec. COSE wraps encoded
 bytes") and its processing order (`HTTP body → envelope.open → codec.decode`).
