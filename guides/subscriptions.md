@@ -113,9 +113,24 @@ impl cratestack_schema::procedures::ProcedureRegistry for Rooms {
 
 - **`subscribe()`** is what a handler usually returns.
 
+Inside an `@isolation` procedure, take topics from the handle you are given: `tx_db.topics()`.
+Their `publish` rides the procedure's transaction. The message is delivered when the attempt
+commits, and never for an attempt that errors or is retried after a serialization failure, so
+there is no need to publish "after the commit" yourself. With the default `PgNotifyBackplane` it
+notifies inside the transaction; with `InProcessBackplane` it is queued and sent once the attempt
+commits. Inside `tx_db.transaction(async |tx| ..)`, call `publish_in_tx(tx, &msg)`. If that
+`transaction(..)` rolls back, its messages are dropped even though the attempt around it commits.
+
 A subscription procedure returns one item type (not `T[]`). It cannot declare `@stream`,
 `@isolation`, `@no_idempotency`, `@status`, `@no_rate_limit` or `@mcp`. It works under
-`db = None` too, with your own stream as the source. Topics need `db = Postgres`.
+`db = None` too, with your own stream as the source.
+
+Topics work under `db = None` as well, on `cratestack-api`: the same `db.topics().room_tick(&id)`
+with `publish` and `subscribe`, but no `publish_in_tx`, since there is no transaction; publish once
+the work is done. The default backplane is an `InProcessBackplane` shared by every
+`Cratestack::builder().build()` of the schema in the process, so it reaches one replica only. To reach
+others, pass your own `SubscriptionBackplane` with `Cratestack::builder().with_backplane(Arc::new(..))`.
+A `db = None` schema that declares a topic has a `Cratestack` that is `Clone` but not `Copy`.
 
 ## Every replica sees every event
 
