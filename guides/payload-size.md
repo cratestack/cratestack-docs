@@ -11,7 +11,9 @@ what they measurably save, so you spend schema churn where it pays.
 
 **The short version:**
 
-1. Compress responses. On a list endpoint that alone removes 65–75 % of the bytes.
+1. Compress responses. On a list endpoint that alone removes 65–75 % of the bytes. On a
+   single procedure call of a few hundred bytes it does nothing, or adds bytes: see
+   [Single calls](#single-calls).
 2. Let clients speak CBOR. It is already the default, except for the TypeScript REST client.
 3. Ask for less: `?fields=`, `includeFields[path]`, `@@paged`, `@server_only`.
 4. Then pick compact types. Model closed sets as `enum`, not `String`. Explicit
@@ -43,6 +45,30 @@ Read that table in both directions:
   timestamp then removes another 10 KB, a further 17 % of the original. Some bytes are never compressed: `application/cbor-seq` streams,
   sealed signed-transport payloads, outbox rows, a mobile client on a proxy that strips
   `Content-Encoding`. Type choices are what you have there.
+
+### Single calls
+
+Most procedure traffic is one object per request and one per response, a few hundred bytes each.
+The framework measures three such bodies on every CI run and fails the build when one changes size:
+`cratestack-api`'s `tests/payload_sizes.rs` encodes the generated request and response types through the real codecs and compares them with a
+committed baseline *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
+In bytes:
+
+| Body | CBOR | CBOR + gzip | JSON | JSON + gzip |
+|---|---|---|---|---|
+| create a product, request | 212 | 214 | 274 | 236 |
+| create a product, response | 312 | 279 | 404 | 298 |
+| money transfer, request | 130 | 153 | 193 | 170 |
+| money transfer, response | 242 | 257 | 346 | 263 |
+| 500-row event list, response | 47 443 | 15 565 | 66 441 | 18 046 |
+
+- **Gzip does not help a single call.** On three of the four single-call bodies the gzipped CBOR
+  is *larger*: the gzip header and an empty dictionary cost more than a few hundred bytes of
+  mostly unique values let it save. Compression pays off on lists, not on procedure calls.
+- **CBOR is the lever that works at every size.** Uncompressed it is 23–33 % smaller than JSON on
+  every row here. Gzipped, the gap narrows to 2–14 %.
+- **The same numbers hold for the Dart and TypeScript RPC clients.** They encode through the same
+  Rust `CborCodec` as the server (`cratestack_cbor`, `@cratestack/cbor`).
 
 ## 1. Compress responses
 
@@ -84,9 +110,10 @@ CBOR is smaller than JSON for the same value:
 Which clients use it:
 
 - **Rust client:** CBOR.
-- **Dart client:** CBOR by default (`application/cbor`). See [Dart HTTP transport](./dart-http-transport).
-- **TypeScript, `transport rpc`:** native CBOR through `@cratestack/cbor` by default.
-  `--no-native-cbor` falls back to JSON.
+- **Dart client:** CBOR (`application/cbor`), through the native `cratestack_cbor`. See [Dart HTTP transport](./dart-http-transport).
+- **TypeScript, `transport rpc`:** native CBOR through `@cratestack/cbor`. Passing
+  `codec: jsonRpcCodec` puts JSON on the wire. The `--no-native-cbor` generator flag is removed
+  *(Unreleased, [cratestack#1281](https://github.com/cratestack/cratestack/pull/1281))*.
 - **TypeScript, REST:** JSON only. The REST runtime has no codec seam
   ([TypeScript client generation](./typescript-client-generation#the-cbor-codec)). Compression
   is the lever for a REST browser client.
@@ -166,7 +193,10 @@ convention instead of the type.
 ### Field names
 
 Every row repeats every key, so `createdAt` costs 10 bytes per row before its value. Pick clear
-names, not short ones; `?fields=` and compression handle the rest. No attribute renames a field
+names, not short ones. On a list, `?fields=` and compression handle the rest. On a single call
+they do not, because there is nothing for gzip to find repeated
+([Single calls](#single-calls)). That case is what the
+[compact field keys](#proposed-compact-field-keys) proposal is for. No attribute renames a field
 on the wire only. `@rename(from = "…")` is a [migration marker](./migrations).
 
 ## Enum ordinals
@@ -268,6 +298,34 @@ updated.
 - Sorting by an ordinal enum (`?sort=status`) orders by number.
 - `cratestack migrate` reading a live Postgres reports drift on an ordinal column, because it
   does not map `SMALLINT` or parse the numeric `CHECK`.
+
+## Proposed: compact field keys
+
+::: warning Proposal — not in any release
+This section describes a design under review,
+[cratestack#1281](https://github.com/cratestack/cratestack/pull/1281)
+(`docs/design/compact-wire-keys.md`). Nothing below exists in a released version, and no flag or
+API named here can be used yet.
+:::
+
+On a single call, field names are a third to almost a half of a CBOR body, and compression cannot
+remove them (see [Single calls](#single-calls)). The proposal sends each field as a small integer
+key instead, when client and server share the schema:
+
+- **Opt-in, per call.** A client asks for compact keys through its media type. A server that does
+  not support them, or does not know the client's version of the operation, answers with names,
+  so nothing breaks.
+- **No schema change.** The numbering comes from the operation's contract digest, which already
+  fixes the field order. A newer server can still answer an older client compactly when its
+  contract lock accepts that client's version. You write no field numbers.
+- **Generated, not hand-written.** Codegen emits a key table beside the client. One Rust codec
+  does the remapping for Rust, Dart and TypeScript clients alike, through the bindings they
+  already use.
+- **Every body type.** CBOR, JSON, `application/cbor-seq` streams and signed (COSE) payloads.
+
+Measured on the bodies above with the proposal's prototype: CBOR single calls shrink by 32–47 %,
+and JSON single calls by 21–29 %. Lists shrink 34 % raw but only about 2 % once gzipped, because
+gzip already removes repeated keys.
 
 ## Measuring your own API
 
