@@ -11,7 +11,7 @@ This guide covers generating the package, its two output layouts (`default` and 
 
 ## Prepared requests (unreleased)
 
-[cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) proposes runtime-level preparation for keyed unary mutations. REST uses `prepare(method, path, options)`; RPC uses `prepare(op, input, options)`. Serialize the returned `PreparedCall` to durable storage before the first `executePrepared(call)`, and restore it from that stored JSON after restart. Use the same service and generated contract and key tables. Preparation sends nothing; execution validates the snapshot and reuses its encoded bytes and mode. RPC custom unary links are rejected, including sealing links. Batches and streams are not prepared calls. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
+[cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) adds runtime-level preparation for keyed unary mutations. REST uses `prepare(method, path, options)`; RPC uses `prepare(op, input, options)`. Serialize the returned `PreparedCall` to durable storage before the first `executePrepared(call)`, and restore it from that stored JSON after restart. Use the same service and generated contract and key tables. Preparation sends nothing; execution validates the snapshot and reuses its encoded bytes and mode. RPC custom unary links are rejected, including sealing links. Batches and streams are not prepared calls. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
 
 ## Generate the package
 
