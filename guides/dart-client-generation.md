@@ -9,6 +9,10 @@ description: Generate a typed Dart/Flutter package — CRUD APIs, procedures, an
 
 This guide covers generating the package, the `default`, `riverpod` and `fespalier` presets, what the `riverpod` preset actually generates and why it's shaped the way it is, and a full getting-started walkthrough from schema to a running Flutter screen. How a generated client sends HTTP (the transport seam, Dio, typed errors, abort) has its own page: [Dart HTTP transport](/guides/dart-http-transport).
 
+## Prepared requests (unreleased)
+
+[cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) adds `CratestackHttpAdapter.prepare(request, options: ...)` and `CratestackRpcHttpAdapter.prepareCall(opId, input, options: ...)` for keyed unary mutations. Commit `call.toJson()` to durable storage before the first `executePrepared(call)`; after restart restore with `CratestackPreparedCall.fromJson(...)` and execute with the matching service, format, contract and key tables. Preparation sends nothing. When overriding the generated REST client's `basePath`, configure the same `preparedBasePath` on its adapter. Prepared execution derives `useRustTransport` from the current adapter, sends the schema digest (`x-cratestack-schema-sha`) as an ordinary call does, and takes per-attempt headers in `executePrepared(call, headers: {...})` (a tenant, a trace id) alongside `authorization:`; these cannot replace the frozen `Idempotency-Key`, `If-Match`, `Accept`, `Content-Type` or `Cratestack-Contract`. The snapshot preserves the original encoded inner body. Authentication headers are not stored and URL userinfo is rejected; query and body data remain in the journal and may contain secrets. If a transport seals requests, it must seal each attempt afresh and use the corresponding `PendingResponse` to open its response. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
+
 ## Generate the package
 
 ### From the CLI

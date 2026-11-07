@@ -132,6 +132,34 @@ client that renews its credential or steps up and then resends the call under th
 recorded `401` replayed, and the call does not run.
 :::
 
+## Preserve a request before the first attempt
+
+::: warning Unreleased
+The prepared-call APIs below were merged in [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) after 0.18.0 and are not in a published release yet.
+:::
+
+Without preparing, a client instance pins each `Idempotency-Key`'s first encoding in memory, so an in-process retry is sent the way its first attempt was. The table holds 1024 keys in Rust and 512 in TypeScript and Dart; when full it evicts the oldest first attempt, so a prompt retry stays pinned and new keys keep negotiating compact. Pins do not survive a restart; prepared calls do.
+
+A keyed retry must preserve the request hash inputs even if compact negotiation changes or the process restarts. Preparation encodes one unary mutation without sending it. Commit its snapshot to durable storage **before the first send**, then execute it; after restart, restore and execute that same snapshot with the matching service, client codec, operation contract and key tables. It retains the original inner bytes and media type, route, query, key and `If-Match`. It does not queue work or install a server idempotency store.
+
+```rust
+let call = runtime.prepare_call(
+    "POST", route, path, &input, &[], &[("Idempotency-Key", key)],
+)?;
+let bytes = call.to_bytes()?;
+// Durably commit bytes here before executing the first attempt.
+let restored = cratestack_client_rust::PreparedCall::from_bytes(&bytes)?;
+let response = runtime.execute_prepared(&restored).await?;
+```
+
+For ordinary Rust calls with compact keys and a body, provide `Idempotency-Key` in per-call headers (they take precedence over the authorizer's). If only the authorizer supplies it, the runtime rejects the call before sending; bodiless calls pin nothing and are not checked; later changes by custom HTTP defaults or middleware are outside runtime control and must not alter identity headers or their absence. Compact-enabled Rust calls also reject duplicate `Idempotency-Key` or `If-Match` headers before encoding. These identity checks apply to ordinary compact streams too; prepared streaming is not supported.
+
+Rust requires compact key tables for the operation, including when the frozen body is named. Only unary mutations with a non-empty key are supported; batch and streams are outside this API. Descriptors with invalid version, route, key, codec or table bindings, oversized data, or malformed JSON or CBOR framing are refused before network I/O. The caller owns the journal, its integrity and access controls, and the business decision that the operation remains authorized. A saved descriptor contains sensitive business data; protect it accordingly. This mechanism alone is not a financial guarantee.
+
+CBOR snapshots are checked before sending as one well-formed item: text must be valid UTF-8, containers must be complete, and nesting is limited to 256. Non-preferred encodings remain byte-for-byte unchanged. This does not validate tag semantics or reject duplicate map keys; duplicate handling belongs to the receiving codec. Protect the journal against tampering.
+
+Authentication headers and reusable COSE envelopes are not stored, and URL userinfo is rejected. Query strings and bodies are persisted and can contain secrets; protect the journal accordingly. The Rust client reauthorizes and, when configured, reseals each attempt with fresh claims. Dart sealing belongs to the transport: create a fresh seal and matching `PendingResponse` on each attempt. TypeScript RPC prepared calls reject custom unary links, so a sealing link cannot currently be used there. See the [TypeScript](./typescript-client-generation#prepared-requests-unreleased) and [Dart](./dart-client-generation#prepared-requests-unreleased) guides.
+
 ## Error bodies are typed
 
 Every response this layer emits itself carries the framework's own
