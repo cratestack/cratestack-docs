@@ -176,6 +176,12 @@ a file that does not declare `part of` instead.
 - It must be relative, use `/` as its only separator, and end in `.cstack`.
 - The argument of `include_*_schema!` stays relative to `CARGO_MANIFEST_DIR`, and a CLI `--schema` stays
   relative to the working directory. Both name the **root**.
+- Every directive resolves against the directory of the **canonical (real) path** of the file that holds it,
+  and `..` is left to the operating system rather than folded first. A symlinked file therefore resolves its
+  own `part` and `import` lines from where it really is, whichever spelling loaded it, and a symlinked part's
+  `part of` is written relative to its real location.
+- The root is shown as you gave it; every other file is shown at its real location relative to the root's
+  real directory, so a displayed path always names a file that exists.
 - Files outside the crate directory (`import "../../shared/money.cstack"`) work inside a workspace. But
   `cargo publish` packages only the crate directory, so a published crate must keep its schema files
   inside it. This is the constraint `include_str!` has always had.
@@ -216,7 +222,7 @@ diff split.txt joined.txt   # no output
 
 `SCHEMA_SOURCE` keeps its type and meaning: it is the **root file's** text. A schema that spans more than
 one file additionally gets `SCHEMA_FILES: &[(&str, &str)]`, a `(path, contents)` pair per file in load
-order, root first, each path relative to `CARGO_MANIFEST_DIR`. Its `include_str!`s are what register every
+order, root first, each path relative to `CARGO_MANIFEST_DIR`. The macro takes every `include_str!` path from the canonical path it actually read, so absolute macro literals and symlinked roots work. Its `include_str!`s are what register every
 part and import, transitively, as rebuild dependencies of your crate. A single-file schema does not get
 `SCHEMA_FILES`, so its generated output is byte-identical to before.
 
@@ -238,7 +244,7 @@ related information.
 | `` `{part}` is listed as a part of `{root}`, but does not declare `part of`; add `part of "{back}"` to `{part}` `` | The root lists a file that has no `part of`. Add the line the message gives. |
 | `` `{part}` is listed as a part of `{root}`, but declares itself a part of `{other}` `` | The part names a different root. Point `part of` at the root that lists it, or list the part from `{other}`. |
 | `` `{part}` declares itself a part of `{root}`, but `{root}` does not list it; add `part "{rel}"` to `{root}` `` | A `part of` file that no root lists. Add the `part` line to the root. |
-| `` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` `` | A part was given where a root is required. Use the root. Here `{file}` is the part's file name and `{root}` is the path exactly as the part wrote it in `part of` (for example `../schema.cstack`), so it is relative to the part, not to the root. |
+| `` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` `` | A part was given where a root is required. Use the root. `{file}` is the part as you gave it and `{root}` is the root resolved against it, so both paths work as given. For `--schema examples/react-vite-swr/schema/task.cstack` the message names `examples/react-vite-swr/schema.cstack`. |
 | `` `{kind}` belongs in the root schema (`{root}`), not in a part `` | `datasource`, `auth`, `transport` or `mcp` in a part. Move it to the root. |
 | ``a part cannot list parts of its own; move `part "{path}"` to the root schema (`{root}`)`` | Parts are one level deep. List the file from the root. |
 | ``duplicate `part of` (first declared on line {n})`` | Two `part of` lines in one file. Remove one. |
@@ -251,6 +257,7 @@ related information.
 | `` cannot read `{path}` (listed on line {n} of `{file}`): {io error} `` | A listed file is missing or unreadable. Fix the path or restore the file. |
 | `` `{directive}` path `{path}` must be a relative path written with `/` and ending in `.cstack` `` | An empty path, an absolute path, a backslash, or a missing `.cstack` suffix (a bare `.cstack` with no file name is refused too). |
 | ``expected a quoted path after `{directive}`, like `{directive} "models/post.cstack"` `` | A directive with no quoted path, an unterminated quote, or text after the closing quote. |
+| `` `{file}` changed while it was being loaded; load it again `` | A file was modified between two reads of the same load (rare race). Run the command or build again. |
 | `` `{directive}` needs the schema to be loaded from a file, because "{path}" is resolved against that file's directory; use `parse_schema_file` or `cratestack check --schema <root>` `` | A directive given to a text-only parser entry point (`parse_schema`, `parse_schema_named` and similar). Load from a file. |
 
 An unreadable **root** keeps its single-file message, `failed to read schema file {path}: {error}`.
@@ -306,7 +313,7 @@ The related locations are labelled `` `{kind} {name}` is declared here first ``,
 
 The language server follows the file graph. Diagnostics are attributed to the file they belong to, a part
 opened on its own is checked through its root, and go-to-definition and completion cross files (completion offers models, mixins, types, procedures and fields of the whole graph, not enum names). Rename is
-refused in a schema that spans more than one file, and references are file-local. All of it is described in
+refused in a schema that spans more than one file, or in any file whose text has a `part`, `part of` or `import` line, and references are file-local. Closing a file without saving reverts the analysis to its disk text. All of it is described in
 [Editor tooling](../tooling/editor-tooling#multi-file-schemas).
 
 ## Limits
@@ -315,7 +322,7 @@ These are deliberate, and each is additive to lift later:
 
 - no `import … as ns`, `show` or `hide` (today a parse error, so it is free to add);
 - no models, views or procedures through `import`;
-- no cross-file rename or find-references in the editor;
+- no cross-file rename or find-references in the editor (a shared import opened alone, with no directive in it and no analysed importer, can still be renamed);
 - no package or registry imports (`import "@scope/pkg"`);
 - a build cannot detect an unlisted `part of` file.
 
