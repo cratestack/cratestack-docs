@@ -11,7 +11,7 @@ different jobs:
 ```cstack
 part "models/post.cstack"        // in a root: this file is more of me
 part of "../schema.cstack"       // in a part: I belong to that root
-import "../shared/money.cstack"  // anywhere: bring in a shared file's types
+import "../shared/common.cstack"  // anywhere: bring in a shared file's types
 ```
 
 Each directive takes one line, a double-quoted path and nothing after it (no trailing comment). Directives
@@ -74,53 +74,131 @@ Parts are one level deep: a part cannot list parts of its own.
 ## Share types with `import`
 
 `import` is for a shape that several schemas use. The imported file belongs to nobody (it has no
-`part of`), so any number of schemas may import it:
+`part of`), so any number of schemas may import it. The
+[`shared-types-import`](https://github.com/cratestack/cratestack/tree/main/examples/shared-types-import)
+example *(since 0.19.1)* is two services, billing and shipping, each with its own schema and its own
+SQLite database, importing one shared directory. The innermost file,
+`shared/currency.cstack`, has no directives at all:
 
 ```cstack
-// shared/money.cstack
+// Shared by both services. It has no `part of`, so it belongs to no schema
+// and any schema may import it. An imported file may declare only `type`,
+// `enum` and `mixin`.
+
+/// The currencies both services price in.
 enum Currency {
   EUR
+  USD
   XAF
-}
-
-type Money {
-  amount Decimal
-  currency Currency
-}
-
-mixin Timestamps {
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
 }
 ```
 
+`shared/common.cstack` imports it, and adds a `type` and a `mixin`:
+
 ```cstack
-// billing/schema.cstack
+// Shapes both services use. This file imports `currency.cstack` itself, so a
+// schema that imports this file sees `Currency` too: imports are transitive.
+
+import "currency.cstack"
+
+/// An amount in the currency's minor unit (cents; whole francs for XAF).
+type Money {
+  amountMinor Int
+  currency Currency
+}
+
+// The fields every service row carries. `@use(OrderRecord)` copies them into
+// the importer's model, so each service stores them in its own table.
+mixin OrderRecord {
+  orderId Int
+  createdAt DateTime @default(now())
+}
+```
+
+The two service roots then reuse it. Billing's `billing/schema.cstack`:
+
+```cstack
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url = env("DATABASE_URL")
 }
 
-import "../shared/money.cstack"
+import "../shared/common.cstack"
 
 model Invoice {
-  @use(Timestamps)
-
+  @use(OrderRecord)
   id Int @id
-  total Decimal
+  customer String
+  totalMinor Int
   currency Currency
-}
-
-type QuoteResult {
-  price Money
+  paid Boolean
 }
 ```
 
-The imported declarations join the importer's single namespace. There is no `as`, `show` or `hide`, and
-imports are transitive: if `billing` imports `money` and `money` imports `base`, `billing` sees `base`'s
-declarations. A name declared in two files is an error that names both. A file reached by two routes
-(`main` imports `a` and `b`, which both import `c`) is loaded once, whichever way each route spells the
-path.
+and shipping's `shipping/schema.cstack`:
+
+```cstack
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+import "../shared/currency.cstack"
+import "../shared/common.cstack"
+
+enum ShipmentStatus {
+  Pending
+  InTransit
+  Delivered
+}
+
+model Shipment {
+  @use(OrderRecord)
+  id Int @id
+  destination String
+  status ShipmentStatus
+  insuredMinor Int
+  insuredCurrency Currency
+}
+```
+
+The imported declarations join the importer's single namespace. There is no `as`, `show` or `hide`. Three
+things are visible in the example:
+
+- **Reuse.** Both services import `common.cstack`. Each generates its own `Currency` and `Money` from the
+  same file: different Rust types with the same variants, wire-compatible because they have the same shape.
+- **Transitivity.** Billing never imports `currency.cstack`, yet `Invoice.currency` is a `Currency`: billing
+  gets it through `common.cstack`. `check --list-files` shows billing reaching `currency.cstack` only that
+  way.
+- **The diamond.** Shipping imports `currency.cstack` directly (its `Shipment` uses `Currency`) and again
+  through `common.cstack`. The loader keys files by canonical path, so the file is loaded once, whichever
+  way each route spells the path.
+
+```text
+$ cratestack check --schema examples/shared-types-import/billing/schema.cstack --list-files
+schema OK: examples/shared-types-import/billing/schema.cstack
+files (3):
+  root        examples/shared-types-import/billing/schema.cstack
+  import      examples/shared-types-import/shared/common.cstack
+  import      examples/shared-types-import/shared/currency.cstack
+
+$ cratestack check --schema examples/shared-types-import/shipping/schema.cstack --list-files
+schema OK: examples/shared-types-import/shipping/schema.cstack
+files (3):
+  root        examples/shared-types-import/shipping/schema.cstack
+  import      examples/shared-types-import/shared/currency.cstack
+  import      examples/shared-types-import/shared/common.cstack
+```
+
+A name declared in two files is an error that names both.
+
+::: info A `type` is not a column
+A `type` cannot be the type of a model column, so `Money` is not used by `Invoice` or `Shipment` above; it
+serves procedures and hand-written code (the example's `src/lib.rs` builds a `Money` for each service).
+Enums and mixins do reach the tables: each service stores `Currency` and the `OrderRecord` fields
+(`orderId`, `createdAt`) in **its own** table, with the same column definitions but no shared storage.
+`orderId` is the key that links one order across the two databases.
+:::
 
 ### What an import may contain
 
@@ -130,7 +208,7 @@ declarations are refused with an error that names the declaration and the import
 
 The reason is ownership. An imported model would create a table, routes and policies in every importer,
 so one shared file would couple several services' databases and migrations. Types, enums and mixins carry
-a *shape* and leave the storage to the importer: two services importing `money.cstack` each generate their
+a *shape* and leave the storage to the importer: two services importing `common.cstack` each generate their
 own `Money` struct, wire-compatible because they have the same shape; an imported enum used by a model
 column is materialized in the importer's own migrations; a mixin's fields are copied into the importer's
 model by `@use`, as if they were written there. To split one schema's models across files, use `part`.
@@ -182,7 +260,7 @@ a file that does not declare `part of` instead.
   `part of` is written relative to its real location.
 - The root is shown as you gave it; every other file is shown at its real location relative to the root's
   real directory, so a displayed path always names a file that exists.
-- Files outside the crate directory (`import "../../shared/money.cstack"`) work inside a workspace. But
+- Files outside the crate directory (`import "../../shared/common.cstack"`) work inside a workspace. But
   `cargo publish` packages only the crate directory, so a published crate must keep its schema files
   inside it. This is the constraint `include_str!` has always had.
 
@@ -322,7 +400,7 @@ These are deliberate, and each is additive to lift later:
 
 - no `import … as ns`, `show` or `hide` (today a parse error, so it is free to add);
 - no models, views or procedures through `import`;
-- no cross-file rename or find-references in the editor (a shared import opened alone, with no directive in it and no analysed importer, can still be renamed);
+- no cross-file rename or find-references in the editor. Rename is refused rather than done halfway, but *(since 0.19.1)* it can only see importers inside the editor's workspace folders: an importer outside them, or a client that sends no workspace folders, cannot be seen, and a shared file with no directive of its own can then still be renamed;
 - no package or registry imports (`import "@scope/pkg"`);
 - a build cannot detect an unlisted `part of` file.
 
@@ -333,3 +411,4 @@ The [roadmap](../overview/roadmap#multi-file-schemas) records why each is deferr
 1. [ADR 0023: Multi-file Schemas](../internals/multi-file-schemas-adr)
 2. [Mixins](./mixins), which an `import` may supply
 3. [Editor tooling](../tooling/editor-tooling)
+4. The [`shared-types-import` example](https://github.com/cratestack/cratestack/tree/main/examples/shared-types-import) *(since 0.19.1)*: two services importing one shared file
