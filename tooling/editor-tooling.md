@@ -81,7 +81,7 @@ analysing one file in isolation:
   list the part, or the root cannot be read.
 * **Editing any file refreshes the whole schema.** An edit to a shared file re-analyses every open schema that
   imports it.
-* **Go-to-definition crosses files**, and **completion** offers the declarations of the whole graph. Hover,
+* **Go-to-definition crosses files**, and **completion** offers the models, mixins, types, procedures and fields of the whole graph (enum names are not offered, in one file or many). The `part`, `part of` and `import` keywords complete with a detail line saying what each directive does and that they can never be names. Hover,
   document symbols, semantic tokens, references and highlights work, but answer only with positions inside
   the file you are in, so **find-all-references and highlights are file-local** in a multi-file schema.
 * **Rename is refused** in a schema that spans more than one file: `prepareRename` returns nothing and

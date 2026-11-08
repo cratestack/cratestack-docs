@@ -228,8 +228,8 @@ models do not exist, the root does not list it.
 
 ## Errors you may see
 
-Paths in messages are relative to the root file's directory and written with `/`. Placeholders such as
-`{part}` stand for the real path or name. When an error involves two files, it also carries a related
+Paths in messages are relative to the root file's directory and written with `/`, except where noted.
+Placeholders such as `{part}` stand for the real path or name. When an error involves two files, it also carries a related
 location: `check --format json` adds a `related` array (see [Tooling](#tooling)) and editors show it as
 related information.
 
@@ -238,18 +238,18 @@ related information.
 | `` `{part}` is listed as a part of `{root}`, but does not declare `part of`; add `part of "{back}"` to `{part}` `` | The root lists a file that has no `part of`. Add the line the message gives. |
 | `` `{part}` is listed as a part of `{root}`, but declares itself a part of `{other}` `` | The part names a different root. Point `part of` at the root that lists it, or list the part from `{other}`. |
 | `` `{part}` declares itself a part of `{root}`, but `{root}` does not list it; add `part "{rel}"` to `{root}` `` | A `part of` file that no root lists. Add the `part` line to the root. |
-| `` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` `` | A part was given where a root is required. Use the root. |
+| `` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` `` | A part was given where a root is required. Use the root. Here `{file}` is the part's file name and `{root}` is the path exactly as the part wrote it in `part of` (for example `../schema.cstack`), so it is relative to the part, not to the root. |
 | `` `{kind}` belongs in the root schema (`{root}`), not in a part `` | `datasource`, `auth`, `transport` or `mcp` in a part. Move it to the root. |
 | ``a part cannot list parts of its own; move `part "{path}"` to the root schema (`{root}`)`` | Parts are one level deep. List the file from the root. |
 | ``duplicate `part of` (first declared on line {n})`` | Two `part of` lines in one file. Remove one. |
 | `` `{path}` is already listed as a part on line {n} `` | The root lists one file twice. Remove one line. |
 | `` `{root}` lists itself as a part `` | A root has a `part` line naming itself. Remove it. |
 | `` cannot import `{file}`: it is a part of `{root}`, and a part is locked to its root; import a file that does not declare `part of` instead `` | An `import` names a part. Import a shared file that has no `part of`. |
-| `` import cycle: `{a}` → `{b}` → … → `{a}` `` | Imports form a cycle. Break it at the import line the error points to. |
+| `` import cycle: `{a}` → `{b}` → … → `{a}` `` | Imports form a cycle, including a file importing itself. When the `import` line sits in a part, that step reads `` `{root}` (part `{part}`) ``. Break the cycle at the import line the error points to. |
 | `` `{kind} {name}` cannot come from an import: `{file}` is imported by `{importer}`, and an imported file may declare only `type`, `enum` and `mixin`; use `part` to split one schema across files `` | A model, view, procedure, topic, query or extension in an imported file. (For `transport` and `mcp` the message starts with `` `{kind}` `` alone.) Move it into the importer, or into a `part`. |
 | `` `{name}` is declared twice: `{kind_a} {name}` in `{file_a}` (line {la}) and `{kind_b} {name}` in `{file_b}` (line {lb}) `` | One name in two files. Rename one. A repeat inside a single file keeps its single-file message. |
 | `` cannot read `{path}` (listed on line {n} of `{file}`): {io error} `` | A listed file is missing or unreadable. Fix the path or restore the file. |
-| `` `{directive}` path `{path}` must be a relative path written with `/` and ending in `.cstack` `` | An absolute path, a backslash, or a missing `.cstack` suffix. |
+| `` `{directive}` path `{path}` must be a relative path written with `/` and ending in `.cstack` `` | An empty path, an absolute path, a backslash, or a missing `.cstack` suffix (a bare `.cstack` with no file name is refused too). |
 | ``expected a quoted path after `{directive}`, like `{directive} "models/post.cstack"` `` | A directive with no quoted path, an unterminated quote, or text after the closing quote. |
 | `` `{directive}` needs the schema to be loaded from a file, because "{path}" is resolved against that file's directory; use `parse_schema_file` or `cratestack check --schema <root>` `` | A directive given to a text-only parser entry point (`parse_schema`, `parse_schema_named` and similar). Load from a file. |
 
@@ -279,10 +279,25 @@ If the root does not list the part, that is the "declares itself a part of … d
 exit status 1. In `--format json` the payload keeps `schema` as given and adds `"root"` only when it
 differs.
 
-`check --list-files` prints the resolved file set after `schema OK`, one per line with its role: `root`,
-`part`, `import` or `import part`. With `--format json` it adds `"files": [{ "path", "role" }]`. Without
+`check --list-files` prints the resolved file set after `schema OK`: a `files (N):` line, then one
+`  role  path` line per file in load order, the role being `root`, `part`, `import` or `import part`
+(an imported root's part). For the `react-vite-swr` example:
+
+```text
+$ cratestack check --schema schema.cstack --list-files
+schema OK: schema.cstack
+files (4):
+  root        schema.cstack
+  part        schema/board.cstack
+  part        schema/task.cstack
+  part        schema/procedures.cstack
+```
+
+With `--format json` it adds `"files": [{ "path", "role" }]`. Without
 the flag the output is unchanged. A diagnostic that involves a second file carries
 `"related": [{ "file", "line", "start", "end", "message" }]`, only when there is one.
+The related locations are labelled `` `{kind} {name}` is declared here first ``, `` `{part}` is listed here ``,
+`` `{file}` declares `part of` here `` and `` `{file}` is imported here ``.
 
 `print-ir --no-spans` prints the IR with every source position zeroed, the form two schemas are compared in
 (see [Splitting changes nothing](#splitting-changes-nothing)).
@@ -290,7 +305,7 @@ the flag the output is unchanged. A diagnostic that involves a second file carri
 ### The editor
 
 The language server follows the file graph. Diagnostics are attributed to the file they belong to, a part
-opened on its own is checked through its root, and go-to-definition and completion cross files. Rename is
+opened on its own is checked through its root, and go-to-definition and completion cross files (completion offers models, mixins, types, procedures and fields of the whole graph, not enum names). Rename is
 refused in a schema that spans more than one file, and references are file-local. All of it is described in
 [Editor tooling](../tooling/editor-tooling#multi-file-schemas).
 
