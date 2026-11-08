@@ -22,6 +22,9 @@
       "include": "#transport-directive"
     },
     {
+      "include": "#file-directives"
+    },
+    {
       "include": "#mixin-block"
     },
     {
@@ -266,6 +269,14 @@
           "include": "#attribute-args"
         }
       ]
+    },
+    "file-directives": {
+      "match": "^\\s*(part\\s+of|part|import)\\b(?=\\s*\")",
+      "captures": {
+        "1": {
+          "name": "keyword.control.cstack"
+        }
+      }
     },
     "transport-directive": {
       "match": "^\\s*(transport)\\b\\s*(rpc|rest)?\\s*$",

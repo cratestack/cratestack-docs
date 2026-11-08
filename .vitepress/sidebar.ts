@@ -106,6 +106,7 @@ const documentation: DefaultTheme.SidebarItem[] = [
       { text: "Auth Support Matrix", link: "/reference/auth-support-matrix" },
       { text: "Crypto Provider", link: "/reference/crypto" },
       { text: "Views", link: "/reference/views" },
+      { text: "Multi-file Schemas", link: "/reference/multi-file-schemas" },
     ],
   },
 ];
@@ -147,6 +148,7 @@ const internals: DefaultTheme.SidebarItem[] = [
       { text: "ADR 0020: Offline Sync Engine", link: "/internals/sync-engine-adr" },
       { text: "ADR 0021: Pluggable Authentication: the AuthProvider Seam", link: "/internals/auth-seam-adr" },
       { text: "ADR 0022: Authentication Requirements in the Schema", link: "/internals/authn-requirements-adr" },
+      { text: "ADR 0023: Multi-file Schemas", link: "/internals/multi-file-schemas-adr" },
     ],
   },
   {
