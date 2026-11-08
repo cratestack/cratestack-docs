@@ -88,7 +88,12 @@ analysing one file in isolation:
   `rename` answers `rename is not available yet in a schema split across files`. Renaming a name used in
   another part would silently break that part, so it is refused rather than done halfway. Single-file schemas
   rename as before.
-  The same refusal applies to any file whose text contains a `part`, `part of` or `import` line. Known limit: a shared import opened alone, with no directive in it and no analysed importer, can still be renamed.
+  The same refusal applies to any file whose text contains a `part`, `part of` or `import` line.
+  *(since 0.19.1)* Rename is also refused in any file that another `.cstack` file in the editor's workspace
+  folders imports or lists as a `part`, even when that file has no directive of its own and is opened alone
+  (a shared `common.cstack` holding only `type` / `enum` / `mixin`). Open unsaved buffers count. Known limit:
+  the server only sees importers inside the workspace folders the client sends at `initialize`, so an importer
+  outside them, or a client that sends no workspace folders, cannot be seen, and rename behaves as before.
 * **Closing a file without saving** discards its buffer and re-analyses every graph it was in from the disk text.
 * A part that an edit removes from its root's `part` list, while open, is analysed on its own and shows the "declares itself a part of … does not list it" error instead of going silent.
 * An untitled buffer with no file path is analysed as a single text.
