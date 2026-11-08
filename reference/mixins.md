@@ -62,6 +62,7 @@ That means:
 Current mixin support is intentionally narrow:
 
 * mixins are only supported as top-level declarations
+* a mixin may be declared in another file and brought in with `import` *(since 0.19.0)*; a model in one file can `@use` a mixin from another. See [Multi-file Schemas](./multi-file-schemas)
 * `@use(...)` is only supported inside `model` blocks
 * mixins contain fields, not model-level attributes
 * mixins must not declare `@id`

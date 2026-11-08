@@ -156,6 +156,14 @@ Generated migrations remain reviewable SQL diffs — that property is preserved.
 
 Hand-written migration steps coexist with generated ones via optional `up.pre.sql` / `up.post.sql` files inside the migration directory; the generator never overwrites them. Use these for backfills, lookup-table seeds, materialized-view refreshes, and any transform the diff engine cannot infer.
 
+## Splitting a schema changes no migration
+
+*(since 0.19.0)* Splitting one schema into files with `part` / `part of`, or moving shared types behind an
+`import`, produces no migration: the generator works on the merged schema, and the snapshot of a split
+schema equals the snapshot of the same declarations in one file. `cratestack migrate diff` against a
+committed snapshot reports nothing after the split. See
+[Multi-file Schemas](../reference/multi-file-schemas#splitting-changes-nothing).
+
 ## Table naming, pluralization, and `@@rename`
 
 `cratestack migrate diff` matches tables **by name only** — it never

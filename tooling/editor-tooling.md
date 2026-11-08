@@ -7,7 +7,7 @@ This document records the current state of CrateStack editor support, how to use
 CrateStack has two editor surfaces:
 
 * Rust files that consume one of the role-specific schema macros — `cratestack::include_server_schema!(...)`, `cratestack::include_embedded_schema!(...)`, or `cratestack::include_client_schema!(...)`
-* `.cstack` schema files authored directly
+* `.cstack` schema files authored directly, in one file or split across several (see [Multi-file schemas](#multi-file-schemas))
 
 Those surfaces have different constraints.
 
@@ -65,6 +65,36 @@ starts — and the server layers resolved identifier colouring on top.
 Only an attribute's `@name` head is a decorator, so columns named inside
 `@relation(fields: [...], references: [...])` keep colouring as the
 properties they are.
+
+### Multi-file schemas
+
+*(since 0.19.0)* A schema may span files with `part` / `part of` / `import` (see
+[Multi-file Schemas](../reference/multi-file-schemas)). The language server follows the whole graph instead of
+analysing one file in isolation:
+
+* **Diagnostics are per file.** The server loads the schema that contains the document you edit, using the
+  text of every open buffer (unsaved edits included) and the disk for the rest, and publishes diagnostics to
+  each file of the graph, open or not. A file whose errors are fixed gets an empty publish, so stale errors
+  clear. An error that involves two files carries related information pointing at the other one.
+* **A part opened alone** is analysed through its root, so you see the whole schema's real diagnostics rather
+  than "missing datasource". If the root cannot be loaded, the single diagnostic says why: the root does not
+  list the part, or the root cannot be read.
+* **Editing any file refreshes the whole schema.** An edit to a shared file re-analyses every open schema that
+  imports it.
+* **Go-to-definition crosses files**, and **completion** offers the models, mixins, types, procedures and fields of the whole graph (enum names are not offered, in one file or many). The `part`, `part of` and `import` keywords complete with a detail line saying what each directive does and that they can never be names. Hover,
+  document symbols, semantic tokens, references and highlights work, but answer only with positions inside
+  the file you are in, so **find-all-references and highlights are file-local** in a multi-file schema.
+* **Rename is refused** in a schema that spans more than one file: `prepareRename` returns nothing and
+  `rename` answers `rename is not available yet in a schema split across files`. Renaming a name used in
+  another part would silently break that part, so it is refused rather than done halfway. Single-file schemas
+  rename as before.
+  The same refusal applies to any file whose text contains a `part`, `part of` or `import` line. Known limit: a shared import opened alone, with no directive in it and no analysed importer, can still be renamed.
+* **Closing a file without saving** discards its buffer and re-analyses every graph it was in from the disk text.
+* A part that an edit removes from its root's `part` list, while open, is analysed on its own and shows the "declares itself a part of … does not list it" error instead of going silent.
+* An untitled buffer with no file path is analysed as a single text.
+
+Every keystroke re-parses the whole graph. Schemas are small and parsing is linear, so this is accepted for
+now.
 
 ### Features survive a syntax error
 
@@ -155,6 +185,12 @@ This is useful for:
 * CI validation
 * fallback editor integrations outside VS Code
 * smoke-testing parser and semantic diagnostics without starting the LSP
+
+For a [multi-file schema](../reference/multi-file-schemas) *(since 0.19.0)*, `--schema` takes the root, and
+`check` also accepts a part: it follows `part of` to the root and checks the whole schema.
+`check --list-files` adds the resolved file set (each file with its role) after `schema OK`, and in JSON
+adds a `files` array. A diagnostic that involves a second file adds a `related` array. `print-ir --no-spans`
+prints the IR with source positions zeroed, for comparing a split schema with its concatenation.
 
 ## Schema Docs And Generated Rust Docs
 

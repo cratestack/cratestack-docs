@@ -119,6 +119,38 @@ Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialize
 - **Why deferred:** The shipped policy subset is what banks need today; remaining features depend on use cases that haven't surfaced yet.
 - **Unblocks on:** Concrete asks from production users.
 
+## Multi-file schemas
+
+Tracking [ADR 0023](../internals/multi-file-schemas-adr). `part` / `part of` / `import` shipped in 0.19.0; see [Multi-file Schemas](../reference/multi-file-schemas). Each item below is deferred and each is additive to lift later.
+
+### Namespaced imports (`import … as ns`, `show`, `hide`)
+
+- **Status:** Deferred
+- **What:** `import "common.cstack" as common`, and selective `show` / `hide`.
+- **Why deferred:** Every name a schema declares becomes a global identifier in four generated surfaces with no namespaces of their own (the Rust module, the Dart and TypeScript packages, table and route names, RPC op IDs). A namespace needs a mangling scheme in every emitter and a wire-visible spelling.
+- **Unblocks on:** A mangling scheme agreed across the emitters. The syntax is a parse error today, so no schema can already depend on it.
+
+### Models, views and procedures through `import`
+
+- **Status:** Deferred
+- **What:** Letting an imported file declare `model`, `view`, `procedure`, `topic` or `query`.
+- **Why deferred:** An imported model would create a table, routes and policies in every importer, coupling services' databases through a shared file. Forbidding it later would be a breaking change, allowing it later is not, so the narrow rule shipped first.
+- **Unblocks on:** A design for who owns the table, its policies and its routes when several schemas import one model (or a "reference without a table" model mode).
+
+### Cross-file rename and find-references in the editor
+
+- **Status:** Deferred
+- **What:** Rename and find-all-references that edit and search every file of a split schema. Today rename is refused and references are file-local.
+- **Why deferred:** Refused is safe; a rename that missed another part would silently break it. Doing it needs every file's references resolved against the merged schema.
+- **Unblocks on:** Per-file reference resolution in the language server (and, if keystroke cost shows, per-file parse caching).
+
+### Registry imports
+
+- **Status:** Proposed
+- **What:** Package or registry imports such as `import "@scope/pkg"`.
+- **Why deferred:** Out of the scope of the multi-file work; imports resolve relative paths only.
+- **Unblocks on:** A distribution and versioning story for shared schema packages.
+
 ## How this list is maintained
 
 When a slice ships, move it from this page to [Current State](./current-state) and remove it here. When a new piece of work is proposed (ADR, design doc, or PR), add it here with `Status: Proposed` until it lands or gets explicitly closed. Items that get decided "not now" but still have value remain here as `Deferred` with a clear "Unblocks on" line — that's what distinguishes deferred from rejected.
