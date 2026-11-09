@@ -163,7 +163,11 @@ Serving the session bindings:
 ```rust
 // WebSocket: a router to merge into yours.
 let app = cratestack_schema::axum::rpc_router(db.clone(), registry.clone(), (), CborCodec, auth.clone(), limit)
-    .merge(db.subscriptions(registry.clone()).websocket(WebSocketConfig::new(), auth.clone()));
+    .merge(db.subscriptions(registry.clone()).websocket(
+        // `.rate_limit(..)` is optional (since 0.19.3); without it, opens are unlimited.
+        WebSocketConfig::new().rate_limit(rate_limit_layer.for_subscriptions()),
+        auth.clone(),
+    ));
 
 // WebTransport: a second listener, on UDP.
 let server = db.subscriptions(registry).webtransport(config, auth)?;
@@ -190,6 +194,10 @@ credentials on the handshake; a browser, which cannot set headers there, sends t
 - Origins are same-origin by default (`OriginPolicy`).
 - Limits per socket and per principal are configuration (`WebSocketLimits`,
   `WebTransportLimits`), never schema syntax.
+- Opens can be rate limited *(since 0.19.3)*: `.rate_limit(layer.for_subscriptions())` on `WebSocketConfig`
+  or `WebTransportConfig` charges one token per subscription `Request`. A throttled open is an `err` frame
+  with `resource_exhausted` and `details.retry_after_secs`, and the socket stays open. SSE opens are charged by
+  `RateLimitLayer` already. See [Rate limiting](./rate-limiting#subscriptions).
 
 ## Clients
 
