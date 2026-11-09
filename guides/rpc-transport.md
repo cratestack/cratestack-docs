@@ -136,6 +136,7 @@ Body shape per verb:
 {
   "limit": 20,
   "offset": 40,
+  "cursor": "",  // @@paged models only, since 0.19.4; exclusive with offset
   "fields": ["id", "name"],
   "include": ["..."],
   "sort": "name desc",

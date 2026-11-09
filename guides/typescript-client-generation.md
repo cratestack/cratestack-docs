@@ -351,6 +351,8 @@ Procedure argument interfaces are generated straight from the procedure's declar
 
 Two argument types get dedicated generated shapes rather than a plain scalar mapping: `PageInput` (`{ limit: number | null; offset: number | null; }`, hardcoded once per package) and `FindMany<Model>` (a per-model `PostWhere`/`PostFindMany` pair, backed by shared `StringFilter`/`NumberFilter`/etc. interfaces) — see [Pagination](../guides/pagination#procedure-arguments-pageinput) and [Search with Filters](../guides/find-many) for the full contract each one generates.
 
+*(since 0.19.4)* The generated `models.ts` also carries `CursorPageInput` (`{ limit: number | null; cursor: string | null; }`) and `CursorPage<T>` (`{ items: T[]; nextCursor?: string | null }`), `PageInfo.nextCursor?`, and `cursor?: string` on `CratestackFetchQuery` and `CratestackRpcListQuery`, in the default, `--swr` and tanstack/rtk layouts. `""` starts at the first page; see [Cursor pagination](./pagination#cursor-pagination).
+
 ### TanStack Query hooks
 
 ```tsx

@@ -9,7 +9,7 @@ This reference covers every supported field-level attribute. Model-level
 (`@@`) attributes live in their dedicated guides — see
 [audit log](../guides/audit-log) for `@@audit`,
 [soft delete](../guides/soft-delete) for `@@soft_delete`,
-[pagination](../guides/pagination) for `@@paged`,
+[pagination](../guides/pagination) for `@@paged` (offset paging, and the `?cursor=` query key plus the built-in `CursorPageInput` / `CursorPage<T>` procedure types, since 0.19.4),
 [auth support matrix](./auth-support-matrix) for `@@allow` / `@@deny`, and
 [composite keys](./composite-keys) for `@@id([...])` / `@@unique([...])`.
 Two model-level attributes are documented here because they have no
