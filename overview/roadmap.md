@@ -71,13 +71,6 @@ Tracking [ADR 0003](../internals/views-adr) — the `view` block, `@@materialize
 - **Why deferred:** Unimplemented seam in the transport architecture; the codec layer is ready for it but the envelope wiring isn't done.
 - **Unblocks on:** A concrete use case that needs envelope-level crypto rather than transport-level TLS.
 
-### Negotiated multi-codec routing
-
-- **Status:** Partial
-- **What:** End-to-end content negotiation between JSON and CBOR on a per-route basis, including Accept-header–driven response codec selection.
-- **Why deferred:** Routing is partially spiked; codec implementations themselves (JSON, CBOR) are first-class. The negotiation is the remaining seam.
-- **Unblocks on:** Closing the routing seam.
-
 ### WebSocket binding + subscriptions for `transport rpc` schemas
 
 - **Status:** Designed, runtime pending — the next cool upgrade for the transport surface.
