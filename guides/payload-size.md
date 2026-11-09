@@ -118,6 +118,42 @@ Which clients use it:
   ([TypeScript client generation](./typescript-client-generation#the-cbor-codec)). Compression
   is the lever for a REST browser client.
 
+### CBOR nesting depth limit
+
+*(Since 0.19.4, [cratestack#1315](https://github.com/cratestack/cratestack/issues/1315), a security fix.)* Before 0.19.4 the CBOR decoder recursed once per array, map or tag with no bound, so a body of about 8000 nested one-element arrays crashed the process with a stack overflow. Every CBOR decode now rejects input nested deeper than **128** levels. A level is an array, map or tag, definite or indefinite; a scalar is depth 0. Exactly 128 levels decode and 129 fail. The decode does not need a stack proportional to the input, and the codec stays usable after a refusal.
+
+It applies to server request bodies, the Rust client, `@cratestack/cbor-node`, `@cratestack/cbor-web`, `@cratestack/cbor`, and Dart's native and web decode. The failure is a normal error: `CratestackError::Codec` with `nesting too deep (maximum depth is N)` in Rust, and a `RangeError` (with a `cause`) in JavaScript.
+
+Where you can change it:
+
+```rust
+use cratestack_codec_cbor::{CborCodec, decode_with_max_depth, check_depth, DEFAULT_MAX_DECODE_DEPTH};
+
+let codec = CborCodec::with_max_depth(64);          // CborCodecWithDepth: CratestackCodec
+let value: MyType = decode_with_max_depth(bytes, 64)?;
+check_depth(bytes, 64)?;                             // only count, do not decode
+```
+
+```ts
+import { createCborCodec } from "@cratestack/cbor";
+
+const codec = await createCborCodec({ maxDepth: 64 });   // async on web and the umbrella
+// @cratestack/cbor-node: createCborCodec({ maxDepth }) is synchronous.
+// A maxDepth that is not a non-negative integer throws RangeError.
+// The raw decode(bytes, maxDepth?) takes the limit as a second argument.
+```
+
+Where you cannot:
+
+- the Rust server and client `CodecSet` path, which always uses the default;
+- the `application/cbor-seq` decoders;
+- the outbox request-body decoder;
+- Dart, where only the default applies.
+
+::: warning
+Raising the limit needs a stack to match. At 256, a debug-build decode into `serde_json::Value` overflowed a 1 MB thread stack. Keep the default unless you have input that genuinely nests deeper, and test the higher value on the smallest stack your threads use.
+:::
+
 ## 3. Ask for less
 
 These remove bytes outright rather than encoding them more tightly. They work the same over
