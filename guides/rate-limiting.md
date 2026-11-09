@@ -157,6 +157,58 @@ own: call the builder once for `IdempotencyLayer::with_op_resolver` and once for
 batch body is decoded and cannot see the operations inside it. Call an exempt
 operation at `/rpc/{op_id}` if it must stay exempt.
 
+## Subscriptions
+
+*(since 0.19.3)* Opening a subscription is rate limited too, but how depends on the binding.
+
+- **SSE** (`/rpc/subscribe/<op>`, REST `GET /<plural>/$subscribe` and `GET /$procs/<name>`) is an ordinary
+  HTTP request. When `RateLimitLayer` wraps the generated router, the open is charged once, like any other
+  call. Nothing to configure.
+- **WebSocket and WebTransport are not covered by the layer**: the session is one long-lived request, and
+  the opens inside it never pass through it. Opt in by handing each binding a limiter built on the same layer:
+
+```rust
+// Each call builds a limiter on the layer's own store and RateLimitConfig.
+let ws = WebSocketConfig::new().rate_limit(layer.for_subscriptions());
+let wt = WebTransportConfig::new(/* .. */).rate_limit(layer.for_subscriptions());
+```
+
+`SubscriptionRateLimiter::new(store, config)` builds one without a layer. Without `.rate_limit(..)`, WebSocket
+and WebTransport opens are **unlimited**; upgrading does not change that until you pass it.
+
+What is charged, and how:
+
+- **One token per `Request` frame** on a WebSocket, one per stream on WebTransport. The upgrade and the `Init`
+  frame are free: sockets per principal already bound sessions.
+- **Order:** after the per-socket subscription cap, before the subscription's policy. An unknown op id is
+  charged too.
+- **Bucket key:** `princ:<sha256 of the principal key>`, else `ip:<peer>` (IPv6 aggregated to its /64). The
+  namespace is shared by WebSocket and WebTransport, so a client falling back from one to the other does not get
+  a second budget. It is also the HTTP bucket when your `VerifiedPrincipal` string equals the binding's
+  principal key; it is not for COSE principals (`cose:<thumbprint>`).
+- **Anonymous WebSocket needs the peer address.** Serve with
+  `into_make_service_with_connect_info::<SocketAddr>()`; without it, an open with no principal and no peer is
+  refused `failed_precondition` (HTTP's 412 rule). WebTransport always has the QUIC peer.
+- **Subscription operations cannot be `@no_rate_limit`**, so every open is charged.
+- **Store failures** follow `StoreErrorPolicy` and the store timeout, as on HTTP.
+
+A throttled open is an `err` frame on that request's id, before `Ready`:
+
+```json
+{ "id": 7, "err": { "code": "resource_exhausted", "details": { "retry_after_secs": 3 } } }
+```
+
+The socket stays open (no close code is used; `4429` remains the per-socket cap) and other subscriptions on it
+are unaffected. `details.retry_after_secs` replaces the `Retry-After` header, which frames do not have. A
+generated client reports it as a refusal (`resource_exhausted`, status 429) and does not fall back to another
+binding.
+
+::: warning A WebSocket router under the layer pays for the upgrade
+Merging the WebSocket router *under* `.layer(RateLimitLayer)` charges one token for the upgrade `GET`, and a
+browser upgrade carries no `Authorization`, so without `ConnectInfo` it gets the layer's existing 412. Merge the
+WebSocket router outside the layer, or serve with `into_make_service_with_connect_info`.
+:::
+
 ## Stores
 
 The shipped implementation is `InMemoryRateLimitStore` — a `HashMap` of

@@ -18,7 +18,7 @@ the real contract independently.
 
 ## What it covers
 
-* Every `procedure`/`mutation procedure` — one static, happy-path stub each.
+* Every `procedure`/`mutation procedure` — one static, happy-path stub each. On `transport rest`, the stub answers the procedure's declared `@status(<code>)`, `200` when there is none (since 0.19.3; before that every procedure stub answered `200`, so regenerate committed stubs). `transport rpc` procedures stay `200`: `@status` is rejected there.
 * Every `model` block's five CRUD routes — `list`/`get`/`create`/`update`/`delete`.
 * **`transport rest` model CRUD is stateful.** A record created through a mocked `create` appears in
   a later `list`; a `PATCH` is visible on a later `get`; a `delete`d record's `get` returns `404`, not

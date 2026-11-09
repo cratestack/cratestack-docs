@@ -283,6 +283,9 @@ Two consequences worth knowing:
   `>=0.8.10 <0.9.0` to the newest 0.8.x. After 0.9.0 ships, generated
   clients keep resolving 0.8.x until the floor is deliberately raised —
   staleness rather than breakage.
+- **The builder's ceiling follows the release line** *(since 0.19.3)*. `cratestack_builder` used to cap
+  `cratestack_annotations` at `<0.10.0`, so on 0.19.x pub resolved a stale 0.9.x annotations package. It now
+  allows `<0.20.0`; the floor is unchanged.
 - **Generator output no longer moves with the release.** Committed
   snapshots and example clients survive a version bump instead of being
   invalidated by it, which is why `just regen-examples --check` stays
