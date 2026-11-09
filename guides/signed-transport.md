@@ -11,7 +11,8 @@ it was first published as 0.13.1, which is yanked because it made breaking chang
 The design is
 [ADR 0006](/internals/cose-envelope-adr). The generated Rust client signs from the first
 release after 0.14.2 ([cratestack#1007](https://github.com/cratestack/cratestack/issues/1007),
-see [The Rust client](#the-rust-client)); binding v1, including the AAD, froze in 0.15.0
+see [The Rust client](#the-rust-client)); TypeScript clients sign since 0.19.4 (see
+[The TypeScript client](#the-typescript-client)); binding v1, including the AAD, froze in 0.15.0
 (cratestack#1082). **Binding version 2 (0.15.2, [cratestack#1123](https://github.com/cratestack/cratestack/issues/1123))
 is a breaking wire change:** the AAD binds the digest of the op being called instead of the whole
 schema's, so a server-only schema edit no longer refuses every signed client, and a version 2
@@ -478,7 +479,7 @@ plain one, so the generated routes need nothing else; `/rpc/batch` stays CBOR.
 A Rust client with `with_envelope` and `with_compact_keys` negotiates per op, as it does unsealed:
 it puts the compact types first in `Cratestack-Payload-Accept`, seals its request compact only
 after that op has answered compact once, and goes back to named after an unsigned `415` (that one
-call fails; it is not retried). A layer that never lists the compact types answers named, so the
+call fails; it is not retried). The TypeScript client does the same *(since 0.19.4)*. A layer that never lists the compact types answers named, so the
 client never sends it a body it cannot read. Signed streams stay plain: no `+cbor-seq` type is
 sealable.
 
@@ -852,8 +853,9 @@ table.
 
 **Size.** The vendored binaries are built once, so `cratestack-cose` and its crypto add about 460 KB
 to the stripped Linux x86_64 library and about 270 KB to the web `.wasm`, for every app that uses
-`cratestack_cbor`, signed or not. `@cratestack/cbor-web` on npm is built without it and stays
-codec-only.
+`cratestack_cbor`, signed or not. In `@cratestack/cbor-web` the signing code is a separate
+`/cose` subpath and WASM module (since 0.19.4, see [the TypeScript client](#the-typescript-client));
+the main entry stays codec-only.
 
 ### Compact keys in a sealed Dart call
 
@@ -892,6 +894,132 @@ answer sealed under a type the binding did not accept is `CoseRejected`. Without
 `payloadType` / `payloadAccept` on its binding object, has `selectorHeaders(binding)`, and its
 `openResponse(body, binding, sealedRequest, status, responsePayloadType?)` resolves with
 `payloadType`.
+
+## The TypeScript client
+
+*(Since 0.19.4, [cratestack#1010](https://github.com/cratestack/cratestack/issues/1010); through 0.19.3, a generated TypeScript client cannot seal a request.)*
+`createCoseClient` and the sealing helpers come from `@cratestack/cbor/cose`. Like the Dart
+sealer it is not a second implementation of COSE: the signature, the hash, the canonical query and
+the AAD are `cratestack-cose`, reached through WASM in the browser and the napi addon in Node, and
+TypeScript only carries bytes and builds headers. The `/cose` subpaths of `@cratestack/cbor-web`
+and `@cratestack/cbor-node` are the two platform backends; `@cratestack/cbor/cose` picks one by the
+same `node` / `browser` conditions as the codec. The web build loads a **second** WASM module, and
+only when you import `/cose`: the codec bundle is unchanged, and a client that does not sign
+downloads nothing new.
+
+```ts
+import { createCoseClient, createSealedLink } from "@cratestack/cbor/cose";
+import { CratestackRpcRuntime, OP_CONTRACTS } from "./runtime";
+
+const cose = await createCoseClient({
+  signer: { type: "ed25519-seed", seed },       // 32 bytes
+  // The static trust root: the keys a response may be signed with.
+  serverKeys: [{ alg: "ed25519", bytes: serverPublicKey }],
+  // The server's configured audience, never its host name.
+  audience: "payments",
+});
+
+const runtime = new CratestackRpcRuntime(origin, {
+  links: [createSealedLink({ cose, contracts: OP_CONTRACTS })],
+});
+```
+
+### Signers
+
+| `signer.type` | Envelope | Key |
+|---|---|---|
+| `hmac` (`alg`: `hmac256-64` or `hmac256-256`) | COSE_Mac0 | a session key of at least 32 bytes |
+| `ed25519-seed` | COSE_Sign1 | a 32-byte seed, held in memory |
+| `p256-scalar` | COSE_Sign1 | a 32-byte scalar, held in memory |
+| `external` (`alg`: `ed25519` or `esp256`, plus `publicKey`) | COSE_Sign1 | none: your async `sign` callback |
+
+An **external** signer is for a non-extractable WebCrypto key or a platform keystore. `sign`
+receives the raw to-be-signed bytes and resolves to the signature. It must sign exactly those
+bytes and **must not hash them first**:
+
+```ts
+const cose = await createCoseClient({
+  signer: {
+    type: "external",
+    alg: "esp256",
+    publicKey: sec1Point, // the SEC1 P-256 point (Ed25519: the 32-byte key)
+    // ECDSA P-256 over SHA-256: WebCrypto hashes for you. Raw r || s or DER both work.
+    sign: async (tbs) =>
+      new Uint8Array(
+        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, tbs),
+      ),
+    // Ed25519: crypto.subtle.sign("Ed25519", privateKey, tbs)
+  },
+  serverKeys,
+  audience: "payments",
+});
+```
+
+Rust, not your callback, owns the rest: it converts DER to raw `r || s`, enforces strict low-S, and
+verifies the result under the public key you gave. A signature that does not verify is refused
+before anything is sent. A signer that throws or rejects surfaces as `CoseFailure` `misuse` with a
+fixed message, never your error text.
+
+### Wiring it to a generated client
+
+| Transport | Wire it with |
+|---|---|
+| RPC | `createSealedLink({ cose, contracts: OP_CONTRACTS })` in the runtime's `links` array. Seals unary and `/rpc/batch` calls; a sealed batch is CBOR both ways |
+| REST | `createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath })` as the runtime's `fetch` option. The route template and path parameters come from matching the URL against the keys of `OP_CONTRACTS` |
+
+```ts
+const runtime = new CratestackRuntime(origin, {
+  fetch: createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath: "/api" }),
+});
+```
+
+A call whose op has no entry in `OP_CONTRACTS`, or that `cose` declines, goes out unsealed. Seal
+at this layer, not in generated code: nothing in a regenerated client changes for it.
+
+**Mode per call.** `cose` may be a function `({ route, method }) => CoseClient | undefined`, so one
+client can use Sign1 before a session exists, Mac0 under the session key after it, and `undefined`
+for anonymous calls (sent exactly as they would go without the link). Replacing the session key
+means building a new `CoseClient`; there is no shared mutable key state.
+
+### What is bound and what the client sets
+
+The seal binds the method, route template and path parameters, the op's contract digest, the
+canonical query (computed by Rust), `Idempotency-Key`, `If-Match`, and the payload type and accept
+list. The client reads `Content-Type`, `Accept`, `Idempotency-Key` and `If-Match` from the request it
+is about to send, so a compact-keys body is sealed as compact. It sets `Content-Type` and `Accept`
+to the envelope media type, plus `Cratestack-Payload-Type`, `Cratestack-Payload-Accept` (when not
+plain CBOR) and `Cratestack-Contract`.
+
+### Responses
+
+Like the Rust and Dart clients, a sealed client is a `Required` client:
+
+| The response | The call |
+|---|---|
+| Sealed, and bound to the digest of the request you sent | opened; the payload becomes the response body, with the `Content-Type` it was sealed under, so the rest of the client behaves as if unsealed |
+| Sealed but tampered, for another request (a **replayed** response), another audience or signer, or under a type you did not accept | throws `CoseFailure` `rejected` (empty message, by design) |
+| Unsigned success (`2xx`) | refused: throws `CoseFailure` `rejected`. An unsigned success is never believed |
+| Unsigned non-ok response (a gateway's `401`, the layer's `415` or `426`) | passed through unchanged. A hint, never proof |
+
+`CoseFailure.code` is `rejected` for every failed verification, or `misuse` for a bad key, a
+binding of the wrong shape or a failing signer. `serverKeys` is the static trust root, the same as
+the Rust client. A response is bound to the request it answers, but **there is no response-expiry
+check**, as in Rust: a response is not refused for its age.
+
+### Limits
+
+- **`stream()` is never sealed.** It bypasses the link chain; a chain-mode stream has no TypeScript
+  opener. Rust's sealer has no chunk-fed `StreamSealer` / `StreamOpener` yet
+  ([cratestack#1008](https://github.com/cratestack/cratestack/issues/1008),
+  [#1009](https://github.com/cratestack/cratestack/issues/1009)).
+- **No trust-chain verification** (founder list, intermediates, the replica certificate in a
+  reply): `serverKeys` is the whole trust root. This waits on the Rust side too.
+- **`prepare` / `executePrepared` and sealing links.** RPC custom unary links, a sealing link
+  included, are rejected by prepared requests (see
+  [Prepared requests](./typescript-client-generation#prepared-requests-unreleased)).
+- **A `415` falls back to named bodies.** *(Since 0.19.4.)* A `415` to a compact request takes that
+  op back to named bodies from the next call. The refused call is not retried. See
+  [Compact field keys](./payload-size#compact-field-keys).
 
 ## Claim objects
 
@@ -1206,11 +1334,14 @@ a signed request to a route with no contract row is a logged `500`. The shared v
   and `cti` to your code. *(Since 0.17.0, [cratestack#1231](https://github.com/cratestack/cratestack/issues/1231).)*
 - **One envelope per layer.** A router accepting Sign1 devices and Mac0 services at once needs
   the composite of cratestack#1078.
-- **The generated Dart and TypeScript clients do not sign.** ADR 0006 §11 has them use the Rust
-  runtime rather than a second implementation, so their generated code stays unsigned; the Flutter
-  runtime mirror rejects an envelope until P1. A Dart or Flutter app seals through
-  [`cratestack_cbor`](#the-dart-client) (since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)).
-  The published `@cratestack/cbor-web` and the napi addon do not.
+- **The generated clients carry no signing code of their own.** ADR 0006 §11 has Dart and
+  TypeScript use the Rust implementation rather than a second one, so a Dart or Flutter app seals
+  through [`cratestack_cbor`](#the-dart-client) (since 0.15.4,
+  [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151)) and a TypeScript app
+  through [`@cratestack/cbor/cose`](#the-typescript-client) (since 0.19.4,
+  [cratestack#1010](https://github.com/cratestack/cratestack/issues/1010)). The Flutter runtime
+  mirror rejects an envelope until P1. TypeScript `stream()` is never sealed, and neither Dart nor
+  TypeScript verifies a trust chain.
 - **A version 2 server refuses binding version 1** (0.15.0 peers), with no opt-in: upgrade the
   server and its clients together. Any future change to the AAD bumps the version again.
 - **A signer is recorded, not authenticated**, unless you wrap your provider in `CoseAuthProvider`
