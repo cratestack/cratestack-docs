@@ -224,15 +224,17 @@ Verified against `cratestack` `main` on 2026-09-24.
 | Piece | Where | Relevance |
 |---|---|---|
 | `CratestackCodec`: sync `encode`/`decode`, no context | `cratestack-core/src/codec.rs` | Cannot sign: no key, no request, no async |
-| `CratestackEnvelope`: `open_request`/`seal_response` over bytes, sync | same file | The right seam, but only `NoEnvelope` implements it and **no router calls it** |
+| `CratestackEnvelope`: `open_request`/`seal_response` over bytes, sync | same file | The right seam, but only `NoEnvelope` implements it and **no router calls it** (at writing; see the update below the table) |
 | `HmacEnvelope` + `SealedEnvelope` (HS256) | `cratestack-core/src/envelope.rs` | A separate async API that does not implement the trait |
 | Ed25519 `Authorization: Signature …` with `contentSha256` | `cratestack-auth/src/signed_request/` | `DeviceKeyResolver`, `NonceStore`, skew window |
 | COSE_Sign1 via `coset` (EdDSA, kid) for enrolment | `cratestack-auth/src/cose_enroll.rs` | The only `coset` user |
 | `application/cbor-seq` for `@stream`, error sentinel `Tag(48900, RpcErrorBody)` | `cratestack-axum/src/transport/stream_sequence.rs`, `RPC_STREAM_ERROR_TAG` in `cratestack-core/src/rpc.rs` | The streaming path to extend |
 | `CborSeqChunkDecoder` | `cratestack-client-rust/src/streaming.rs` | Boundary scanner that learns one more tag |
-| `RuntimeEnvelopeConfig::CoseSign1` | `cratestack-client-rust/src/runtime/handle.rs`, mirrored in `cratestack-client-flutter` | A placeholder, rejected at runtime: *"COSE envelope support is not implemented yet"* |
+| `RuntimeEnvelopeConfig::CoseSign1` | `cratestack-client-rust/src/runtime/handle.rs`, mirrored in `cratestack-client-flutter` | A placeholder, rejected at runtime: *"COSE envelope support is not implemented yet"* (at writing; see the update below the table) |
 | `x-cratestack-schema-sha` | `cratestack-client-rust/src/client/headers.rs` | Goes into the AAD |
 | Rust-backed CBOR for JS (`cratestack-cbor-wasm`, `-napi`), FRB for Flutter | `crates/` | One Rust COSE implementation can serve every client |
+
+> **Update (0.19.x):** the two "not yet" rows above are no longer true. The server wiring shipped in 0.14.0 (cratestack#1006): `EnvelopeLayer` and `cratestack_cose::CoseEnvelope` live in `crates/cratestack-axum/src/envelope_layer/` behind the `envelope` / `cose` features. The Rust client shipped in 0.15.0 (cratestack#1007): `RuntimeEnvelopeConfig::CoseSign1` / `CoseMac0` only *name* the envelope, and the host supplies the keys through `RuntimeHandle::with_envelope` (`crates/cratestack-client-rust/src/runtime/handle.rs`, feature `cose`). What is still refused is a config that names an envelope with none supplied, via `RuntimeHandle::new` (`runtime/sealing.rs`, `Sealing::agrees_with`: *"…build the handle with `RuntimeHandle::with_envelope`"*). `cratestack-client-flutter` carries a `cose` feature (`FlutterClientEnvelope`), and `package:cratestack_cbor/cose.dart` seals and opens through it (0.15.4, cratestack#1151). The old message, "COSE envelope support is not implemented yet", no longer exists in the source.
 
 Two defects in today's `HmacEnvelope`, independent of this proposal:
 
@@ -245,6 +247,8 @@ Two defects in today's `HmacEnvelope`, independent of this proposal:
 
 ### Codec parity today
 
+> **Snapshot (2026-09).** This table records the state when the ADR was accepted. The COSE column has since changed for the Rust, Dart and Flutter clients (see the update above); the cbor-seq and TypeScript cells were not re-audited here, so check the [RPC transport guide](../guides/rpc-transport) before relying on them.
+
 The goal is that every client and server surface can speak `application/cbor`,
 `application/cbor-seq` and the COSE media types.
 
@@ -252,11 +256,11 @@ The goal is that every client and server surface can speak `application/cbor`,
 |---|---|---|---|
 | Server, RPC | yes | `@stream` responses | — |
 | Server, REST | yes | list-returning procedures | — |
-| Rust client, RPC | yes | yes | placeholder, rejected |
+| Rust client, RPC | yes | yes | placeholder, rejected (now sealed via `with_envelope`, 0.15.0) |
 | Rust client, REST (generated) | yes | the runtime has `post_list_streamed`; codegen never calls it | — |
 | TypeScript client, RPC | yes (`@cratestack/cbor`) | yes | — |
 | TypeScript client, REST | **no**: `Accept: application/json` is hardcoded | **no** | — |
-| Dart client, RPC / Flutter | yes (FRB) | yes | placeholder, rejected |
+| Dart client, RPC / Flutter | yes (FRB) | yes | placeholder, rejected (now sealed via `cose.dart`, 0.15.4) |
 | Dart client, REST | yes | **no** | — |
 | Upload direction | — | nowhere: `/rpc/batch` is one CBOR array | — |
 | Subscriptions | — | SSE (text) only | — |

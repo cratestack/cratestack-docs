@@ -1119,6 +1119,8 @@ JSON must not be assumed by the generated code.
 
 For v0, CrateStack may enforce a single configured codec per router.
 
+> **Update (0.19.x):** a router no longer has to serve one codec. `CodecSet<Primary, Secondary>` (`crates/cratestack-axum/src/codec/set.rs`) serves two, and the response `Content-Type` is negotiated against the encoders the router really has, following the `Accept` header's order and `q=` weights (`crates/cratestack-axum/src/transport/media_type.rs`, `select_response_content_type`; cratestack#593, 0.7.16). `application/cbor-seq` is encodable whenever either slot is a CBOR codec. A router built with a single codec still answers `406` / `415` for anything else, as described here; what changed is that single-codec is one option, not the rule.
+
 Example:
 
 ```text
@@ -1139,6 +1141,8 @@ If the response cannot satisfy `Accept`, CrateStack should return:
 ```
 
 A relaxed v0 may skip full `Accept` negotiation and always return the configured codec content type.
+
+> **Update (0.19.x):** full `Accept` negotiation is implemented (order, `q=` weights and `type/*` / `*/*` wildcards, per RFC 9110 §12.5.1; cratestack#593, 0.7.16). A request with no `Accept` falls back to the route's default type when the router can encode it, otherwise to the first type it can.
 
 ### 8.7.5 Error Responses
 
@@ -1743,6 +1747,9 @@ Current limitations:
 * Generated Axum procedure routes now exist for procedure invocation and enforce procedure policy checks plus delegated `@authorize(...)` checks before handler execution.
 * Generated Axum model routes now exist for `GET /{modelPlural}`, `GET /{modelPlural}/{id}`, `POST /{modelPlural}`, `PATCH /{modelPlural}/{id}`, and `DELETE /{modelPlural}/{id}` and reuse the same codec/context/policy pattern.
 * The generated HTTP layer now enforces a single configured codec per router for `Accept` and `Content-Type`, returning `406 Not Acceptable` and `415 Unsupported Media Type` for mismatches.
+
+> **Update (0.19.x):** a router no longer has to serve one codec. `CodecSet<Primary, Secondary>` (`crates/cratestack-axum/src/codec/set.rs`) serves two, and the response `Content-Type` is negotiated against the encoders the router really has, following the `Accept` header's order and `q=` weights (`crates/cratestack-axum/src/transport/media_type.rs`, `select_response_content_type`; cratestack#593, 0.7.16). `application/cbor-seq` is encodable whenever either slot is a CBOR codec. A router built with a single codec still answers `406` / `415` for anything else, as described here; what changed is that single-codec is one option, not the rule.
+
 * The current HTTP model slice is still intentionally narrow: list routes now expose canonical `fields`, shallow declared-relation `include`, relation-specific `includeFields[relation]`, canonical `sort`, `limit`, `offset`, scalar equality filters, a small operator suffix set (`__ne`, `__lt`, `__lte`, `__gt`, `__gte`, `__in`, `__contains`, `__startsWith`, `__isNull`) with `cuid`, UUID, and DateTime parsing, canonical grouped `where=` expressions with `not(...)` > `,` (AND) > `|` (OR) precedence and left-associative chaining, and recursive relation filters backed by explicit `@relation(fields:[...],references:[...])` metadata, with to-many traversal requiring explicit `some` / `every` / `none` quantifiers and any to-many `sort` path remaining unsupported. Legacy `orderBy` is still accepted only as a compatibility alias. The route grammar remains narrower than the full generated delegate/runtime filter surface, while write routes forward directly into the generated delegate/runtime layer without a richer request DSL.
 * `cratestack/compose.yml` now provides a local PostgreSQL 18 instance for driving DB-backed tests through `CRATESTACK_TEST_DATABASE_URL`.
 * Arbitrary policy functions, explicit impersonation/acting-as semantics, and a general DB-querying procedure policy language remain future work.
