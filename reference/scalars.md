@@ -1,6 +1,6 @@
 ---
 title: Scalars
-description: Built-in scalar types, including the selectable Decimal backend for monetary fields.
+description: Built-in scalar types, including BigInt for exact 64-bit integers and the selectable Decimal backend for monetary fields.
 ---
 
 # Scalars
@@ -15,7 +15,8 @@ representation.
 |------------|----------------------------------|-------------------|--------------------------------------------------------|
 | `String`   | `String`                         | `TEXT`            |                                                        |
 | `Cuid`     | `String`                         | `TEXT`            | Validated as a CUID at the framework boundary.         |
-| `Int`      | `i64`                            | `BIGINT`          |                                                        |
+| `Int`      | `i64`                            | `BIGINT`          | A JSON number. Still 64-bit — see [`BigInt`](#bigint). |
+| `BigInt` *(since 0.15.4)* | `cratestack::BigInt` (wraps `i64`) | `BIGINT` | A decimal **string** on the wire. See [`BigInt`](#bigint). |
 | `Float`    | `f64`                            | `DOUBLE PRECISION`| Avoid for money — use `Decimal`.                       |
 | `Boolean`  | `bool`                           | `BOOLEAN`         |                                                        |
 | `DateTime` | `chrono::DateTime<chrono::Utc>`  | `TIMESTAMPTZ`     |                                                        |
@@ -47,6 +48,107 @@ signature.
 
 See [Spatial Columns (PostGIS)](../guides/spatial-postgis) for the
 geography/geometry argument forms, generated DDL and query builders.
+
+## BigInt
+
+*(since 0.15.4)*
+
+`BigInt` is an exact 64-bit signed integer that never travels as a JSON
+number. It exists because a JSON number above 2^53 is silently rounded to
+an IEEE double by every JavaScript and dart2js consumer:
+`JSON.parse('{"amountE8":9007199254740993}')` gives `9007199254740992`,
+typed `number`, with no error. Use `BigInt` for any integer that can exceed
+2^53 (nanosecond timestamps, amounts in minor units scaled by 10^8, 64-bit
+ids from another system).
+
+::: info
+**`Int` has not changed.** The planned cutover that makes `Int` a 32-bit
+integer (`i32`, `INTEGER`) has not landed. Today `Int` is still an `i64`,
+still `BIGINT`, and still a JSON number, and a schema that declares no
+`BigInt` generates what it generated before. A `BigInt` field is the way to
+opt in to exact 64-bit transport now.
+:::
+
+### Types
+
+| Where | Type |
+|---|---|
+| Rust | `cratestack::BigInt`, a `Copy` newtype over `i64` |
+| Postgres | `BIGINT` (bound as `INT8`) |
+| SQLite | an integer, same as `Int` |
+| TypeScript client | `bigint`, with `BigIntFilter` |
+| Dart client | `dart:core`'s `BigInt`, with `BigIntFilter` |
+
+`cratestack::BigInt` offers `new` and `get`, `MIN` and `MAX`, `From<i64>`,
+`From<BigInt> for i64`, `Display`, `FromStr`, `Ord`, `Hash`, `Default`, and
+`checked_add`, `checked_sub` and `checked_mul` (each returning
+`Option<BigInt>`). There are no operator impls and no `Deref`, so code that
+still expects an `i64` is a compile error, not a silent precision loss. It
+is 64-bit, not arbitrary precision (`num_bigint::BigInt` is a different
+type).
+
+### Where it is valid
+
+Anywhere `Int` is:
+
+- a `model`, `view`, `mixin` or `type` field, a procedure argument or
+  return, and a `query` parameter
+- `@id` and foreign keys (the driver impls for `INT8` and SQLite integers
+  live in `cratestack-core`, so a `BigInt` key meets the generated
+  delegates' bounds)
+- `@version` (its `ETag` round-trips above 2^53), `@range` (bounds parse as
+  `i64`; `@range ... @db_enforce` emits the `CHECK`), and a numeric
+  `@default`, which must fit `i64`
+- `@default(auth().x)`, where the claim may be a JSON integer or a canonical
+  string; in a *policy comparison* a string claim against a number is
+  undecidable and denies
+- policy literals, and the comparable filters `eq`, `ne`, `lt`, `lte`, `gt`,
+  `gte` and `in` on `<Model>Where`
+- an [MCP](../guides/mcp) resource key, e.g.
+  `cratestack://ledger/notes/9007199254740993`
+
+It is not a subscription topic key (those are `String`, `Int` or `Uuid`).
+A user `type`, `model` or `enum` named `BigInt` is a duplicate-name error.
+
+### Wire encoding
+
+A `BigInt` is a **canonical decimal string** on every codec: `0`, or an
+optional `-`, a non-zero digit and at most 18 more digits, inside `i64`.
+
+```json
+{"id": "9007199254740993", "amountE8": "-250000000"}
+```
+
+- On JSON it is a JSON string. On CBOR it is a text string (major type 3),
+  the same bytes, never an integer or a bignum tag.
+- The server refuses a JSON number, a CBOR integer or bignum, `+5`, `007`,
+  `-0`, `" 1"`, and anything outside `i64`, in a request body, a
+  query-string filter and `?computedParams=`. A number is refused because a
+  value above 2^53 may already have been rounded by the JavaScript that
+  produced it. This is the rule [`Decimal`](#serialization) follows.
+- JSON Schema (and MCP tool schemas) describe it as
+  `{"type":"string","pattern":"^(0|-?[1-9][0-9]{0,18})$"}`, never `integer`.
+
+### Clients
+
+- **TypeScript.** Fields are `bigint`. Responses are revived strictly: a
+  number, a non-canonical string or an out-of-range value at a `BigInt` key
+  throws a `TypeError` naming the field (a number there means a server from
+  before `BigInt`, whose value may already be rounded). Every `bigint` is
+  stringified before it reaches a codec, because `JSON.stringify` throws on
+  one. A custom `options.codec` is not wrapped; encode with
+  `encodeWireFields` first.
+- **Dart.** Fields are `BigInt`, exact on the VM, dart2js and dart2wasm. A
+  malformed value throws a `FormatException` naming the field. RPC `get`,
+  `update` and `delete` send a `BigInt` key as a string.
+
+### Migrating from `Int`
+
+Changing a field from `Int` to `BigInt` changes the wire form from number to
+string, so deploy server and clients together. The column is already
+`BIGINT`, but until the `Int` cutover lands `migrate diff` still emits a
+no-op `ALTER COLUMN ... TYPE BIGINT` for the edit, classified `Lossy`, so it
+needs `--allow-destructive`; it changes no data.
 
 ## Decimal
 

@@ -99,7 +99,7 @@ show up under `cargo check`, not against a running server.
 
 ### Supported parameter types
 
-`String`, `Cuid`, `Int`, `Float`, `Boolean`, `DateTime`, `Uuid`, `Bytes` —
+`String`, `Cuid`, `Int`, `BigInt` *(since 0.15.4)*, `Float`, `Boolean`, `DateTime`, `Uuid`, `Bytes` —
 at required arity only. Optional (`T?`) and list (`T[]`) parameters are not
 supported.
 

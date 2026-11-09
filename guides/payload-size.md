@@ -144,6 +144,7 @@ REST and RPC.
 | `Uuid` | `UUID` (16 B) | 16 B binary on CBOR, text on JSON |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
 | `Int` | `BIGINT` | integer |
+| `BigInt` *(since 0.15.4)* | `BIGINT` | text (a decimal string, [scalars](../reference/scalars#bigint)) |
 | `Boolean` | `BOOLEAN` | boolean |
 
 So in Postgres a `DateTime` is **not** stored as a string. It is an 8-byte `TIMESTAMPTZ`, and
