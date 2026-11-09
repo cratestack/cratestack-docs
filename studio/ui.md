@@ -134,7 +134,8 @@ The drawer's **Copy Rust query** button calls
 Clipboard API. Same shape as the rest of the snippet endpoint:
 
 - `String`/`Cuid`/`Uuid`/`Decimal` IDs render as `"value".to_owned()`,
-- `Int` IDs as `42_i64`.
+- `Int` IDs as `42_i64`,
+- `BigInt` IDs as `cratestack::BigInt::new(42_i64)`.
 
 The snippet appears in a code block below the button so you can also
 hand-copy.

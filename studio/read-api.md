@@ -222,6 +222,7 @@ Primary-key literals are typed:
 - **`String` / `Cuid` / `Uuid` / `Decimal`** → `"value".to_owned()`,
   with quotes and backslashes escaped.
 - **`Int`** → `42_i64`.
+- **`BigInt`** *(since 0.15.4)* → `cratestack::BigInt::new(42_i64)`.
 
 Other primary-key scalars (`DateTime`, `Bytes`, etc.) return `501
 UNSUPPORTED`.
