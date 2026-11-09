@@ -490,6 +490,8 @@ const client = new ExampleWidgetClientClient("https://api.example.com", {
 });
 ```
 
+**Nesting depth limit** *(Since 0.19.4, [cratestack#1315](https://github.com/cratestack/cratestack/issues/1315))*. `decode` in `@cratestack/cbor-node`, `@cratestack/cbor-web` and `@cratestack/cbor` rejects input nested deeper than 128 levels (array, map or tag) with a `RangeError` whose `cause` carries the codec error and whose message contains "nesting too deep". Exactly 128 levels decode; 129 fail. The codec stays usable afterwards. Change the limit with `createCborCodec({ maxDepth })` (synchronous on `cbor-node`, async on `cbor-web` and the umbrella); a `maxDepth` that is not a non-negative integer throws `RangeError`. See [Reducing payload size](/guides/payload-size#cbor-nesting-depth-limit).
+
 This is no longer a TypeScript-specific asymmetry — Rust (`cratestack-client-rust`), Dart (`cratestack_cbor`, issue [#563](https://github.com/cratestack/cratestack/issues/563)), and TypeScript RPC clients all default to CBOR now. Only REST-transport TypeScript clients are unaffected: `rest-runtime.ts.j2` has no codec seam, so a REST client stays JSON-only.
 
 ### Platform support

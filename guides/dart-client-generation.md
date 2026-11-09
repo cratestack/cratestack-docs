@@ -314,6 +314,10 @@ CBOR encode/decode sits on every request a generated client makes. The generated
   Before `--no-native-cbor`, the native codec was opt-in behind `--native-cbor`, which was removed in **v0.8.9**. An existing `--native-cbor` invocation is an unknown-argument error too: drop it.
 :::
 
+### Nesting depth limit
+
+*(Since 0.19.4, [cratestack#1315](https://github.com/cratestack/cratestack/issues/1315).)* `cratestack_cbor` decode, native and web, rejects input nested deeper than 128 levels (array, map or tag) with a normal error instead of overflowing the stack. Only the default applies: Dart has no way to change the limit. See [Reducing payload size](/guides/payload-size#cbor-nesting-depth-limit).
+
 ### Signed requests
 
 *(Since 0.15.4, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* The generated client sends unsigned requests. To call a server behind the
