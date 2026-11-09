@@ -48,16 +48,15 @@ CrateStack already provides a usable Rust-first backend slice, but it is not yet
 ## Still Narrow Or Deferred
 
 1. COSE transport remains an unimplemented envelope seam
-2. negotiated multi-codec routing is not complete end-to-end
-3. the parser still validates only an initial schema subset
-4. production-stable exact non-Rust selection typing is not complete
-5. richer exposure controls and some field-level policy features are still deferred
-6. the client runtime remains partially spiked rather than fully mature
-7. the migration runner is forward-only — schema-diff generation and zero-downtime coordination remain out of scope
-8. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
-9. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
-10. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
-11. `@@id([...])` composite primary keys are authorable and migratable but not yet loadable by a running server or embedded app — see item 29 above
+2. the parser still validates only an initial schema subset
+3. production-stable exact non-Rust selection typing is not complete
+4. richer exposure controls and some field-level policy features are still deferred
+5. the client runtime remains partially spiked rather than fully mature
+6. the migration runner is forward-only — schema-diff generation and zero-downtime coordination remain out of scope
+7. the embedded SQLite backend does **not** enforce `@@allow` / `@@deny` policies at SQL render time (by design — the client is untrusted; authorization is the server's concern)
+8. `@@audit` and `@@emit` directives are currently no-ops in `include_embedded_schema!`; the local-journal / local-event-bus implementations (needed for sync-engine wiring) land in a follow-up release
+9. multi-DB server support — `include_server_schema!` accepts a `db = Postgres` argument (or `db = None`, see above) but only Postgres is wired for an actual database backend today; MySQL and SQLite-via-sqlx are non-breaking future additions
+10. `@@id([...])` composite primary keys are authorable and migratable but not yet loadable by a running server or embedded app — see item 29 above
 
 ## Best Fit Right Now
 
