@@ -208,6 +208,8 @@ Relation fields get the same treatment for free: a `Task.board` field (typed `Bo
 
 A `FindMany<Model>` procedure argument is the same story one level deeper: `PostFindMany`'s own `where`/`orderBy` fields are typed `PostWhere?`/`List<PostOrderByClause>?`, and `PostWhere`'s own fields are typed `StringFilter?`/`NumberFilter?`/etc. — every one of those, including the six shared filter classes, is `@MappableClass()`-annotated too, so a freshly-built `PostFindMany` passed to a `@riverpod` family provider gets the identical deep-equality treatment described above, all the way down. See [Search with Filters](./find-many) for the full `FindMany<Model>` contract, and [Pagination](./pagination#procedure-arguments-pageinput) for `PageInput` (a plain, hardcoded procedure-argument class like `Page`/`PageInfo`, generated the same way regardless of preset).
 
+*(since 0.19.4)* Keyset paging is generated the same way for the default and `riverpod` presets: `CratestackListQuery(cursor: ...)` (and `toListQuery(cursor: ...)` on a model's selection), `PageInfo.nextCursor`, and the hardcoded procedure types `CursorPageInput` and `CursorPage<T>`. For an RPC list call pass `{'cursor': ''}` in the input map. See [Cursor pagination](./pagination#cursor-pagination).
+
 ## The `--run-build-runner` flag
 
 ::: warning

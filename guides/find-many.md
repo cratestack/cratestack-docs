@@ -318,6 +318,6 @@ final results = await client.procedures.searchPosts(
 
 ## Read Next
 
-1. [Pagination](./pagination) — `PageInput`/`Page<T>`, the argument/return-type pair `FindMany<Model>` composes with
+1. [Pagination](./pagination) — `PageInput`/`Page<T>` (and the keyset siblings `CursorPageInput`/`CursorPage<T>`, since 0.19.4), the argument/return-type pair `FindMany<Model>` composes with
 2. [RPC Transport](./rpc-transport) — the request/response envelope `FindMany<Model>` arguments travel in over RPC
 3. [TypeScript Client Generation](./typescript-client-generation) and [Dart Client Generation](./dart-client-generation) — full per-language client codegen coverage
