@@ -475,6 +475,27 @@ import { rpcQueryOptions } from "@cratestack/api/adapter-tanstack-query";
 
 New projects can install the individual packages directly instead — smaller install, no unused peer dependencies pulled in through the umbrella. Every package in the family is scoped to RPC-transport generated clients; none of it applies to `transport rest` schemas, since the REST client has no `links`/`streamLinks` chain to plug into.
 
+## Signing requests (COSE)
+
+*(Since 0.19.4, [cratestack#1010](https://github.com/cratestack/cratestack/issues/1010); through 0.19.3 a generated TypeScript client cannot sign.)*
+A generated client signs with no regeneration: `createCoseClient` and the sealing helpers come from `@cratestack/cbor/cose` (the `/cose` subpaths of `@cratestack/cbor-web` and `@cratestack/cbor-node` are the platform backends), and you hand them to the runtime you already construct. RPC clients take `links: [createSealedLink({ cose, contracts: OP_CONTRACTS })]`; REST clients take `fetch: createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath })`. `OP_CONTRACTS` is exported by the generated `runtime`. In the browser, `/cose` loads a second WASM module and only when imported, so the codec bundle does not grow.
+
+```ts
+import { createCoseClient, createSealedLink } from "@cratestack/cbor/cose";
+import { CratestackRpcRuntime, OP_CONTRACTS } from "./runtime";
+
+const cose = await createCoseClient({
+  signer: { type: "ed25519-seed", seed },
+  serverKeys: [{ alg: "ed25519", bytes: serverPublicKey }],
+  audience: "payments",
+});
+const runtime = new CratestackRpcRuntime(origin, {
+  links: [createSealedLink({ cose, contracts: OP_CONTRACTS })],
+});
+```
+
+Signers are `hmac` (Mac0 under a session key of at least 32 bytes), `ed25519-seed`, `p256-scalar`, and `external` (an async callback for a non-extractable WebCrypto key or a platform keystore). `cose` may also be a function `({ route, method }) => CoseClient | undefined` to pick Sign1 before a session, Mac0 after it, and nothing for anonymous calls. A sealed success is opened and its payload becomes the body; an unsigned success is refused with `CoseFailure`. `stream()` is never sealed. The signers, the bound headers, the response rules and the limits are in [Signed transport: the TypeScript client](./signed-transport#the-typescript-client).
+
 ## The CBOR codec
 
 By default, a generated `transport rpc` client resolves [`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor)'s `createCborCodec()` (issue [#746](https://github.com/cratestack/cratestack/issues/746)) — the same umbrella package listed in the table above, auto-selecting `@cratestack/cbor-node` in Node or `@cratestack/cbor-web` in the browser. Because both sides are the same Rust `CborCodec` the server uses, the wire bytes are identical across languages, the same property `cratestack_cbor` gives the Dart client and `cratestack-client-rust` gives the Rust one. The default request/response `Content-Type`/`Accept` becomes `application/cbor` accordingly.
@@ -712,6 +733,7 @@ format.
 
 - **Bundle size on large schemas, default layout only.** The top-level client class eagerly `new`s a wrapper instance for every model in its constructor, so a bundler's tree-shaker can't drop an unused model's class if you only import the client — every model's ~30-line wrapper class is reachable from the one thing you imported. For schemas with a handful of models this is negligible; for schemas with dozens, it's a fixed cost baked into the client regardless of what you actually call. The `/swr` file-per-model layout doesn't have this problem — importing one model's module never reaches another's.
 - **No cross-language error type unification yet.** REST failures throw `CratestackHttpError` (status + response + payload), RPC failures throw `CratestackRpcError` (status + structured `RpcErrorBody` with a stable `code`), Dart and Rust each have their own error shapes. There's no shared error type across the generated clients today. What they do share *(since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243))* is what they expose: `CratestackHttpError` gains `body` (a typed `CratestackErrorResponse`), `code`, `details`, `extra` and `challenges`, and `CratestackRpcError` gains `extra`, `headers` and `challenges`, as the Dart and Rust errors do. See [Reading a refusal in a generated client](/guides/auth-provider#reading-a-refusal-in-a-generated-client). Both also type a step-up refusal as `stepUp` (a `StepUpRequired`), with `stepUpOf(error)` and `retryAfterStepUp(call, reprove)` beside them *(since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244))*; see [A step-up refusal in a generated client](/guides/auth-provider#a-step-up-refusal-in-a-generated-client).
+- **A `415` to a compact request switches that op back to named bodies.** *(Since 0.19.4.)* With `compactKeys: true`, a `415` makes the client send that op's later calls with named keys (and a retry under the same `Idempotency-Key`). The refused call is not retried. It applies to REST and RPC, sealed or not. See [Compact field keys](./payload-size#compact-field-keys).
 - **Template overrides are all-or-nothing per file.** `--template-dir` overrides a `.j2` file wholesale; there's no partial-override or "extend the default template" mechanism.
 - **Regenerating an existing RPC client silently switches its wire codec from JSON to CBOR.** Since issue [#746](https://github.com/cratestack/cratestack/issues/746), the native `@cratestack/cbor` codec — and `application/cbor` as the default `Content-Type`/`Accept` — is on by default for `transport rpc` schemas. Re-running `generate-typescript` against an `--out` directory generated before that change (or with an older CLI) upgrades it in place with no warning at generation time. Before regenerating a client that talks to a live server, confirm the server's `CodecSet` includes `CborCodec` (`CodecSet::new(CborCodec, JsonCodec)` — see [RPC transport](/guides/rpc-transport#mounting-the-router)) — a JSON-only `CodecSet` will reject the regenerated client with `406`/`415`. Otherwise pass `codec: jsonRpcCodec` to keep the client on JSON.
 

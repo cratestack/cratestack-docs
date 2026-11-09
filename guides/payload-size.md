@@ -366,11 +366,17 @@ framework's payload gate measures this on every CI run:
 - **Requests follow responses.** A client sends an operation's request body compact only after
   that operation answered compact once. A server without the mode never receives a body it
   cannot read.
+- **A `415` goes back to named.** A `415` to a compact request means the server did not understand
+  the integer keys; the client sends that operation named from the next call, and a retry under the
+  same `Idempotency-Key` too. The refused call is not retried. Rust does this as well; the
+  TypeScript client does it on REST and RPC, sealed or not *(since 0.19.4)*.
 - **What stays named:** `/rpc/batch` frames, error bodies, the `Page` wrapper's own keys, query
   strings, and outbox and audit payloads.
 - **One implementation.** The remapping is Rust code in the codec crates. The Dart and
   TypeScript clients reach it through `cratestack_cbor` and `@cratestack/cbor`
   (`createCompactKeys`).
+- **TypeScript can seal it** *(since 0.19.4)*: `createSealedLink` / `createSealedFetch` bind the compact
+  payload type under [signed transport](./signed-transport#the-typescript-client).
 
 ### Durable retries and negotiation
 
