@@ -11,7 +11,11 @@ CrateStack's embedded backend, `cratestack-sqlite` (backed by the `cratestack-ru
 - **Native desktop** (Windows, macOS, Linux)
 - **Browser** via `wasm32-unknown-unknown` with **OPFS-backed persistence**
 
-The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.40`.
+The same `RusqliteRuntime`, the same delegate API, the same `.cstack` schema — only the FFI backend swaps per target (`libsqlite3-sys` on native, `sqlite-wasm-rs` on wasm32). This is handled transparently by `rusqlite 0.41` (since 0.19.3; 0.40 before).
+
+::: warning Pinning your own `rusqlite` (since 0.19.3)
+CrateStack 0.19.3 moves to `rusqlite` 0.41.1 (`libsqlite3-sys` 0.39.1, bundled SQLite 3.54.1), which fixes RUSTSEC-2026-0459: SQLite before 3.54.0 could return uninitialized memory when a database is opened next to a `-wal` file with a different page size. If your crate depends on `rusqlite` directly, move it to 0.41 as well, or Cargo resolves two `libsqlite3-sys` versions that both declare `links = "sqlite3"` and the build fails.
+:::
 
 ::: info
 The architecture is **"Rust as real frontend, UI as UI-only"**: Rust owns state, persistence, and business logic on the device or in the browser tab; the UI (Flutter, React, Solid…) talks to Rust over FFI or `wasm-bindgen`. The same `.cstack` schema definition compiles to both the server (Postgres via `cratestack-pg`) and the embedded target (SQLite via `cratestack-sqlite`, implemented on top of `cratestack-rusqlite`).
@@ -56,7 +60,7 @@ a specific reason to.
 
 ### Browser-specific build prerequisites
 
-`sqlite-wasm-rs` (used by `rusqlite 0.40` on wasm32) compiles SQLite's C source to WebAssembly via `cc-rs`. That requires a **wasm-capable clang** on `PATH` — Apple's stock Xcode clang does **not** include the wasm32 backend.
+`sqlite-wasm-rs` (used by `rusqlite 0.41` (since 0.19.3; 0.40 before) on wasm32) compiles SQLite's C source to WebAssembly via `cc-rs`. That requires a **wasm-capable clang** on `PATH` — Apple's stock Xcode clang does **not** include the wasm32 backend.
 
 ::: code-group
 
