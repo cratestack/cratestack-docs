@@ -1,6 +1,6 @@
 ---
 title: Pagination
-description: Offset-based pagination via `@@paged` — a stable `Page<T>` envelope with `totalCount` and `pageInfo`, identical across REST and RPC.
+description: Offset and cursor (keyset) pagination via `@@paged` — a stable `Page<T>` envelope with `totalCount` and `pageInfo`, `?cursor=` for append-only tables, CursorPageInput and CursorPage<T> for procedures, identical across REST and RPC.
 ---
 
 # Pagination
@@ -30,8 +30,9 @@ Constraints enforced at parse time:
 
 1. `@@paged` must be bare — `@@paged(mode: "offset")` or any other
    argument form fails validation with "use bare `@@paged` in this
-   slice." Cursor-based paging isn't implemented; this reads as a
-   placeholder for a future mode, not a currently-selectable option.
+   slice." There is no `mode` argument: cursor paging is not a second
+   `@@paged` mode, it is a query parameter on the same model (see
+   [Cursor pagination](#cursor-pagination)).
 2. one model can declare it at most once.
 
 There's no accompanying field to add — unlike `@@soft_delete` (which
@@ -257,11 +258,169 @@ model here, so there's nothing for `@@paged` to gate: the caller is the
 same binary that defines the schema, choosing per call site whether it
 wants `Page<M>` (`.paginate(...)`) or a bare `Vec<M>` (`.run()`).
 
+## Cursor pagination
+
+*(since 0.19.4, cratestack#1304)* Offset paging over a table that is being
+written to skips or repeats rows when an insert lands between two page
+fetches. Cursor (keyset) paging does not: each page is "the rows strictly
+after the last row of the previous page", so a row inserted before the
+cursor never shifts what comes next. It is additive: `limit`/`offset`,
+`Page<T>` and `PageInput` are unchanged.
+
+**Choose cursor over offset** for append-only or live tables (ledgers,
+transaction history, feeds, audit trails) and for infinite scroll. **Keep
+offset** when the UI needs "jump to page N" or a random-access page number.
+
+### List routes
+
+`GET /<plural>?cursor=` on a `@@paged` model opts in. An empty value
+(`?cursor=`) is the first page; a previous response's `pageInfo.nextCursor`
+continues:
+
+```
+GET /transactions?cursor=&limit=20&sort=-postedAt
+GET /transactions?cursor=<nextCursor>&limit=20&sort=-postedAt
+```
+
+```jsonc
+{
+  "items": [ /* Transaction[] */ ],
+  "totalCount": 1284,
+  "pageInfo": {
+    "limit": 20,
+    "offset": 0,
+    "hasNextPage": true,
+    "hasPreviousPage": false,
+    "nextCursor": "eyJvIjoiLXBvc3RlZEF0LGlkIiwidiI6W…"
+  }
+}
+```
+
+- `pageInfo.nextCursor` is present only when more rows remain, and
+  `hasNextPage` mirrors it. On the last page it is absent. Offset
+  responses never carry it, so they are byte-identical to before.
+- `totalCount` is the full filtered count, not the remainder.
+- RPC `model.<Model>.list` takes the same key: `{"limit": 20, "cursor": ""}`.
+  The server turns it into the equivalent query string and re-enters the REST
+  path, so behaviour is identical on both transports.
+- `limit` and `MAX_LIST_LIMIT` apply unchanged.
+
+**Use a stable `sort`.** The effective order is your `sort` plus the primary
+key ascending as a unique tiebreaker. With no `sort` the order is by `id`.
+Ordering is `NULLS LAST` in both directions.
+
+What the cursor is, and is not:
+
+- **Opaque and unsigned.** It is a base64url token of at most 2048
+  characters. Do not parse it or build one by hand on the client.
+- **Bound to the effective sort.** Reusing a cursor after changing `sort` is
+  a `400`.
+- **Not bound to filters.** Changing `where` between pages gives pages of the
+  new filter positioned by the old key.
+- **Cannot expose hidden rows.** The cursor bound is `AND`ed with the
+  request's filters and the model's read policy, so a forged cursor can only
+  change where in the caller's own visible result the page starts.
+
+Refused with `400` (RPC `invalid_argument`):
+
+| Request | Why |
+| --- | --- |
+| `cursor` together with `offset` | the two modes are mutually exclusive |
+| `cursor` on a model without `@@paged` | a bare-array response has nowhere to carry `nextCursor` |
+| a relation-path `sort` (`author.name`) | no total order over a joined column |
+| the same `sort` field twice | the order must be unambiguous |
+| a `sort` on a Boolean, enum or JSON column | no total order |
+| a malformed, oversized (over 2048 characters) or other-sort cursor | any bad cursor |
+
+`cursor` is a **reserved query key** *(since 0.19.4)*: it is no longer
+available as a plain filter name on a list route. Subscription feeds reject
+`cursor`, and MCP does not expose it.
+
+### Procedures: CursorPageInput and CursorPage&lt;T&gt;
+
+Two more built-in types sit beside `PageInput` and `Page<T>`. `CursorPageInput`
+is argument-only, `CursorPage<T>` is return-only:
+
+```cstack
+procedure listFeed(page: CursorPageInput): CursorPage<Post>
+```
+
+`CursorPageInput` is `{ limit: Int?, cursor: String? }`; `CursorPage<T>` is
+`{ items: T[], nextCursor: String? }`, with `nextCursor` omitted on the last
+page. `resolve(max_limit)` returns `(limit, Option<&str>)`, with `limit`
+clamped to `[0, max_limit]` and an empty cursor read as `None`. The usual
+implementation fetches `limit + 1` rows and lets `CursorPage::from_rows` drop
+the extra one and mint the next cursor from the last kept row:
+
+```rust
+let (limit, cursor) = args.page.resolve(50);
+// ... decode `cursor` with cratestack::decode_cursor(raw, &order, columns.len()),
+//     AND the keyset bound into your query, and fetch `limit + 1` rows ...
+Ok(cratestack::CursorPage::from_rows(rows, limit, |last| {
+    cratestack::encode_cursor(&order, &[Some(last.title.clone()), Some(last.id.to_string())])
+}))
+```
+
+`encode_cursor(order, values)` takes the canonical order string and the last
+row's per-column wire values (`None` is SQL `NULL`); `decode_cursor` reads a
+cursor back and returns a `BadRequest` for anything malformed, oversized or
+minted for a different order. See `crates/cratestack-pg/tests/cursor_page_procedure.rs`
+in the framework repository for a complete procedure.
+
+### Embedded
+
+There is no route on the embedded backend. The same primitives are
+re-exported from `cratestack-sqlite`: `parse_keyset_sort` resolves a `sort`
+into ordered columns (primary key appended), and `keyset_after` turns the last
+row's values into an ordinary `FilterExpr` that you pass to
+`find_many().where_expr(..)`:
+
+```rust
+let columns = parse_keyset_sort(Some("title"), "id", |name| {
+    matches!(name, "title" | "id").then_some(false) // Some(is_nullable) or None
+})?;
+let order = keyset_order_spec(&columns);
+let mut find = delegate.find_many()
+    .order_by(title.asc()).order_by(id.asc()).limit(limit + 1);
+if let Some(cursor) = cursor {
+    let values = decode_cursor(cursor, &order, columns.len())?;
+    find = find.where_expr(keyset_after(&columns, &values, leaf)?);
+}
+```
+
+`leaf` is your closure mapping `(column, KeysetLeaf::{Eq, Gt, Lt, IsNull})` to
+a typed field comparison. The full worked example is
+`crates/cratestack-rusqlite/tests/cursor_pagination.rs`.
+
+### Generated clients
+
+| Client | List query | Response / procedure types |
+| --- | --- | --- |
+| Rust | the `("cursor", "")` query pair, e.g. `client.transactions().list(&[("cursor", ""), ("limit", "20")], &[])` | `PageInfo::next_cursor` |
+| Dart | `CratestackListQuery(cursor: ...)` (and `toListQuery(cursor: ...)` on selections); for RPC list pass `{'cursor': ''}` in the input map | `PageInfo.nextCursor`, `CursorPageInput`, `CursorPage<T>` |
+| TypeScript | `cursor?: string` on `CratestackFetchQuery` and `CratestackRpcListQuery` | `PageInfo.nextCursor?`, `CursorPageInput`, `CursorPage<T>` |
+
+```ts
+let cursor = "";
+for (;;) {
+  const page = await client.transactions.list({ query: { cursor, limit: 20, sort: ["-postedAt"] } });
+  render(page.items);
+  if (!page.pageInfo.nextCursor) break;
+  cursor = page.pageInfo.nextCursor;
+}
+```
+
+### Upgrading
+
+`RpcListInput` has a new `cursor` field *(since 0.19.4)*, so an exhaustive
+struct literal in your own code needs `cursor: None`.
+
 ## What this is not
 
-1. **not cursor-based** — no opaque cursor token, no keyset pagination.
-   `offset` on a table that's being written to concurrently can skip or
-   repeat rows across page fetches, same as any offset-based scheme.
+1. **not cursor-based by default** — `limit`/`offset` on a table that is
+   being written to concurrently can skip or repeat rows across page
+   fetches. Send `?cursor=` to opt into
+   [keyset paging](#cursor-pagination) *(since 0.19.4)*.
 2. **not a per-model-tunable size limit** — `MAX_LIST_LIMIT` rejects
    pathological requests, but it's one fixed constant for the whole
    framework. It's a safety ceiling, not a page-size policy you can set
