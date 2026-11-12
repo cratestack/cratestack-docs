@@ -71,6 +71,19 @@ Patterns are validated at macro expansion time — a malformed regex fails
 the build, not the request. The compiled `Regex` lives in a
 `std::sync::LazyLock` so each unique pattern compiles once per process.
 
+The argument is an ordinary `.cstack` string literal, so backslashes are
+escaped: write `\\` for one backslash. To match a literal `+`, write
+`@regex("^\\+[0-9]{6,15}$")`, which is the regex `^\+[0-9]{6,15}$`; for a digit
+class write `"\\d"`. The recognised escapes are `\\`, `\"`, `\'`, `\n`, `\r` and
+`\t`; any other backslash sequence (a bare `\d`, say) is a schema error that
+names the fix. A character class such as `[+]` needs no escaping at all.
+
+::: warning Changed after 0.19.5 (cratestack#1314)
+Earlier releases only stripped the quotes, so `"\\+"` meant "one or more
+backslashes" and a single `"\d"` worked by accident. Schemas written either way
+need updating.
+:::
+
 ## `@email`
 
 Validates only the shape:
