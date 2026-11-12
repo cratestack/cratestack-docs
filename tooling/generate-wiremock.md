@@ -141,6 +141,15 @@ Stated honestly, because these are real ceilings, not oversights:
   a TypeScript client sends the variant's name and a Rust or Dart client its number, so no single
   template renders both as valid JSON.
 
+* *(since 0.19.6, unreleased on main)* A field's own validators decide its placeholder, so a stub never carries a
+  value the real server would reject: `@range` gets zero clamped into the range (the minimum for `min: 1`;
+  a `BigInt` stays a decimal string), `@iso4217` gets `"EUR"`, `@length` a string padded with `a` to the
+  minimum (a `Bytes` field that many zero bytes), `@email` and `@uri` get `user@example.com` and
+  `https://example.com`, and `@regex` a sample built from the pattern. If no placeholder can satisfy the
+  validators together (for example `@email` with `@length(max: 4)`), `generate-wiremock` fails naming the
+  field rather than emit an invalid value. Before this, a `BigInt @range(min: 1)` answered `"0"` and
+  `@iso4217` answered `"string"`; regenerate committed stubs.
+
 ## Where generated stubs live
 
 Not committed — gitignored and regenerated from the schema on every build, the same pattern already
