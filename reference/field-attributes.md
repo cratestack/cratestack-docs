@@ -434,7 +434,7 @@ toward silently leaving a stale one in place.
 | `@length(min, max)`    | `String`, `Bytes` | Inclusive length check.                                    |
 | `@range(min, max)`     | `Int`, `Decimal`  | Inclusive numeric range. Integer bounds promote to Decimal. |
 | `@email`               | `String`          | Pragmatic email shape check.                               |
-| `@regex(pattern)`      | `String`          | Pattern compiled at macro time.                            |
+| `@regex(pattern)`      | `String`          | Pattern compiled at macro time. A string literal: write `"\\+"` for the regex `\+`. |
 | `@uri`                 | `String`          | Must parse as a URI.                                       |
 | `@iso4217`             | `String`          | Three ASCII uppercase letters.                             |
 
