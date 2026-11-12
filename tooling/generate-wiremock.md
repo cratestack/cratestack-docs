@@ -145,9 +145,10 @@ Stated honestly, because these are real ceilings, not oversights:
   value the real server would reject: `@range` gets zero clamped into the range (the minimum for `min: 1`;
   a `BigInt` stays a decimal string), `@iso4217` gets `"EUR"`, `@length` a string padded with `a` to the
   minimum (a `Bytes` field that many zero bytes), `@email` and `@uri` get `user@example.com` and
-  `https://example.com`, and `@regex` a sample built from the pattern. If no placeholder can satisfy the
-  validators together (for example `@email` with `@length(max: 4)`), `generate-wiremock` fails naming the
-  field rather than emit an invalid value. Before this, a `BigInt @range(min: 1)` answered `"0"` and
+  `https://example.com`, and `@regex` a sample built from the pattern. If no placeholder can satisfy the validators together
+  (for example `@email` with `@length(max: 4)`), the stub still generates with the best candidate and lists the
+  field in its `metadata.cratestackUnsatisfiedValidators` (`[{ "path": "line.note", "validators": ["@length(max: 4)"] }]`,
+  dotted path from the response body root). Before this, a `BigInt @range(min: 1)` answered `"0"` and
   `@iso4217` answered `"string"`; regenerate committed stubs.
 
 ## Where generated stubs live
