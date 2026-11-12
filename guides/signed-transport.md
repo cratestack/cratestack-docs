@@ -1320,6 +1320,32 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 `cratestack-cose/tests/vectors` are regenerated for version 2, with `neg-binding-v1`,
 `neg-contract-sha` and `neg-contract-cross-op`.
 
+## Migrating from `HmacEnvelope`
+
+`cratestack_core::HmacEnvelope` and `SealedEnvelope` (the HS256 envelope) are **deprecated since 0.19.6**
+([cratestack#1018](https://github.com/cratestack/cratestack/issues/1018)) and are removed in the next minor
+release. Naming either type is a `deprecated` warning, which is an error under `-D warnings`. They are replaced by
+COSE_Mac0 mode of the envelope on this page ([ADR 0006](/internals/cose-envelope-adr)). The old type MACs a JSON
+re-serialization of the body while the wire carries CBOR, and costs 147 B per message; Mac0 MACs the payload bytes
+that travel and costs 41 B.
+
+| `HmacEnvelope` | COSE_Mac0 |
+| --- | --- |
+| `HmacEnvelope::new(keys, kid)` | `CoseEnvelope::server(CoseMode::Mac0, signer, resolver, nonce_store)` or `CoseEnvelope::client(..)` |
+| `KeyProvider` secrets, looked up by string `kid` | `KeyProviderMacKeys::load(&provider, alg, key_ids).await?`, which resolves the secrets once and gives you the signer (`signer(id)`) and the verifier resolver |
+| `NonceStore` | The same `NonceStore` passes straight through; the Mac0 `cti` is the nonce |
+| `seal(json)` / `open(&SealedEnvelope)` by hand | The `envelope_layer(..)` on the server and `CratestackClient::with_envelope(..)` on the client seal and open for you |
+| `with_clock_skew_secs` | The same 300 s default skew applies |
+
+What changes for you:
+
+- **Secrets must be random and at least 32 bytes.** `HmacEnvelope` accepted any length; Mac0 refuses a shorter
+  secret, and its `kid` publishes 64 bits of the secret's thumbprint, so a guessable secret can be found offline.
+- **The wire changes.** A Mac0 message is a COSE_Mac0 CBOR structure bound to the request's audience, method,
+  route and contract, not a `{ kid, alg, ts, nonce, body, mac }` map. Client and server move together; there is no
+  mode in which one accepts the other's messages.
+- **Streams are not sealed** until ADR 0006 P1, as for every COSE mode (see [Limits](#limits)).
+
 ## Limits
 
 - **Streams cannot be sealed** until ADR 0006 P1 (`chain` mode). A signed request gets
