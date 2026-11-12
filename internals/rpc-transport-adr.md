@@ -91,7 +91,7 @@ This is the cleanest part of the design. The framework already had content-negot
 
 ### Strict batch, no in-batch dependencies
 
-`POST /rpc/batch` decodes a sequence of `RpcRequest { id, op, input, idem? }` frames and emits a sequence of `RpcResponseFrame { id, output?, error? }` in **request order** (so order-only clients can zip without `id` lookup). Three deliberate non-features:
+`POST /rpc/batch` decodes a sequence of `RpcRequest { id, op, input, idem? }` frames and emits a sequence of `RpcResponseFrame { id, output?, error? }` in **request order**. `input` and `output` are `RpcFrameValue`, a `serde_json::Value` plus a byte-string arm, so a CBOR `Uuid` or `Bytes` rides a frame losslessly *(since 0.19.6, unreleased on main, cratestack#1352; before that they were `serde_json::Value`, which a byte string could not enter)* (so order-only clients can zip without `id` lookup). Three deliberate non-features:
 
 1. **Not transactional.** Each frame runs in its own transaction.
 2. **No in-batch dependencies.** A batch like `[create A, update B referencing A.id]` is not supported. The correct shapes are (a) two roundtrips, or (b) a single `@procedure` that owns the composite operation.
