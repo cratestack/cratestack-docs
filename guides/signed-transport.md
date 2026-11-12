@@ -199,6 +199,7 @@ op), and so is any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`. There is no default
 | --- | --- | --- |
 | `Required` | Refused, unsigned `401`. | Opened; response always sealed. |
 | `Optional` | Runs. Response sealed only with a valid `Cratestack-Nonce` **and** (the default `ResponseSealPolicy`) an `Accept` naming `application/cose`; otherwise plain. | Opened; response always sealed. |
+| `UnsignedRequestSealedReply` | Runs only if its reply can be sealed: exactly one valid `Cratestack-Nonce`, an `Accept` naming `application/cose` (and the `ResponseSealPolicy` agreeing), and not a subscription. Otherwise refused with an unsigned `406` **before the handler runs**. | Opened; response always sealed. |
 | `Off` | Untouched. | Refused, unsigned `415`. |
 
 - **Everything is signed under `Required`**, `GET`, `HEAD` and `DELETE` included: a bodiless
@@ -209,6 +210,12 @@ op), and so is any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`. There is no default
 - **A signed request is always answered sealed**, under `Optional` as under `Required`, with
   its `Accept` forced to `application/cbor`. A verification failure is the `401`, never a
   downgrade to unsigned.
+- **Use `UnsignedRequestSealedReply` for "unsigned request allowed, unsigned reply never"**
+  (device enrollment, server identity bootstrap). Under `Optional` a request that lacks the nonce
+  or the `cose` `Accept` still runs and is answered plain; under this mode the same request is a
+  `406` and the handler never runs. Replies are sealed strictly, as under `Required`, a route the
+  layer cannot bind fails closed, and a `/rpc/batch` runs under the strictest mode of its frames.
+  Added in the release after 0.19.5 (cratestack#1313).
 - **An unsigned seal under `Optional` binds the nonce and the payload, not the caller.** It
   proves this server answered this nonce and body, not who asked; do not read it as an
   authenticated exchange.
