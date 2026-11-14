@@ -142,13 +142,14 @@ Code that used to catch `DioException` around a generated call now catches `Crat
 
 ## Call options
 
-`CratestackCallOptions` (REST) and `CratestackRpcCallOptions` (RPC) now carry the same three fields:
+`CratestackCallOptions` (REST) and `CratestackRpcCallOptions` (RPC) carry the same four fields:
 
 | Field | Meaning |
 |---|---|
 | `headers` | Extra request headers; they win over the adapter's own. |
 | `idempotencyKey` | Sent as `Idempotency-Key`, so a retried mutation is applied once. RPC already had it; REST gains it. See [Idempotency](/guides/idempotency). |
 | `abort` | A `Future<void>?`. Completing it cancels the call, whether it is connecting, uploading, waiting or streaming the body, and the call throws `CratestackTransportAborted`. New on both protocols. |
+| `extra` | A `Map<String, Object?>` (default `const {}`) of per-call transport attributes, merged into `CratestackHttpRequest.extra` after the adapter's own entries (so `options.extra` wins on key collision). Never sent on the wire, and not persisted by `prepare` / `prepareCall`. |
 
 ```dart
 final cancel = Completer<void>();
@@ -203,7 +204,7 @@ final adapter = CratestackRpcHttpAdapter(
 
 ## Known gaps
 
-- Call options cannot carry transport attributes. `CratestackHttpRequest.extra` exists and a transport forwards it, but neither `CratestackCallOptions` nor `CratestackRpcCallOptions` can fill it, so a single call cannot tell the transport chain under it something that is not a header. Tracked in [cratestack#1207](https://github.com/cratestack/cratestack/issues/1207).
+- On 0.16.0–0.19.5, call options could not carry transport attributes ([cratestack#1207](https://github.com/cratestack/cratestack/issues/1207)); *(since 0.19.6, unreleased on main)* `CratestackCallOptions.extra` and `CratestackRpcCallOptions.extra` now fill `CratestackHttpRequest.extra` (not persisted by `prepare` / `prepareCall`).
 - An `AuthProvider` refusal cannot shape its response body. The generated handler encodes any auth error as the standard `{code, message}` envelope, so a client cannot distinguish refusal reasons by a body member. Tracked in [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).
 
 ## See also
