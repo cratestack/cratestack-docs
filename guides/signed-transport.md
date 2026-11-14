@@ -824,20 +824,62 @@ still sends unsigned requests; sealing is a call you make around its transport.
 - **Redirects.** The same rule as the [Rust client](#the-rust-client): do not follow them with your
   HTTP client. On the web the browser follows them for you.
 
-**Signers.** Two ship in this release, and both hold the key in the process's memory:
+**Signers.** Three ship. The first two hold the key in the process's memory; the third never has it:
 
 | Signer | Message | For |
 |---|---|---|
 | `HmacSigner(CoseAlg.hmac256x64, secret)` (or `hmac256x256`) | `COSE_Mac0`, with a secret of at least 32 random bytes | service to service credentials |
 | `Ed25519Signer.fromSeed(seed)` | `COSE_Sign1`, from a 32-byte seed | tests and service credentials |
+| `ExternalSigner.esp256(publicKey:, sign:, timeout:)` | `COSE_Sign1` (ESP256); the key stays in the Android Keystore, the Secure Enclave or WebCrypto | a user's device *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
 
-**Neither is for a user's device.** A seed in the app's memory is a key an attacker with the process
-can read, and Dart cannot wipe memory, so drop the signer once the envelope is built. For an HMAC
+`CoseSigner` is sealed and gained this third subtype, so an exhaustive `switch` over it needs an `ExternalSigner()` arm.
+
+**The first two are not for a user's device.** A seed in the app's memory is a key an attacker with the process
+can read, and Dart cannot wipe memory, so drop the signer once the envelope is built. For a device key use
+`ExternalSigner.esp256`, below. For an HMAC
 envelope, pin the server with `CoseServerKey.hmac(alg, secret)`; for Sign1 use
 `CoseServerKey.ed25519(publicKey)` or `CoseServerKey.p256Sec1(sec1)`, which verifies ESP256.
-Keystore signing is coming: a callback signer that hands the to-be-signed bytes to the Android
-Keystore or the Secure Enclave, like `ExternalSigner::esp256` on the Rust side. There is no date for
-it, and nothing in this release signs ESP256.
+
+#### Keystore keys (`ExternalSigner`)
+
+*(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* A key that must never enter the process signs through a callback. The envelope is given the key's **public**
+half and a function that signs; for each request the function receives the complete to-be-signed bytes and
+returns an ECDSA signature over the SHA-256 of exactly those bytes. Everything else is `cratestack-cose`'s:
+the CBOR, the binding, DER to raw `r || s`, low-`s`, and a check that the signature verifies under your public
+key before anything is sent. The `kid` is derived from the public key (`envelope.kid`). It works on native and on the web.
+
+```dart
+final signer = ExternalSigner.esp256(
+  publicKey: publicKey, // 65-byte SEC1 point, or a SubjectPublicKeyInfo
+  timeout: const Duration(seconds: 60), // required, no default
+  sign: (tbs) async {
+    try {
+      return SignOutcome.signature(await keystore.sign(tbs));
+    } on PromptDismissed {
+      return const SignOutcome.cancelled();
+    } catch (e) {
+      return SignOutcome.failed('keystore: $e');
+    }
+  },
+);
+final envelope = await ClientEnvelope.create(
+  signer: signer,
+  serverKeys: [CoseServerKey.ed25519(serverPublicKey)],
+  audience: 'payments',
+);
+```
+
+Sign the bytes as given, never a digest, because the platform hashes for you: Android
+`Signature.getInstance("SHA256withECDSA")`, iOS `SecKeyCreateSignature(key,
+.ecdsaSignatureMessageX962SHA256, tbs, &error)`, web `crypto.subtle.sign({name: 'ECDSA', hash:
+'SHA-256'}, key, tbs)`. DER (Android, iOS) and raw `r || s` (WebCrypto) both work, and a high `s` is
+normalised. The public key may be the SEC1 point or Android's SubjectPublicKeyInfo (`publicKey.encoded`).
+
+The callback returns a `SignOutcome` rather than throwing: `SignOutcome.signature(bytes)`, `cancelled()`,
+`timedOut()` or `failed(message)`. `timeout` is required, has no default, and must be positive; it bounds each
+call but does not cancel the platform prompt (the late answer is discarded).
+
+The TypeScript client (`@cratestack/cbor-web`, `@cratestack/cbor-node`) does not expose the three signer codes yet.
 
 **Required only.** Like the Rust client, a Dart envelope seals every request and opens only a response
 to a sealed request. There is no `Optional` client and no fallback to plain.
@@ -848,11 +890,15 @@ the caught exception is exhaustive:
 | Exception | When |
 |---|---|
 | `CoseRejected` | any failed verification: a tampered body, a wrong key, a response to another request, a stale or replayed message. It has no message and is the same for every cause, so the client is no oracle for which check failed |
-| `CoseMisuse` | local misuse: a key of the wrong length, an empty audience, a binding of the wrong shape. The message says what |
-| `CoseSignerCancelled`, `CoseSignerTimedOut`, `CoseSignerFailed` | reserved for the keystore signer; the in-memory signers never throw them |
+| `CoseMisuse` | local misuse: a key of the wrong length, an empty audience, a binding of the wrong shape, a public key that is not a P-256 point or SPKI (off the curve, another curve, trailing bytes) at `ClientEnvelope.create`, or a signature from an `ExternalSigner` that is not a valid one by its key. The message says what |
+| `CoseSignerCancelled` | the callback returned `SignOutcome.cancelled()`: the person dismissed the keystore's prompt. Empty message *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `CoseSignerTimedOut` | the callback returned `SignOutcome.timedOut()`, or exceeded `ExternalSigner.timeout`. Empty message *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `CoseSignerFailed` | the callback returned `SignOutcome.failed(message)` (the message is yours), or threw (the message names only the exception type) *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
 
-Mistakes that can never be right are not a `CoseException`: a digest that is not 32 bytes or a
-non-HMAC algorithm for an HMAC type is an `ArgumentError` from the constructor, and
+The in-memory signers never throw the three signer exceptions.
+
+Mistakes that can never be right are not a `CoseException`: a digest that is not 32 bytes, a
+non-HMAC algorithm for an HMAC type or a non-positive `ExternalSigner` `timeout` is an `ArgumentError` from the constructor, and
 `contractHeaderValue` before the backend has started is a `StateError`. A `CoseRejected` on a
 response is not the same as the server's refusal of your request: that arrives as a `401` or `426`
 without a seal, which you read from the HTTP status, as in the [Rust client's](#the-rust-client)
