@@ -102,7 +102,7 @@ CBOR is smaller than JSON for the same value:
 | Value | CBOR | JSON |
 |---|---|---|
 | `Boolean` | 1 B | 4–5 B |
-| `Uuid` | 17 B (binary) | 38 B |
+| `Uuid` | 17 B (binary) in a response; 37 B (text) in a TypeScript or Dart request | 38 B |
 | `Int` 3 / 300 / 70 000 | 1 / 3 / 5 B | 1 / 3 / 5 B |
 | an enum value `PendingReview` | 14 B | 15 B |
 | `DateTime` | 21–32 B (text) | 22–32 B |
@@ -177,7 +177,7 @@ REST and RPC.
 | `enum` | `TEXT` + membership `CHECK` | text (the variant name) |
 | ordinal `enum` *(since 0.17.0)* | `SMALLINT` + membership `CHECK` | integer |
 | `DateTime` | `TIMESTAMPTZ` (8 B) | text (RFC 3339) |
-| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR, text on JSON |
+| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR responses, text on JSON; CBOR requests may carry text or 16 B *(since 0.19.6, unreleased on main)* |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
 | `Int` | `BIGINT` | integer |
 | `BigInt` *(since 0.15.4)* | `BIGINT` | text (a decimal string, [scalars](../reference/scalars#bigint)) |
@@ -211,7 +211,7 @@ compression the saving is near zero, and the cost is a schema nobody can read.
 
 ### Identifiers
 
-`Int` ids are 1–9 bytes. `Uuid` is 17 bytes on CBOR and 38 on JSON. A `Cuid` is text. Choose by
+`Int` ids are 1–9 bytes. `Uuid` is 17 bytes on CBOR and 38 on JSON (a generated TypeScript or Dart client still *sends* it as CBOR text, 37 bytes, which servers accept since 0.19.6; responses are 17). A `Cuid` is text. Choose by
 generation and exposure needs first: a `Uuid` can be minted offline and does not leak row
 counts. Size is a tiebreaker.
 
