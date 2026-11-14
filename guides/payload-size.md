@@ -380,7 +380,7 @@ framework's payload gate measures this on every CI run:
 
 ### Durable retries and negotiation
 
-*(Unreleased, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297).)* Compact negotiation can change between attempts. A prepared unary mutation freezes the original named or compact inner bytes and media type before the first send; persist that snapshot before executing it. Restoring with mismatched tables or contract is refused rather than re-encoding the payload. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
+*(Since 0.18.1, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297).)* Compact negotiation can change between attempts. A prepared unary mutation freezes the original named or compact inner bytes and media type before the first send; persist that snapshot before executing it. Restoring with mismatched tables or contract is refused rather than re-encoding the payload. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
 
 ### Turning it on
 

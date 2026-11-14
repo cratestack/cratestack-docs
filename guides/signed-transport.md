@@ -1023,7 +1023,7 @@ check**, as in Rust: a response is not refused for its age.
   reply): `serverKeys` is the whole trust root. This waits on the Rust side too.
 - **`prepare` / `executePrepared` and sealing links.** RPC custom unary links, a sealing link
   included, are rejected by prepared requests (see
-  [Prepared requests](./typescript-client-generation#prepared-requests-unreleased)).
+  [Prepared requests](./typescript-client-generation#prepared-requests)).
 - **A `415` falls back to named bodies.** *(Since 0.19.4.)* A `415` to a compact request takes that
   op back to named bodies from the next call. The refused call is not retried. See
   [Compact field keys](./payload-size#compact-field-keys).
