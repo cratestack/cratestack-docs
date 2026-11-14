@@ -850,7 +850,7 @@ key before anything is sent. The `kid` is derived from the public key (`envelope
 
 ```dart
 final signer = ExternalSigner.esp256(
-  publicKey: publicKey, // 65-byte SEC1 point, or a SubjectPublicKeyInfo
+  publicKey: publicKey, // SEC1 point (65 or 33 bytes), or a SubjectPublicKeyInfo
   timeout: const Duration(seconds: 60), // required, no default
   sign: (tbs) async {
     try {
@@ -858,7 +858,7 @@ final signer = ExternalSigner.esp256(
     } on PromptDismissed {
       return const SignOutcome.cancelled();
     } catch (e) {
-      return SignOutcome.failed('keystore: $e');
+      return SignOutcome.failed('keystore unavailable');
     }
   },
 );
@@ -873,7 +873,7 @@ Sign the bytes as given, never a digest, because the platform hashes for you: An
 `Signature.getInstance("SHA256withECDSA")`, iOS `SecKeyCreateSignature(key,
 .ecdsaSignatureMessageX962SHA256, tbs, &error)`, web `crypto.subtle.sign({name: 'ECDSA', hash:
 'SHA-256'}, key, tbs)`. DER (Android, iOS) and raw `r || s` (WebCrypto) both work, and a high `s` is
-normalised. The public key may be the SEC1 point or Android's SubjectPublicKeyInfo (`publicKey.encoded`).
+normalised. The public key may be a SEC1 point (65 bytes uncompressed or 33 bytes compressed) or a P-256 SubjectPublicKeyInfo (Android's `publicKey.encoded`). Server keys are not the same: `CoseServerKey.p256Sec1` stays SEC1 only, with no SPKI. Keep a `failed` message fixed and free of secrets, never the exception text, because it is logged.
 
 The callback returns a `SignOutcome` rather than throwing: `SignOutcome.signature(bytes)`, `cancelled()`,
 `timedOut()` or `failed(message)`. `timeout` is required, has no default, and must be positive; it bounds each
