@@ -319,6 +319,10 @@ CBOR encode/decode sits on every request a generated client makes. The generated
   Before `--no-native-cbor`, the native codec was opt-in behind `--native-cbor`, which was removed in **v0.8.9**. An existing `--native-cbor` invocation is an unknown-argument error too: drop it.
 :::
 
+### `Uuid` over CBOR
+
+*(Since 0.19.6, unreleased on main, [cratestack#1359](https://github.com/cratestack/cratestack/issues/1359).)* A server writes a `Uuid` as a 16-byte CBOR string, while the generated Dart type is `String`. Every generated `Uuid` decode, on both transports and both presets (and `UuidFilter.fromWire`), goes through the runtime helper `cratestackDecodeUuid`, which accepts the canonical string or a list of 16 integers and throws a `FormatException` naming `Model.field` for anything else. This needs a `cratestack_cbor` release that carries the bridge fix: `decodeJson` now writes a CBOR byte string as a JSON array of integers on both backends (before, native refused the whole body with `invalid type: byte array` and web wrote an index-keyed object), which is a behaviour change for direct callers of `decodeJson`. The client still *sends* a `Uuid` as CBOR text, which servers accept since 0.19.6. **Skew:** a new client against a server at 0.19.5 or older has its requests refused (`unexpected type string ... expected bytes`), so upgrade the server first; a new server against an old client accepts requests but the client mis-decodes responses, so regenerate it. Dart subscriptions are JSON and need nothing.
+
 ### Nesting depth limit
 
 *(Since 0.19.4, [cratestack#1315](https://github.com/cratestack/cratestack/issues/1315).)* `cratestack_cbor` decode, native and web, rejects input nested deeper than 128 levels (array, map or tag) with a normal error instead of overflowing the stack. Only the default applies: Dart has no way to change the limit. See [Reducing payload size](/guides/payload-size#cbor-nesting-depth-limit).

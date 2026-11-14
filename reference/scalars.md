@@ -23,7 +23,7 @@ representation.
 | `Decimal`  | `cratestack::Decimal`            | `NUMERIC`         | See backend selection below.                           |
 | `Json`     | `cratestack::Json<cratestack::Value>` | `JSONB`      |                                                        |
 | `Bytes`    | `Vec<u8>`                        | `BYTEA`           |                                                        |
-| `Uuid`     | `cratestack::uuid::Uuid`         | `UUID`            |                                                        |
+| `Uuid`     | `cratestack::uuid::Uuid`         | `UUID`            | CBOR: 16-byte string; JSON: text. Servers accept either form on CBOR requests *(since 0.19.6, unreleased on main, [cratestack#1359](https://github.com/cratestack/cratestack/issues/1359))*; generated TypeScript and Dart clients revive the bytes into a `string` / `String`. |
 
 Type modifiers `?` (optional) and `[]` (list) apply on top of any scalar
 where the underlying SQL type supports it.

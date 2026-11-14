@@ -185,6 +185,8 @@ Three deliberate behaviors:
 
 *(Since 0.19.6, unreleased on main, [cratestack#1352](https://github.com/cratestack/cratestack/issues/1352).)* Binary types ride the frames in the batch codec's own form. Over CBOR a `Uuid` is a 16-byte string and `Bytes` a byte string inside `input` and `output`, exactly as on a unary call, so a batch from the generated Rust client or from the TypeScript client (which writes a `Uint8Array` as a native CBOR byte string) works. Before this a CBOR batch carrying either was refused with `400` for the whole batch, or failed one frame with `invalid_argument`. The wire shape is unchanged: JSON bodies are byte-for-byte what they were, and the TypeScript and Dart clients need no regeneration. In Rust, a frame's `input` and `output` are now `RpcFrameValue` (a `serde_json::Value` plus a byte-string arm); build one with `serde_json::json!(..).into()` or `RpcFrameValue::encode_with(&codec, &value)`, and read one with `serde_json::Value::from(..)` or `.decode_with(&codec)`. Limits that remain: map keys must be strings, and CBOR tags other than bignums are refused. Subscription frames carry the same type, with the same rule: see [Subscriptions](./subscriptions#the-bindings) ([cratestack#1360](https://github.com/cratestack/cratestack/issues/1360)).
 
+A `Uuid` may be CBOR text or 16 bytes in a unary body's `{ id }` and `input` and in a batch frame's `input` *(since 0.19.6, unreleased on main, [cratestack#1359](https://github.com/cratestack/cratestack/issues/1359))*; responses still carry 16 bytes.
+
 A malformed batch envelope (body that isn't a sequence of frames) returns `400`.
 
 ## Streaming — `Accept: application/cbor-seq`
