@@ -204,7 +204,7 @@ final adapter = CratestackRpcHttpAdapter(
 
 ## Known gaps
 
-- On 0.16.0–0.19.4, call options could not carry transport attributes ([cratestack#1207](https://github.com/cratestack/cratestack/issues/1207)); `CratestackCallOptions.extra` and `CratestackRpcCallOptions.extra` now fill `CratestackHttpRequest.extra` (not persisted by `prepare` / `prepareCall`).
+- On 0.16.0–0.19.5, call options could not carry transport attributes ([cratestack#1207](https://github.com/cratestack/cratestack/issues/1207)); *(since 0.19.6, unreleased on main)* `CratestackCallOptions.extra` and `CratestackRpcCallOptions.extra` now fill `CratestackHttpRequest.extra` (not persisted by `prepare` / `prepareCall`).
 - An `AuthProvider` refusal cannot shape its response body. The generated handler encodes any auth error as the standard `{code, message}` envelope, so a client cannot distinguish refusal reasons by a body member. Tracked in [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).
 
 ## See also
