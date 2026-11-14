@@ -112,7 +112,7 @@ The line ends at the closing `)`, apart from a trailing `// comment`, which is d
 anything reads the attribute (`//` inside a string literal is not a comment).
 
 A procedure accepts only `@allow`, `@deny`, `@authorize`, `@api_version`, `@status`,
-`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp` and (since 0.17.1) `@authn`; a query
+`@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`, `@isolation`, `@mcp`, (since 0.17.1) `@authn` and (since 0.19.7, unreleased on main) `@device_auth`; a query
 only `@@sql`, `@allow` and `@deny`. Any other name, case or typo is refused with a suggestion, and
 so are whitespace before `(`, anything after the closing `)`, a missing argument list where one
 is required, and an argument list on `@stream`, `@no_idempotency` or `@no_rate_limit`. Several
@@ -208,6 +208,10 @@ refusal:
 | `cratestack-auth`, user with an id token | the token's `auth_time` (the mint time by default) | the token's `amr`, plus `pop` |
 | `cratestack-auth`, service key | none | `["pop"]` |
 | `cratestack-cose`, verified signer | none | `["pop"]` |
+
+## Device ceremonies (`@device_auth`)
+
+*(Since 0.19.7, unreleased on main, [cratestack#1303](https://github.com/cratestack/cratestack/issues/1303).)* `@device_auth(role: "...")` marks the procedures that carry a device's enrolment, renewal and revocation, so that `generate-dart --preset fespalier` can emit a `<Prefix>DeviceAuthServer` over the generated client. Keys: `role`, and `proof` on `confirmEnrolment` only. It is not an authorization rule and changes no policy: it only constrains them. The five interface roles (`beginEnrolment`, `confirmEnrolment`, `beginRenewal`, `confirmRenewal`, `revoke`) are all-or-nothing, the legs a session-less device calls (and the optional `sendEnrolmentCode`) must be exactly `@allow(true)`, and `revoke`, which the device signs, must not admit a caller with no session (decided on the policy's meaning: `@allow(auth() != null)` is accepted, `@allow(true || auth() != null)` is refused). Dart only; REST and RPC. The roles, shapes and wiring are in [The fespalier preset](/guides/dart-fespalier-preset#device-ceremonies-device-auth).
 
 ## Relation filters and sorts
 
@@ -310,6 +314,7 @@ related rows, and still render self-relations uncorrelated.
 | Field-level read masking                    | Sometimes supported in richer stacks           | Not supported         | Model-level access only                                                                                                 |
 | Field-level write blocking                  | Sometimes supported in richer stacks           | Not supported         | Model-level access only                                                                                                 |
 | Post-update input-aware policies            | Sometimes supported in richer stacks           | Partial               | Current update/delete checks are row-scoped SQL predicates                                                              |
+| Device-signed sessions (`fespalier_sign_keypair`) | Not in the ZenStack-style surface | Supported, unreleased | `@device_auth` on the enrolment, renewal and revocation procedures plus `generate-dart --preset fespalier`; REST and RPC, Dart only; since 0.19.7, unreleased on main. See [below](#device-ceremonies-device-auth) |
 | Durable external auth plugin engine         | Sometimes supported via plugin/runtime systems | Not supported         | Current engine is built-in and macro/runtime-local                                                                      |
 
 ## Supported Examples
