@@ -154,13 +154,13 @@ Its README has the sequence and state diagrams for enrolment, renewal and sign-i
 | `confirmEnrolment` | `confirmEnrolment(challenge, signatures, proof)` | yes | exactly `@allow(true)` |
 | `beginRenewal` | `beginRenewal(deviceId, role)` | yes | exactly `@allow(true)` |
 | `confirmRenewal` | `confirmRenewal(challenge, signature)` | yes | exactly `@allow(true)` |
-| `revoke` | `revoke(credential, signer)` | yes | **must not be public**: `@allow(true)` is a parse error |
+| `revoke` | `revoke(credential, signer)` | yes | **must not admit a caller with no session**: `@allow(true)` is a parse error |
 | `sendEnrolmentCode` | an extra method on the class, not in the interface | no | exactly `@allow(true)` |
 
 - **All or nothing.** If any marker is present, the five required roles must all be present: `DeviceAuthServer` cannot be implemented partially. Each role is on one procedure, and a procedure carries one marker.
-- **Public means exactly `@allow(true)`** (whitespace aside), with no `@deny`, `@authn` or `@authorize`: a device has no session when it calls a public leg. `revoke` is the opposite. The device signs it, and a public `revoke` would let anyone revoke any device by its id, so give it a policy that needs the signed session, such as `@allow(auth() != null)`.
+- **Public means exactly `@allow(true)`** (whitespace aside), with no `@deny`, `@authn` or `@authorize`: a device has no session when it calls a public leg. `revoke` is the opposite. The device signs it, and a `revoke` open to a caller with no session would let anyone revoke any device by its id. That is decided on the policy's meaning, not its text: the parser refuses a `revoke` when some `@allow` certainly admits a caller with no session and no `@deny` blocks that caller. `@allow(true)`, `@allow(true || auth() != null)` and `@allow(auth() == null)` are refused; `@allow(auth() != null)`, and `@allow(true)` together with `@deny(auth() == null)`, are accepted. A `revoke` with no `@allow` is denied to everyone (deny-by-default): it is accepted, but no device can then be revoked.
 - **Not allowed on** a model, field, `type`, `query` or `view`, on a subscription procedure, or together with `@stream`.
-- `proof: "<field>"` is a second key, on `confirmEnrolment` only (see [the one-time code](#the-one-time-code)).
+- `proof: "<field>"` is a second key, on `confirmEnrolment` only; the field it names must be `String` or `String?`, because the one-time code is sent as text (see [the one-time code](#the-one-time-code)).
 
 ### Shapes the generator maps
 
@@ -232,7 +232,7 @@ The constructor is `(transport, {required baseUri, basePath = '/api' (REST only)
 
 - **`transport`** is `AuthConfig.transport`, the chain with no session on it, so the unsigned legs go out unsigned by construction. If you pass a transport that signs instead, give `DeviceAuthBackend(unsignedPaths: <Prefix>DeviceAuthServer.unsignedPaths(baseUri))`, which lists the unsigned legs' paths (the four required ones, plus `sendEnrolmentCode` when it is marked; REST `<basePath>/$procs/<name>`; RPC `/rpc/procedure.<name>`).
 - **`fieldErrors`** (`Object? Function(Object)?`) turns an error answer into a form's field errors; pass `errors.fieldErrorsOf`. It is a callback so the generated package depends on neither `fespalier` nor `fespalier_cratestack`.
-- **`userOf`** (`AuthUser Function(<confirmEnrolment return type>)?`) builds the `AuthUser` yourself. By default `userId` is the id, `name` and `email` are those fields, and every other field is in `claims`.
+- **`userOf`** (`fauth.AuthUser Function(<confirmEnrolment return type>)?`; the generated file imports every fespalier library under a prefix, `fsign`, `fauth`, `fkey` and `ftransport`, so a schema `type` named `RoleChallenge`, `AuthUser` or `Attestation` does not clash) builds the `AuthUser` yourself. By default `userId` is the id, `name` and `email` are those fields, and every other field is in `claims`.
 - A **`403`** on `beginRenewal`, `confirmRenewal` and `confirmEnrolment` is an `AuthRejected`. It is not mapped on `beginEnrolment` or `revoke`; every other failure is thrown as it is.
 - **`revoke`** is signed by the device, through a private signing transport built over the `DeviceSigner` it is handed.
 - REST and RPC are both generated.
@@ -246,11 +246,11 @@ A server that checks a one-time code can receive it in either of two places:
 
 ### Pubspec and SDK floor
 
-A generated package that uses the marker also depends, by git at the same `--fespalier-ref` as `fespalier_transport`, on `fespalier_auth`, `fespalier_keypair` and `fespalier_sign_keypair`, and its SDK floor is Dart `>=3.12` and Flutter `>=3.44`, which `fespalier_sign_keypair` requires. One ref is the only one that resolves, because `fespalier_sign_keypair` pins its siblings at its own tag. The default ref stays `v0.21.0`: `DeviceAuthServer` is byte-identical from v0.21.0 through v0.26.0.
+A generated package that uses the marker also depends, by git at the same `--fespalier-ref` as `fespalier_transport`, on `fespalier_auth`, `fespalier_keypair` and `fespalier_sign_keypair`, and its SDK floor is Dart `>=3.12` and Flutter `>=3.44`, which `fespalier_sign_keypair` requires. One ref is the only one that resolves, because `fespalier_sign_keypair` pins its siblings at its own tag. For that reason, with `@device_auth` markers `--fespalier-ref` must be a release tag of the form `vMAJOR.MINOR.PATCH`: a branch or a commit fails generation with "fespalier ref ... is not a release tag". Without markers any ref is still accepted, and the generated README says so. The default ref stays `v0.21.0`: `DeviceAuthServer` is byte-identical from v0.21.0 through v0.26.0.
 
 ### Errors and tooling
 
-Every parse error points at the marker line: an unknown role or key, two markers on one procedure, a role on two procedures, a missing required role ("... but not `revoke`: the device roles are all-or-nothing"), a non-public leg, "`revoke` must not be public", a shape mismatch ("has no `ambient`; it needs a required JWK", "has no source"). `@deviceAuth` is refused with "did you mean `@device_auth`?". `cratestack check` and the language server report them; the language server also completes `@device_auth` and shows the role on hover. `print-ir` lists the marker among a procedure's `attributes`. The marker is outside every per-operation contract digest, so no COSE AAD changes, and inside the whole-schema identity `x-cratestack-schema-sha`.
+Every parse error points at the marker line: an unknown role or key, two markers on one procedure, a role on two procedures, a missing required role ("... but not `revoke`: the device roles are all-or-nothing"), a non-public leg, "`revoke` must not be public" (a `revoke` whose policy admits a caller with no session), a `proof:` field that is not `String` / `String?`, a shape mismatch ("has no `ambient`; it needs a required JWK", "has no source"). `@deviceAuth` is refused with "did you mean `@device_auth`?". `cratestack check` and the language server report them; the language server also completes `@device_auth` and shows the role on hover. `print-ir` lists the marker among a procedure's `attributes`. The marker is outside every per-operation contract digest, so no COSE AAD changes, and inside the whole-schema identity `x-cratestack-schema-sha`.
 
 ## Known gaps
 
