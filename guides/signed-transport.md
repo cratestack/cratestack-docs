@@ -215,7 +215,7 @@ op), and so is any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`. There is no default
   or the `cose` `Accept` still runs and is answered plain; under this mode the same request is a
   `406` and the handler never runs. Replies are sealed strictly, as under `Required`, a route the
   layer cannot bind fails closed, and a `/rpc/batch` runs under the strictest mode of its frames.
-  Added in the release after 0.19.5 (cratestack#1313).
+  Added in 0.19.6 (cratestack#1313).
 - **An unsigned seal under `Optional` binds the nonce and the payload, not the caller.** It
   proves this server answered this nonce and body, not who asked; do not read it as an
   authenticated exchange.
@@ -1023,7 +1023,7 @@ check**, as in Rust: a response is not refused for its age.
   reply): `serverKeys` is the whole trust root. This waits on the Rust side too.
 - **`prepare` / `executePrepared` and sealing links.** RPC custom unary links, a sealing link
   included, are rejected by prepared requests (see
-  [Prepared requests](./typescript-client-generation#prepared-requests-unreleased)).
+  [Prepared requests](./typescript-client-generation#prepared-requests)).
 - **A `415` falls back to named bodies.** *(Since 0.19.4.)* A `415` to a compact request takes that
   op back to named bodies from the next call. The refused call is not retried. See
   [Compact field keys](./payload-size#compact-field-keys).

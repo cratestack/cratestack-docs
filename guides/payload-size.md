@@ -177,7 +177,7 @@ REST and RPC.
 | `enum` | `TEXT` + membership `CHECK` | text (the variant name) |
 | ordinal `enum` *(since 0.17.0)* | `SMALLINT` + membership `CHECK` | integer |
 | `DateTime` | `TIMESTAMPTZ` (8 B) | text (RFC 3339) |
-| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR responses, text on JSON; CBOR requests may carry text or 16 B *(since 0.19.6, unreleased on main)* |
+| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR responses, text on JSON; CBOR requests may carry text or 16 B *(since 0.19.6)* |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
 | `Int` | `BIGINT` | integer |
 | `BigInt` *(since 0.15.4)* | `BIGINT` | text (a decimal string, [scalars](../reference/scalars#bigint)) |
@@ -380,7 +380,7 @@ framework's payload gate measures this on every CI run:
 
 ### Durable retries and negotiation
 
-*(Unreleased, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297).)* Compact negotiation can change between attempts. A prepared unary mutation freezes the original named or compact inner bytes and media type before the first send; persist that snapshot before executing it. Restoring with mismatched tables or contract is refused rather than re-encoding the payload. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
+*(Since 0.18.1, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297).)* Compact negotiation can change between attempts. A prepared unary mutation freezes the original named or compact inner bytes and media type before the first send; persist that snapshot before executing it. Restoring with mismatched tables or contract is refused rather than re-encoding the payload. See [idempotency](./idempotency#preserve-a-request-before-the-first-attempt).
 
 ### Turning it on
 

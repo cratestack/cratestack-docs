@@ -134,9 +134,7 @@ recorded `401` replayed, and the call does not run.
 
 ## Preserve a request before the first attempt
 
-::: warning Unreleased
-The prepared-call APIs below were merged in [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297) after 0.18.0 and are not in a published release yet.
-:::
+The prepared-call APIs below shipped in 0.18.1 ([cratestack#1297](https://github.com/cratestack/cratestack/pull/1297)).
 
 Without preparing, a client instance pins each `Idempotency-Key`'s first encoding in memory, so an in-process retry is sent the way its first attempt was. The table holds 1024 keys in Rust and 512 in TypeScript and Dart; when full it evicts the oldest first attempt, so a prompt retry stays pinned and new keys keep negotiating compact. Pins do not survive a restart; prepared calls do.
 
@@ -158,7 +156,7 @@ Rust requires compact key tables for the operation, including when the frozen bo
 
 CBOR snapshots are checked before sending as one well-formed item: text must be valid UTF-8, containers must be complete, and nesting is limited to 256. Non-preferred encodings remain byte-for-byte unchanged. This does not validate tag semantics or reject duplicate map keys; duplicate handling belongs to the receiving codec. Protect the journal against tampering.
 
-Authentication headers and reusable COSE envelopes are not stored, and URL userinfo is rejected. Query strings and bodies are persisted and can contain secrets; protect the journal accordingly. The Rust client reauthorizes and, when configured, reseals each attempt with fresh claims. Dart sealing belongs to the transport: create a fresh seal and matching `PendingResponse` on each attempt. TypeScript RPC prepared calls reject custom unary links, so a sealing link cannot currently be used there. See the [TypeScript](./typescript-client-generation#prepared-requests-unreleased) and [Dart](./dart-client-generation#prepared-requests-unreleased) guides.
+Authentication headers and reusable COSE envelopes are not stored, and URL userinfo is rejected. Query strings and bodies are persisted and can contain secrets; protect the journal accordingly. The Rust client reauthorizes and, when configured, reseals each attempt with fresh claims. Dart sealing belongs to the transport: create a fresh seal and matching `PendingResponse` on each attempt. TypeScript RPC prepared calls reject custom unary links, so a sealing link cannot currently be used there. See the [TypeScript](./typescript-client-generation#prepared-requests) and [Dart](./dart-client-generation#prepared-requests) guides.
 
 ## Error bodies are typed
 

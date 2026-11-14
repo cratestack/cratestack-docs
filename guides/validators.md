@@ -78,7 +78,7 @@ class write `"\\d"`. The recognised escapes are `\\`, `\"`, `\'`, `\n`, `\r` and
 `\t`; any other backslash sequence (a bare `\d`, say) is a schema error that
 names the fix. A character class such as `[+]` needs no escaping at all.
 
-::: warning Changed after 0.19.5 (cratestack#1314)
+::: warning Changed in 0.19.6 (cratestack#1314)
 Earlier releases only stripped the quotes, so `"\\+"` meant "one or more
 backslashes" and a single `"\d"` worked by accident. Schemas written either way
 need updating.
