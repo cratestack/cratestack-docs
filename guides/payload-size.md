@@ -177,7 +177,7 @@ REST and RPC.
 | `enum` | `TEXT` + membership `CHECK` | text (the variant name) |
 | ordinal `enum` *(since 0.17.0)* | `SMALLINT` + membership `CHECK` | integer |
 | `DateTime` | `TIMESTAMPTZ` (8 B) | text (RFC 3339) |
-| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR responses, text on JSON; CBOR requests may carry text or 16 B *(since 0.19.6, unreleased on main)* |
+| `Uuid` | `UUID` (16 B) | 16 B binary on CBOR responses, text on JSON; CBOR requests may carry text or 16 B *(since 0.19.6)* |
 | `Decimal` | `NUMERIC` | text, deliberately ([scalars](../reference/scalars#serialization)) |
 | `Int` | `BIGINT` | integer |
 | `BigInt` *(since 0.15.4)* | `BIGINT` | text (a decimal string, [scalars](../reference/scalars#bigint)) |

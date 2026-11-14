@@ -158,7 +158,7 @@ ends with `unavailable` / `"subscription interrupted"`. Behind PgBouncer in tran
 | WebSocket | `GET /rpc/ws` (`/$ws` on REST), with `extension websocket { }` + the `websocket` feature | `Init`, multiplexed `Request`s, `Ready` / `next` / `end` / `err`, `cancel`; CBOR (binary) or JSON (text) | one connection for many subscriptions; where UDP is blocked |
 | WebTransport | `CONNECT /rpc/wt` on a separate UDP listener, with `extension webtransport { }` + the `webtransport` feature | the same frames, one QUIC stream per subscription | no head-of-line blocking; survives a network change |
 
-*(Since 0.19.6, unreleased on main, [cratestack#1360](https://github.com/cratestack/cratestack/issues/1360).)*
+*(Since 0.19.6, [cratestack#1360](https://github.com/cratestack/cratestack/issues/1360).)*
 On the CBOR WebSocket and WebTransport bindings, an item is encoded the way a unary CBOR response is: a
 `Uuid` (every model event's `eventId` too) is a 16-byte string, and `Bytes` inside a `Json` field is a
 byte string. JSON frames (text messages, NDJSON) and SSE are byte-for-byte what they were: a `Uuid` is
@@ -242,7 +242,7 @@ A WebTransport session that is not open within 3 s counts as unreachable, and th
 remembered for 10 minutes, so a UDP-blocked network pays the wait once.
 
 The client reads a WebSocket or WebTransport item the way a unary CBOR call is read, so a `Uuid` field
-decodes from its byte string *(since 0.19.6, unreleased on main)*. It still reads an older server's text
+decodes from its byte string *(since 0.19.6)*. It still reads an older server's text
 `Uuid`s, but a client from before this change cannot read a newer server's model events over those two
 bindings: upgrade them together, or pin `SubscriptionTransport::Sse` meanwhile. A partial model event
 (`fields`) read as `ModelEvent<serde_json::Value>` fails on a `Uuid` field over a socket; read it into a
