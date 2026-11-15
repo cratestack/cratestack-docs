@@ -332,7 +332,7 @@ newline is refused, not only many lines.
 
 Raise the cap only if one frame can legitimately be larger than 1 MiB. The WebSocket and
 WebTransport bindings are not governed by this setting. A refused event is not retried by the client, and `Auto`
-does not fall back to another binding on it. A `ready` event over the cap refuses the open with the same typed error. On the Rust RPC client it is `RpcClientError::EventTooLarge { limit }` (not `InvalidResponse`). In the Dart `--preset riverpod` stream providers, Riverpod 3 retries a failed provider (up to 10 times, with backoff) unless the error is an `Error` or `ProviderException`; the generated providers pass `retry: cratestackSubscriptionRetry`, which opts `CratestackEventTooLargeException` out of that retry (it reaches the provider as an `AsyncError` at once; `ref.invalidate` retries by hand) and keeps the default for every other error.
+does not fall back to another binding on it. A `ready` event over the cap refuses the open with the same typed error. On the Rust RPC client it is `RpcClientError::EventTooLarge { limit }` (not `InvalidResponse`). In the Dart `--preset riverpod` stream providers, Riverpod 3 retries a failed provider (up to 10 times, with backoff) unless the error is an `Error` or `ProviderException`; the generated providers pass `retry: cratestackSubscriptionRetry`, which defers to Riverpod's `ProviderContainer.defaultRetry` and opts `CratestackEventTooLargeException` out of that retry (it reaches the provider as an `AsyncError` at once; `ref.invalidate` retries by hand) and keeps the default for every other error.
 
 ## Deploying WebTransport
 
