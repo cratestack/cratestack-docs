@@ -1026,8 +1026,49 @@ const runtime = new CratestackRuntime(origin, {
 });
 ```
 
-A call whose op has no entry in `OP_CONTRACTS`, or that `cose` declines, goes out unsealed. Seal
-at this layer, not in generated code: nothing in a regenerated client changes for it.
+Seal at this layer, not in generated code: nothing in a regenerated client changes for it.
+
+#### Fail open by default, fail closed with `requireSealed`
+
+By default the link **fails open**: a call whose op has no entry in `OP_CONTRACTS`, or that `cose`
+declines by returning `undefined`, goes out **unsealed**. That is right for a client that mixes
+signed and anonymous calls, but a client that must sign every call can ship an unsigned request
+without noticing (a stale `OP_CONTRACTS`, a `cose` function that returns `undefined` for the wrong
+route).
+
+*(since 0.20.0, unreleased on main, [cratestack#1371](https://github.com/cratestack/cratestack/issues/1371))*. Pass `requireSealed: true` to `createSealedLink` (unary and `/rpc/batch`) or
+`createSealedFetch` (REST) and such a call is refused **locally, before any `fetch`**, by rejecting
+with `SealRequired`. The default (`false` or absent) is unchanged.
+
+```ts
+import { CoseFailure, SealRequired, createSealedLink } from "@cratestack/cbor/cose";
+
+const runtime = new CratestackRpcRuntime(origin, {
+  links: [createSealedLink({ cose, contracts: OP_CONTRACTS, requireSealed: true })],
+});
+
+try {
+  await client.getWidget({ id });  // any generated call
+} catch (err) {
+  if (err instanceof SealRequired) {
+    // err.route: the op id, "batch", a REST template key, or "<METHOD> <path>"
+    // when no REST template matched. Nothing was sent.
+    console.error("refusing to send unsealed:", err.route);
+  } else if (err instanceof CoseFailure) {
+    // any other seal or verification failure
+  } else {
+    throw err;
+  }
+}
+```
+
+`SealRequired` is exported from `@cratestack/cbor/cose` (and the `/cose` subpaths of
+`@cratestack/cbor-node` and `@cratestack/cbor-web`). It is a subclass of `CoseFailure` with `code`
+`misuse` (a wiring problem on this side, not a rejected answer), `name` `"SealRequired"`, and a
+`route` field. Check `instanceof SealRequired` to single it out; `instanceof CoseFailure` also
+matches it, so existing handlers for `CoseFailure` already catch it. Note that with
+`requireSealed: true`, a `cose` function that returns `undefined` for anonymous calls now makes
+those calls fail: leave the option off, or use a separate client, for anonymous traffic.
 
 **Mode per call.** `cose` may be a function `({ route, method }) => CoseClient | undefined`, so one
 client can use Sign1 before a session exists, Mac0 under the session key after it, and `undefined`
@@ -1055,7 +1096,8 @@ Like the Rust and Dart clients, a sealed client is a `Required` client:
 | Unsigned non-ok response (a gateway's `401`, the layer's `415` or `426`) | passed through unchanged. A hint, never proof |
 
 `CoseFailure.code` is `rejected` for every failed verification, or `misuse` for a bad key, a
-binding of the wrong shape or a failing signer. `serverKeys` is the static trust root, the same as
+binding of the wrong shape, a failing signer or, with `requireSealed`, a call that could not be
+sealed (`SealRequired`). `serverKeys` is the static trust root, the same as
 the Rust client. A response is bound to the request it answers, but **there is no response-expiry
 check**, as in Rust: a response is not refused for its age.
 
