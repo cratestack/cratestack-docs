@@ -54,6 +54,33 @@ The default statement-cache capacity is 100 distinct statements per
 connection, LRU-evicted — that's sqlx's default, not something CrateStack
 changes.
 
+### Building a bounded pool without naming sqlx *(unreleased on main, [cratestack#1385](https://github.com/cratestack/cratestack/issues/1385))*
+
+A crate that only uses generated `cratestack-pg` models can build its pool with
+`cratestack::PgPoolConfig` instead of `PgPoolOptions`:
+
+```rust
+let config = cratestack::PgPoolConfig::from_url(&std::env::var("DATABASE_URL")?)?
+    .max_connections(2)
+    .acquire_timeout(std::time::Duration::from_secs(5))
+    .test_before_acquire(true)
+    .session_setting("statement_timeout", "30000")
+    .session_setting("lock_timeout", "10000");
+let pool = config.connect_lazy()?;      // or `config.connect().await?` to open one connection now
+config.verify_settings(&pool).await?;   // fail start-up if the server did not apply them
+```
+
+Session settings are sent as startup options after any `options=` in the URL, so they win over
+a URL that sets the same name. `verify_settings` compares each value as the server renders it
+(`30000` and `30s` agree) and returns `Unavailable`, naming the setting, when they differ,
+which catches a pooler such as PgBouncer in transaction mode that drops startup options.
+Only `postgres://` URLs are accepted; a `host=... dbname=...` DSN is refused with `BadRequest`.
+sqlx has no separate connect timeout, so `acquire_timeout` bounds the wait for a connection and
+the time to open one. `ServiceConfig::state()` is built on the same type (5 connections, lazy).
+
+Connection-class sqlx errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, I/O and TLS) now
+surface as `Unavailable` (HTTP 503) rather than `Database` (500).
+
 **Exception:** if you're using `cratestack-service` (the env-driven
 service-bootstrap facade), it builds the pool for you —
 `ServiceConfig::state()` (`crates/cratestack-service/src/config.rs:130-139`)
