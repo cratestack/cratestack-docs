@@ -1036,7 +1036,7 @@ signed and anonymous calls, but a client that must sign every call can ship an u
 without noticing (a stale `OP_CONTRACTS`, a `cose` function that returns `undefined` for the wrong
 route).
 
-*(since 0.20.0, unreleased on main, [cratestack#1371](https://github.com/cratestack/cratestack/issues/1371))*. Pass `requireSealed: true` to `createSealedLink` (unary and `/rpc/batch`) or
+*(since 0.20.0, [cratestack#1371](https://github.com/cratestack/cratestack/issues/1371))*. Pass `requireSealed: true` to `createSealedLink` (unary and `/rpc/batch`) or
 `createSealedFetch` (REST) and such a call is refused **locally, before any `fetch`**, by rejecting
 with `SealRequired`. The default (`false` or absent) is unchanged.
 
@@ -1412,7 +1412,7 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 
 `cratestack_core::HmacEnvelope` and `SealedEnvelope` (the HS256 envelope) were **deprecated in 0.19.6**
 ([cratestack#1018](https://github.com/cratestack/cratestack/issues/1018)) and are **removed**
-*(removed in 0.20.0, unreleased on main, [cratestack#1357](https://github.com/cratestack/cratestack/issues/1357))*.
+*(removed in 0.20.0, [cratestack#1357](https://github.com/cratestack/cratestack/issues/1357))*.
 Code that still names either type no longer compiles. They are replaced by
 COSE_Mac0 mode of the envelope on this page ([ADR 0006](/internals/cose-envelope-adr)). The old type MACs a JSON
 re-serialization of the body while the wire carries CBOR, and costs 147 B per message; Mac0 MACs the payload bytes

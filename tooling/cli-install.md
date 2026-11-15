@@ -77,7 +77,7 @@ for its full inputs/outputs. Pin `@main` to a released tag or commit SHA for rep
 
 ## Pinning the CLI version
 
-*(since 0.20.0, unreleased on main, [cratestack#1372](https://github.com/cratestack/cratestack/issues/1372))*
+*(since 0.20.0, [cratestack#1372](https://github.com/cratestack/cratestack/issues/1372))*
 
 Every way of installing the CLI above puts a `cratestack` on your `PATH`, and nothing stops two of them
 coexisting. The usual case: an older `cratestack` in `~/.cargo/bin` (from an earlier `cargo install
