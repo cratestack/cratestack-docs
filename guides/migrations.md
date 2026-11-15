@@ -182,8 +182,16 @@ model Bank {
 ```
 
 This generates `ALTER TABLE banks RENAME TO bank` and `ALTER TABLE bank RENAME COLUMN bic TO bic_code`.
-Without the `@@rename` / `@rename`, `migrate diff` fails with `storage name changed; add
-@@rename(from = "…")` naming the exact marker to add. Adding `@@map` to a model that already has a
+Without the `@@rename` / `@rename`, `migrate diff` refuses rather than drop and recreate. It names the exact marker to add:
+
+```text
+model `Bank`: its table changed from `banks` to `bank` (`@@map`), and a changed name would drop
+`banks` and create an empty `bank`. To rename the table, add `@@rename(from = "banks")` to the
+model; to keep it, restore the old `@@map`. To adopt a database that already has `bank`, run
+`cratestack migrate baseline` after writing the `@@map`.
+```
+
+The column refusal has the same form (`field `bic` is stored in column `bic_code`, not `bic` (`@map`)…`). Adding `@@map` to a model that already has a
 table is such a change too. Remove the `@@rename` marker once the migration has shipped.
 
 **To adopt an existing database**, do not rename its tables: write `@@map` / `@map` to match them
