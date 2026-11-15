@@ -1368,12 +1368,16 @@ a signed request to a route with no contract row is a logged `500`. The shared v
 
 ## Migrating from `HmacEnvelope`
 
-`cratestack_core::HmacEnvelope` and `SealedEnvelope` (the HS256 envelope) are **deprecated since 0.19.6**
-([cratestack#1018](https://github.com/cratestack/cratestack/issues/1018)) and are removed in the next minor
-release. Naming either type is a `deprecated` warning, which is an error under `-D warnings`. They are replaced by
+`cratestack_core::HmacEnvelope` and `SealedEnvelope` (the HS256 envelope) were **deprecated in 0.19.6**
+([cratestack#1018](https://github.com/cratestack/cratestack/issues/1018)) and are **removed**
+*(removed in 0.20.0, unreleased on main, [cratestack#1357](https://github.com/cratestack/cratestack/issues/1357))*.
+Code that still names either type no longer compiles. They are replaced by
 COSE_Mac0 mode of the envelope on this page ([ADR 0006](/internals/cose-envelope-adr)). The old type MACs a JSON
 re-serialization of the body while the wire carries CBOR, and costs 147 B per message; Mac0 MACs the payload bytes
 that travel and costs 41 B.
+
+`KeyProvider`, `NonceStore`, `InMemoryNonceStore` and `StaticKeyProvider` stay in `cratestack_core`, at the same
+paths; the COSE envelope builds on them. `cratestack-core` no longer depends on `hmac` or `subtle`.
 
 | `HmacEnvelope` | COSE_Mac0 |
 | --- | --- |
