@@ -83,7 +83,7 @@ model Order {
 
 ## Adopting a database with different table names
 
-*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. If the live tables do not follow CrateStack's derived names (singular `bank` instead of
+*(since 0.20.1, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. If the live tables do not follow CrateStack's derived names (singular `bank` instead of
 `banks`, a legacy `bic_code` column), map the schema to them instead of renaming the database:
 
 ```cstack
