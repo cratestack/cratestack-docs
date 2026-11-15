@@ -42,6 +42,8 @@ compact one included, is never sealable. The Rust client negotiates the mode per
 calls do, and the Dart and wasm sealers take the payload type on their call binding
 ([cratestack design `compact-wire-keys.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/compact-wire-keys.md)).
 
+**Amended 2026-11-15 (signed subscription open with unsigned frames)** *(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*. A subscription may opt in to a signed open whose frames are not signed. This is weaker than the signed subscription binding §6 plans, and the threat model says exactly how much weaker. See [Amendment: signed subscription open with unsigned frames](#amendment-signed-subscription-open-with-unsigned-frames).
+
 **Prepared retries (since 0.18.1, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297)).** A durable prepared call retains the inner payload, not a reusable outer envelope. Each sealed attempt needs fresh claims and the matching response-opening state; see [idempotency](../guides/idempotency#preserve-a-request-before-the-first-attempt).
 
 This fills the slot [ADR 0001](./core-architecture-adr) reserved as "ADR 0006: COSE Envelope Modes
@@ -908,3 +910,44 @@ story per phase). The unsigned streaming it builds on is
 - **Layer placement (§12):** a COSE-only request with no `Authorization` header and no `ConnectInfo`
   → not refused with `412`, and charged to its `princ:` bucket.
 - **Fuzzing:** `CborSeqChunkDecoder` over arbitrary bytes containing tags 18, 48900 and 48901.
+
+## Amendment: signed subscription open with unsigned frames
+
+*(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*
+
+Status: accepted for implementation on 2026-11-15. Nothing here is released. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
+
+### Why
+
+Today a signed route that is a subscription gets a sealed `406`, because §6 plans signed subscriptions as a `chain` binding that has not been built. A client that signs every request therefore cannot subscribe at all. Some consumers do not need signed frames: they use the stream only as a nudge to re-read, and the re-read is itself sealed. This amendment lets them sign the open and accept an unsigned stream, and makes the cost explicit.
+
+### Decisions
+
+- **Opt-in syntax:** `@frames(unsigned)` on a `subscription procedure`. The set is closed. `sealed` and `chain` are reserved and refused with a message naming [#1020](https://github.com/cratestack/cratestack/issues/1020) and [#1008](https://github.com/cratestack/cratestack/issues/1008). It is refused on unary and `@stream` procedures, and a duplicate is refused.
+- **Contract:** `@frames` is part of the op contract, so it moves the op digest, and adding or removing it is wire-incompatible. The generated table that tells the envelope layer which subscriptions opted in defaults to empty, so a missing table fails closed.
+- **Server:** the open is verified exactly like a unary request (signature, `kid`, audience, replay window, nonce, contract), and `@allow` is evaluated at open against the principal from that signature.
+  - Without the opt-in, the answer stays the sealed `406`.
+  - With it, the original `Accept` must name a stream type, or the answer is a sealed `406`.
+  - A `2xx` stream carries `Cratestack-Frames: unsigned` and `Cache-Control: no-store`. Any other status (`400`, `403`, `404`, ...) is sealed as usual.
+- **Lifetime:** a signed open has a configurable maximum stream life, one hour by default. It ends with a terminal `unavailable` error frame, and the earlier of that and any credential expiry wins. The client re-seals on resubscribe with a fresh nonce, so a replayed open cannot be reused.
+- **Clients:** a client accepts a `2xx` only when it has the requested stream `Content-Type`, carries the marker, and the generated target says `frames: unsigned`. Anything else is refused. A dropped marker, or a marker on an op that did not opt in, is an error, not a silent downgrade.
+- **Model feeds are refused.** `@@subscribe` streams rows, which are values, not ids. They stay out of unsigned frames; see the threat model.
+
+### Threat model
+
+What is protected: the open. A tampered, replayed or wrongly addressed open is a `401` and the handler never runs, and the principal that `@allow` sees is the one the signature names.
+
+What is **not** protected: after a signed open, the integrity and authenticity of the frames. The request's `Accept`, the `Cratestack-Frames` marker and the frames themselves are all outside any signature.
+
+- A relay or a man in the middle inside TLS termination can forge a `200` with frames, drop frames, or end the stream.
+- The marker only tells an honest client what kind of stream it is reading. It is no evidence about who sent it.
+- **Clients must therefore treat frames as hints only.** A frame carries an id, never a value, and the client acts on it by re-reading through a sealed call. This is the poke pattern of the A24 ADR-020 ([a24-context#506](https://github.com/skyengpro/a24-context/pull/506)).
+- **Worst case of a forged stream:** extra sealed re-reads, or missed pokes until the next re-read. It can never produce a wrong value, because no value is taken from a frame.
+- **Confidentiality** relies on TLS alone. Nothing here encrypts the stream.
+- **Model feeds** carry rows, so a forged feed would put wrong values in front of the application. That is why they are refused for unsigned frames.
+
+An application that cannot meet the hints-only rule must not use `@frames(unsigned)`.
+
+### Deferred
+
+Signed frames, and a `ready` frame sealed and bound to the request digest, are deferred to [#1020](https://github.com/cratestack/cratestack/issues/1020), with `chain` in [#1008](https://github.com/cratestack/cratestack/issues/1008). The Phasing row "Signed subscription binding" (P3) is unchanged and still open.
