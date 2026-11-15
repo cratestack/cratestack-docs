@@ -443,7 +443,7 @@ the PII-safe error message contract.
 
 ## Storage names: `@@map` and `@map`
 
-*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` on a model and `@map("<column>")` on a stored scalar field set the **SQL
+*(since 0.20.1, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` on a model and `@map("<column>")` on a stored scalar field set the **SQL
 name** only. Use them to put a schema on a database whose tables or columns were named before
 CrateStack, for example a singular `bank` table.
 
@@ -602,7 +602,7 @@ Only models and views take `@@` attributes, each from its own list, spelled exac
 argument list exactly when the name takes one and nothing after the closing `)`:
 
 - **model:** `@@allow`, `@@deny`, `@@emit`, `@@paged`, `@@audit`, `@@soft_delete`, `@@retain`,
-  `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal`, `@@rename`, `@@map` *(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))* (and `@@mcp`)
+  `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal`, `@@rename`, `@@map` *(since 0.20.1, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))* (and `@@mcp`)
 - **view:** see [Views](./views#parse-time-validation-summary)
 
 Any other `@@` name is refused, with a suggestion when one is close: a typo, `@@check(…)` (never

@@ -129,7 +129,7 @@ Each change lands in one of three buckets:
   Each declared `@@unique([...])` is tracked as its own constraint — a model carrying several reports
   each add/remove separately rather than collapsing them into one entry. Each `@@internal("action")`
   declaration is keyed independently for the same reason.
-* *(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))* `@@map("…")` on a model and `@map("…")` on a field. They set the SQL table or column name only:
+* *(since 0.20.1, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))* `@@map("…")` on a model and `@map("…")` on a field. They set the SQL table or column name only:
   routes, op ids, generated clients and the contract do not change, so adding, changing or removing
   one reports Internal and moves no digest. (`cratestack migrate diff` treats a changed storage name
   as a rename and requires `@@rename` / `@rename`; see [Migrations](../guides/migrations#renaming-a-table-or-column-with-map).)

@@ -166,7 +166,7 @@ committed snapshot reports nothing after the split. See
 
 ## Renaming a table or column with `@@map`
 
-*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` and `@map("<column>")` set the SQL name without touching routes, op ids
+*(since 0.20.1, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` and `@map("<column>")` set the SQL name without touching routes, op ids
 or clients (see [Storage names](../reference/field-attributes#storage-names-map-and-map)). Because
 the diff matches tables and columns by name, changing a storage name is refused unless you say it
 is a rename:
