@@ -48,6 +48,8 @@ cratestack generate-wiremock \
 | `--base-path` | `/api` | Prefix prepended to every stub's `urlPath` — must match the deployed server (and any generated client under test) |
 | `--check` | off | Drift-detection mode: generate in memory and diff against `--out` instead of writing; exits non-zero and lists the files that differ |
 
+To make sure the stubs come from the CLI version you pinned, and not an older `cratestack` earlier on `PATH`, set `CRATESTACK_REQUIRE_VERSION` — see [Pinning the CLI version](/tooling/cli-install#pinning-the-cli-version).
+
 This writes one file per procedure, `mappings/<procedureName>.json`, and — for a model — five files,
 `mappings/model.<ModelName>.<list|get|create|update|delete>.json` (thirteen instead of five for a
 `transport rest` model that declares `@version`: `update`/`delete` each fan out into the success file

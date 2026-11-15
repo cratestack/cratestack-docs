@@ -75,6 +75,71 @@ its checksum, and adds it to `PATH` — no Rust toolchain step needed in the job
 See the action's [README](https://github.com/cratestack/cratestack/tree/main/.github/actions/install-cratestack-cli)
 for its full inputs/outputs. Pin `@main` to a released tag or commit SHA for reproducible CI.
 
+## Pinning the CLI version
+
+*(since 0.20.0, unreleased on main, [cratestack#1372](https://github.com/cratestack/cratestack/issues/1372))*
+
+Every way of installing the CLI above puts a `cratestack` on your `PATH`, and nothing stops two of them
+coexisting. The usual case: an older `cratestack` in `~/.cargo/bin` (from an earlier `cargo install
+cratestack-cli`) sits ahead of the npm, binstall or CI-installed one you meant to use. Every command still
+runs, so `generate-dart`, `generate-typescript` and `generate-wiremock` quietly produce output from the
+wrong version, and the only symptom is generated files that drift or a schema field the old binary does not
+know.
+
+`--require-version <REQ>` closes that gap. The binary checks its own version against `REQ` before any
+subcommand runs and refuses to continue if it does not match:
+
+```bash
+cratestack --require-version 0.20.0 generate-wiremock --schema schema.cstack --out wiremock
+```
+
+The same requirement can come from the `CRATESTACK_REQUIRE_VERSION` environment variable, which is the
+better fit for CI and justfiles because it covers every `cratestack` call in the job without editing each
+one:
+
+```bash
+CRATESTACK_REQUIRE_VERSION=0.20.0 cratestack generate-wiremock --schema schema.cstack --out wiremock
+```
+
+```yaml
+# GitHub Actions: pin once for the whole job
+env:
+  CRATESTACK_REQUIRE_VERSION: "0.20.0"
+steps:
+  - uses: cratestack/cratestack/.github/actions/install-cratestack-cli@main
+    with:
+      version: "0.20.0"
+  - run: cratestack generate-wiremock --schema schema.cstack --out wiremock --check
+```
+
+```make
+# justfile
+export CRATESTACK_REQUIRE_VERSION := "0.20.0"
+
+wiremock:
+    cratestack generate-wiremock --schema schema.cstack --out wiremock
+```
+
+### Semantics
+
+| Rule | Behaviour |
+| --- | --- |
+| Syntax | Cargo's version requirement syntax: `=0.20.0`, `>=0.19.6, <0.21`, `~0.20`. |
+| A bare version | `0.20.0` means exactly `=0.20.0`. This differs from Cargo, where a bare version in `Cargo.toml` is a caret requirement (`^0.20.0`). |
+| Precedence | The flag wins over the environment variable. |
+| Empty values | An empty or blank value counts as unset, so an empty `--require-version` falls through to `CRATESTACK_REQUIRE_VERSION`, and with neither set the check is skipped. |
+| Mismatch or unparsable `REQ` | Prints `Error: …` on stderr naming the running version, the requirement and the path of the executable, with a hint that another install may be earlier on `PATH`. Exits with code `1`. |
+| `--version`, `--help` | Unaffected. |
+
+When you hit the error, the executable path in the message tells you which binary ran. Remove the stale
+one (`cargo uninstall cratestack-cli` for a copy in `~/.cargo/bin`) or put the install you want earlier on
+`PATH`. The check also works through `npx @cratestack/cli`, because the npm shim passes its arguments and
+environment straight to the native binary.
+
+A binary older than 0.20.0 does not know the flag, and ignores the environment variable, so it cannot
+enforce a pin. If `cratestack --version` reports a version before 0.20.0, the pin protects nothing until
+you upgrade.
+
 ## Supported platforms
 
 | OS      | Architecture | Target triple                 |
