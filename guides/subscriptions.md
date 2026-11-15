@@ -313,6 +313,27 @@ the socket sends instead. Until you set it, `auto` stays on SSE.
 feed, a topic behind a subscription procedure, and all three bindings. Its test proves in Chromium
 that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket with UDP blocked.
 
+### Bounding one SSE event
+
+*(unreleased on main, [cratestack#1379](https://github.com/cratestack/cratestack/issues/1379))*
+
+An SSE reader buffers bytes until it sees the blank line that ends an event. A server (or an
+intermediary) that never sends it would grow the client's memory until the process dies, so every
+client caps one event at **1 MiB**. Rust counts the raw bytes received, line endings and the blank line included; TypeScript and Dart count UTF-8 bytes after `\r\n` is normalized to `\n`, so they may accept up to one more byte per line (the bound is still linear in the cap). A longer event ends the
+subscription with a typed error, and the connection is dropped. Nothing after it is delivered. The
+cap counts the partial `data:` lines and the unfinished line too, so one endless line with no
+newline is refused, not only many lines.
+
+| Client | Set it | The error |
+| --- | --- | --- |
+| Rust | `ClientConfig::new(base).with_max_sse_event_bytes(n)` | `ClientError::EventTooLarge { limit }` |
+| TypeScript | `subscriptions: { maxEventBytes: n }` | `CratestackEventTooLargeError`, code `event_too_large`, `.limit` |
+| Dart | `CratestackSubscriptionOptions(maxEventBytes: n)` | `CratestackEventTooLargeException`, code `event_too_large`, `.limit` |
+
+Raise the cap only if one frame can legitimately be larger than 1 MiB. The WebSocket and
+WebTransport bindings are not governed by this setting. A refused event is not retried by the client, and `Auto`
+does not fall back to another binding on it. A `ready` event over the cap refuses the open with the same typed error. On the Rust RPC client it is `RpcClientError::EventTooLarge { limit }` (not `InvalidResponse`). In the Dart `--preset riverpod` stream providers, Riverpod 3 retries a failed provider (up to 10 times, with backoff) unless the error is an `Error` or `ProviderException`; the generated providers pass `retry: cratestackSubscriptionRetry`, which defers to Riverpod's `ProviderContainer.defaultRetry` and opts `CratestackEventTooLargeException` out of that retry (it reaches the provider as an `AsyncError` at once; `ref.invalidate` retries by hand) and keeps the default for every other error.
+
 ## Deploying WebTransport
 
 WebTransport is HTTP/3, so it is UDP, normally on the same port number as HTTPS, in the same
