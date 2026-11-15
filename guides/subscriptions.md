@@ -319,7 +319,7 @@ that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket wi
 
 An SSE reader buffers bytes until it sees the blank line that ends an event. A server (or an
 intermediary) that never sends it would grow the client's memory until the process dies, so every
-generated client caps one event at **1 MiB, delimiter included**. A longer event ends the
+client caps one event at **1 MiB**. Rust counts the raw bytes received, line endings and the blank line included; TypeScript and Dart count UTF-8 bytes after `\r\n` is normalized to `\n`, so they may accept up to one more byte per line (the bound is still linear in the cap). A longer event ends the
 subscription with a typed error, and the connection is dropped. Nothing after it is delivered. The
 cap counts the partial `data:` lines and the unfinished line too, so one endless line with no
 newline is refused, not only many lines.
@@ -331,8 +331,8 @@ newline is refused, not only many lines.
 | Dart | `CratestackSubscriptionOptions(maxEventBytes: n)` | `CratestackEventTooLargeException`, code `event_too_large`, `.limit` |
 
 Raise the cap only if one frame can legitimately be larger than 1 MiB. The WebSocket and
-WebTransport bindings are not governed by this setting. A refused event is not retried, and `Auto`
-does not fall back to another binding on it.
+WebTransport bindings are not governed by this setting. A refused event is not retried by the client, and `Auto`
+does not fall back to another binding on it. A `ready` event over the cap refuses the open with the same typed error. On the Rust RPC client it is `RpcClientError::EventTooLarge { limit }` (not `InvalidResponse`). In the Dart `--preset riverpod` stream providers, Riverpod 3 retries a failed provider (up to 10 times, with backoff) unless the error is an `Error` or `ProviderException`; the generated providers pass `retry: cratestackSubscriptionRetry`, which opts `CratestackEventTooLargeException` out of that retry (it reaches the provider as an `AsyncError` at once; `ref.invalidate` retries by hand) and keeps the default for every other error.
 
 ## Deploying WebTransport
 
