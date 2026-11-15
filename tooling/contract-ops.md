@@ -96,9 +96,14 @@ always false, or when there is no `@allow` at all. It is never `true` for an op 
 with the same code, in the same order, quirks included. In particular set membership is read before comparison, so
 `label in ["== auth().id", "public"]` is a set-membership test (maybe true), not a comparison with `auth()`. How
 a string literal holding quotes, backslashes, `&&`, `||`, `==`, `!=` or parentheses is read is whatever the
-generated server does, unchanged; some such spellings are compile errors, and a term the macros would refuse
-is listed in `unanalysed`. The edge cases are tracked in
+generated server does, unchanged. The edge cases are tracked in
 [cratestack#1392](https://github.com/cratestack/cratestack/issues/1392); avoid writing policies that depend on them.
+
+For a schema that compiles, the verdict is the server's behaviour. For a schema the macros refuse (a policy that
+names an unknown field, for instance) no server exists, so the verdict is not meaningful: `contract ops` parses
+and semantically checks the schema but does not run the macros, and a term the macros would refuse may still get a
+verdict (`auth() ==null` and `items.userId == auth().id` do). Run `cratestack check` first, and treat the output
+as meaningful only for a schema that builds.
 
 Rules combine like this: `&&` is always false if **any** branch is, `||` only if **every** branch is, and several
 `@allow` lines are alternatives. `@deny` is not consulted: it can only refuse, so it cannot make an op callable.
