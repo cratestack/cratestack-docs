@@ -199,6 +199,27 @@ and run [`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-wit
 Index and foreign-key names are generated from the mapped names, so the first diff after a baseline
 may drop and re-add an index whose live name differs; review it.
 
+`migrate baseline` stamps which model and field each table and column stores onto the snapshot, so a
+`@@map` / `@map` changed after the baseline is refused the same way (`TableStorageNameChanged` /
+`ColumnStorageNameChanged`). Where a snapshot records no such identity (a baseline whose table name
+differed from the schema's, or one from before this was recorded), a mapped model or column that is
+new while an unrecorded table or column disappears is refused as
+`TableStorageNameUnrecorded` / `ColumnStorageNameUnrecorded`:
+
+```text
+model `Bank` is stored in table `bank` (`@@map`), which the previous snapshot does not have, and a
+table the snapshot has is gone from the schema. That snapshot does not record which model each
+table stores, so this cannot be told from a `@@map` change, and a changed name would drop the old
+table and create an empty `bank`. If it is one of the tables that is gone, add <@@rename(from = "…")>
+to the model; to keep it, restore the old `@@map`; to drop and create deliberately, do it in two
+migrations.
+```
+
+The column form reads the same (`table `bank` (model `Bank`): field `bic` is stored in column
+`bic_code` (`@map`), which the previous snapshot does not have…`) and names the `@rename(from = "…")`
+to add. This has a known false positive: dropping one table and adding a differently named mapped
+model in the same diff is refused, so do it in two migrations.
+
 
 ## Table naming, pluralization, and `@@rename`
 

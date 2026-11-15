@@ -469,12 +469,24 @@ Internal.
 
 **Name grammar.** Exactly one double-quoted argument, `@@map("bank")`, matching `^[a-z_][a-z0-9_]*$`
 and at most 63 bytes. No `.` (no schema qualifier), no quoting, no PostgreSQL or SQLite reserved
-word (`"user"` and `"order"` are refused: generated SQL does not quote names), and a table may not
-start with `cratestack_`, `sqlite_` or `pg_`. One `@@map` per model and one `@map` per field.
+word (`"user"` and `"order"` are refused: generated SQL does not quote names; the list includes
+`true`, `false`, `values` and `last`), and a table may not start with `cratestack_`, `sqlite_` or
+`pg_`. A column may not be a PostgreSQL system column either: `xmin`, `xmax`, `cmin`, `cmax`, `ctid`,
+`oid` or `tableoid`, which every table already has. One `@@map` per model and one `@map` per field.
 
 **Uniqueness.** Final table names are unique across models and views, so `@@map("deposits")` beside
-a model `Deposit` is refused. Final column names are unique within a model, counting names derived
-from other fields and the `deleted_at` column that `@@soft_delete` adds.
+a model `Deposit` is refused. Final column names are unique among a model's *stored* fields; relation,
+model-typed and `@computed` fields have no column and are not compared, so `ownerId Int @map("owner")`
+may sit beside `owner User`. The `deleted_at` column that `@@soft_delete` adds counts. The separate
+check on generated identifiers (the snake_case of every field name) is unchanged by `@map`, so
+`fooBar` beside `foo_bar @map("other")` is still refused.
+
+**Soft delete.** On a `@@soft_delete` model, no field may be mapped to `deleted_at`, and the
+`deletedAt` field may not carry `@map`: the generated SQL reads and writes `deleted_at` by that name.
+
+**Embedded caveat.** `include_embedded_schema!` has no migrate step. Adding or changing `@@map` on a
+device creates a new empty table and orphans the old rows; adding `@map` to an existing column
+errors. Re-sync or wipe an embedded cache when a mapping changes.
 
 **Where it is allowed.** On models, and on stored scalar fields of models and mixins. It is refused
 on relation fields (including to-many back-references), `@computed` fields, fields of a `view`,
@@ -488,7 +500,8 @@ the marker would rename nothing.
 storage name unless the model carries `@@rename(from = "<old_table>")` (or the field
 `@rename(from = "<old_column>")`), so it never silently becomes a drop and a create. To adopt an
 existing database, write the `@@map` / `@map` markers and run
-[`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-with-different-table-names). See
+[`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-with-different-table-names), which
+records the mapping so a later change is refused too. See
 [Migrations](../guides/migrations#renaming-a-table-or-column-with-map).
 
 Audit redaction follows the mapping: a `@pii` or `@sensitive` field with `@map` is redacted in the

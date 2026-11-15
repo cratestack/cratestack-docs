@@ -96,7 +96,11 @@ model Bank {
 ```
 
 Then run `migrate baseline` as below. Baseline records the introspected database, so the snapshot
-holds `bank` and `bic_code` and the follow-up `migrate diff` reports nothing. Routes, op ids and
+holds `bank` and `bic_code` and the follow-up `migrate diff` reports nothing. It also records, from the
+schema, which model and field each matching table and column stores (the baseline checksum is
+unchanged), so a `@@map` / `@map` you change later is refused as `TableStorageNameChanged` /
+`ColumnStorageNameChanged` instead of dropping data. The drift report still shows a name the database
+and schema disagree on; it reports, it does not refuse. Routes, op ids and
 clients are unaffected by the mapping. Index and foreign-key names are generated from the mapped
 names; if the live ones differ, the first diff may drop and re-add them.
 
