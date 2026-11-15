@@ -23,7 +23,7 @@ cratestack generate-dart \
 | Flag | Notes |
 |---|---|
 | `--preset fespalier` | Selects the preset. REST and RPC schemas are both supported. |
-| `--fespalier-ref <REF>` | The git tag, branch or commit of `github.com/fespalier/fespalier` that the generated pubspec pins `fespalier_transport` at (and, *(since 0.19.7, unreleased on main)*, `fespalier_auth`, `fespalier_keypair` and `fespalier_sign_keypair` when the schema uses `@device_auth`). Defaults to `v0.21.0`, the fespalier release this CrateStack targets. An error with any other preset, or if the value is empty or holds whitespace. |
+| `--fespalier-ref <REF>` | The git tag, branch or commit of `github.com/fespalier/fespalier` that the generated pubspec pins `fespalier_transport` at (and, *(since 0.19.7)*, `fespalier_auth`, `fespalier_keypair` and `fespalier_sign_keypair` when the schema uses `@device_auth`). Defaults to `v0.21.0`, the fespalier release this CrateStack targets. An error with any other preset, or if the value is empty or holds whitespace. |
 
 ## What is different from `riverpod`
 
@@ -142,7 +142,7 @@ Its README has the sequence and state diagrams for enrolment, renewal and sign-i
 
 ## Device ceremonies (`@device_auth`)
 
-*(Since 0.19.7, unreleased on main, [cratestack#1303](https://github.com/cratestack/cratestack/issues/1303).)* A schema that marks the device-enrolment procedures with `@device_auth` gets `lib/src/device_auth_server.dart`, exported from the library: `<Prefix>DeviceAuthServer implements DeviceAuthServer` (`package:fespalier_sign_keypair`) over the generated client, so an app no longer hand-writes that class. Only `--preset fespalier` reads the marker. The `default` and `riverpod` presets, the TypeScript, WireMock and Rust clients and the macros (server, client and embedded) ignore it, and their output is byte-identical with and without it. MCP is not affected.
+*(Since 0.19.7, [cratestack#1303](https://github.com/cratestack/cratestack/issues/1303).)* A schema that marks the device-enrolment procedures with `@device_auth` gets `lib/src/device_auth_server.dart`, exported from the library: `<Prefix>DeviceAuthServer implements DeviceAuthServer` (`package:fespalier_sign_keypair`) over the generated client, so an app no longer hand-writes that class. Only `--preset fespalier` reads the marker. The `default` and `riverpod` presets, the TypeScript, WireMock and Rust clients and the macros (server, client and embedded) ignore it, and their output is byte-identical with and without it. MCP is not affected.
 
 ### The marker and its roles
 
@@ -256,7 +256,7 @@ Every parse error points at the marker line: an unknown role or key, two markers
 
 - On 0.16.0–0.19.5, a generated call could not hand the transport chain a per-call attribute ([cratestack#1207](https://github.com/cratestack/cratestack/issues/1207)); *(since 0.19.6)* `CratestackCallOptions.extra` and `CratestackRpcCallOptions.extra` now populate `CratestackHttpRequest.extra`, which `CratestackFespalierTransport` forwards as `TransportRequest.attributes`.
 - On 0.17.0 and earlier, an `AuthProvider` refusal cannot carry a machine-readable reason in its body, so a client cannot tell "renew the attestation" from "wipe the keys" by a body member. *(Since 0.17.1, [cratestack#1208](https://github.com/cratestack/cratestack/issues/1208).)* `AuthRefusal` adds such members next to `code` and `message` (see [Refusing a request](/guides/auth-provider#refusing-a-request)). A fespalier `RequestAuthenticator` reads them from the raw response, before the generated client decodes it. The generated client types them too *(since 0.17.1, [cratestack#1243](https://github.com/cratestack/cratestack/issues/1243))*: `CratestackRestException` and `CratestackRpcException` both expose `code`, `message`, `details`, `extra` (every other member) and `challenges` (the `WWW-Authenticate` value), and `RpcErrorBody.extra` no longer drops a member. See [Reading a refusal in a generated client](/guides/auth-provider#reading-a-refusal-in-a-generated-client). A step-up refusal is typed as `stepUp` (a `StepUpRequired`) on both exceptions, and `retryAfterStepUp` sends a call again at most once after a re-proof *(since 0.17.1, [cratestack#1244](https://github.com/cratestack/cratestack/issues/1244))*, so a fespalier session can map it; see [A step-up refusal in a generated client](/guides/auth-provider#a-step-up-refusal-in-a-generated-client).
-- *(Since 0.19.7, unreleased on main, [cratestack#1303](https://github.com/cratestack/cratestack/issues/1303).)* Each generated device-auth call runs in a `TransportZone` with an abort trigger that never fires. This is a workaround for a suspected, unconfirmed `fespalier_auth` issue (a page leaving might abort a renewal shared by every waiting request); it is documented in the generated code.
+- *(Since 0.19.7, [cratestack#1303](https://github.com/cratestack/cratestack/issues/1303).)* Each generated device-auth call runs in a `TransportZone` with an abort trigger that never fires. This is a workaround for a suspected, unconfirmed `fespalier_auth` issue (a page leaving might abort a renewal shared by every waiting request); it is documented in the generated code.
 
 ## See also
 
