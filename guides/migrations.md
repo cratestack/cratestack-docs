@@ -164,6 +164,63 @@ schema equals the snapshot of the same declarations in one file. `cratestack mig
 committed snapshot reports nothing after the split. See
 [Multi-file Schemas](../reference/multi-file-schemas#splitting-changes-nothing).
 
+## Renaming a table or column with `@@map`
+
+*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` and `@map("<column>")` set the SQL name without touching routes, op ids
+or clients (see [Storage names](../reference/field-attributes#storage-names-map-and-map)). Because
+the diff matches tables and columns by name, changing a storage name is refused unless you say it
+is a rename:
+
+```cstack
+model Bank {
+  code String @id
+  bic  String @map("bic_code") @rename(from = "bic")
+
+  @@map("bank")
+  @@rename(from = "banks")
+}
+```
+
+This generates `ALTER TABLE banks RENAME TO bank` and `ALTER TABLE bank RENAME COLUMN bic TO bic_code`.
+Without the `@@rename` / `@rename`, `migrate diff` refuses rather than drop and recreate. It names the exact marker to add:
+
+```text
+model `Bank`: its table changed from `banks` to `bank` (`@@map`), and a changed name would drop
+`banks` and create an empty `bank`. To rename the table, add `@@rename(from = "banks")` to the
+model; to keep it, restore the old `@@map`. To adopt a database that already has `bank`, run
+`cratestack migrate baseline` after writing the `@@map`.
+```
+
+The column refusal has the same form (`field `bic` is stored in column `bic_code`, not `bic` (`@map`)…`). Adding `@@map` to a model that already has a
+table is such a change too. Remove the `@@rename` marker once the migration has shipped.
+
+**To adopt an existing database**, do not rename its tables: write `@@map` / `@map` to match them
+and run [`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-with-different-table-names).
+Index and foreign-key names are generated from the mapped names, so the first diff after a baseline
+may drop and re-add an index whose live name differs; review it.
+
+`migrate baseline` stamps which model and field each table and column stores onto the snapshot, so a
+`@@map` / `@map` changed after the baseline is refused the same way (`TableStorageNameChanged` /
+`ColumnStorageNameChanged`). Where a snapshot records no such identity (a baseline whose table name
+differed from the schema's, or one from before this was recorded), a mapped model or column that is
+new while an unrecorded table or column disappears is refused as
+`TableStorageNameUnrecorded` / `ColumnStorageNameUnrecorded`:
+
+```text
+model `Bank` is stored in table `bank` (`@@map`), which the previous snapshot does not have, and a
+table the snapshot has is gone from the schema. That snapshot does not record which model each
+table stores, so this cannot be told from a `@@map` change, and a changed name would drop the old
+table and create an empty `bank`. If it is one of the tables that is gone, add <@@rename(from = "…")>
+to the model; to keep it, restore the old `@@map`; to drop and create deliberately, do it in two
+migrations.
+```
+
+The column form reads the same (`table `bank` (model `Bank`): field `bic` is stored in column
+`bic_code` (`@map`), which the previous snapshot does not have…`) and names the `@rename(from = "…")`
+to add. This has a known false positive: dropping one table and adding a differently named mapped
+model in the same diff is refused, so do it in two migrations.
+
+
 ## Table naming, pluralization, and `@@rename`
 
 `cratestack migrate diff` matches tables **by name only** — it never

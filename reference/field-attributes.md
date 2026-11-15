@@ -441,6 +441,72 @@ toward silently leaving a stale one in place.
 See [validators](../guides/validators) for the full surface, including
 the PII-safe error message contract.
 
+## Storage names: `@@map` and `@map`
+
+*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` on a model and `@map("<column>")` on a stored scalar field set the **SQL
+name** only. Use them to put a schema on a database whose tables or columns were named before
+CrateStack, for example a singular `bank` table.
+
+```cstack
+model Bank {
+  code String @id
+  bic  String @map("bic_code")
+
+  @@map("bank")
+}
+```
+
+`Bank` is stored in table `bank` (not the derived `banks`), and `bic` in column `bic_code`. Without
+the markers the table is the pluralized snake_case of the model name and the column is the
+snake_case of the field name.
+
+**Nothing outside the database changes.** REST paths, RPC op ids (`model.Bank.list`), client
+accessors, generated Rust, Dart and TypeScript identifiers and the JSON/CBOR field names all come
+from the model and field names, so a mapped schema generates byte-identical clients. The mapping is
+not part of the client contract: op digests and contract locks do not move, and
+[`cratestack diff`](../tooling/schema-diff#internal-only) reports adding, changing or removing one as
+Internal.
+
+**Name grammar.** Exactly one double-quoted argument, `@@map("bank")`, matching `^[a-z_][a-z0-9_]*$`
+and at most 63 bytes. No `.` (no schema qualifier), no quoting, no PostgreSQL or SQLite reserved
+word (`"user"` and `"order"` are refused: generated SQL does not quote names; the list includes
+`true`, `false`, `values` and `last`), and a table may not start with `cratestack_`, `sqlite_` or
+`pg_`. A column may not be a PostgreSQL system column either: `xmin`, `xmax`, `cmin`, `cmax`, `ctid`,
+`oid` or `tableoid`, which every table already has. One `@@map` per model and one `@map` per field.
+
+**Uniqueness.** Final table names are unique across models and views, so `@@map("deposits")` beside
+a model `Deposit` is refused. Final column names are unique among a model's *stored* fields; relation,
+model-typed and `@computed` fields have no column and are not compared, so `ownerId Int @map("owner")`
+may sit beside `owner User`. The `deleted_at` column that `@@soft_delete` adds counts. The separate
+check on generated identifiers (the snake_case of every field name) is unchanged by `@map`, so
+`fooBar` beside `foo_bar @map("other")` is still refused.
+
+**Soft delete.** On a `@@soft_delete` model, no field may be mapped to `deleted_at`, and the
+`deletedAt` field may not carry `@map`: the generated SQL reads and writes `deleted_at` by that name.
+
+**Embedded caveat.** `include_embedded_schema!` has no migrate step. Adding or changing `@@map` on a
+device creates a new empty table and orphans the old rows; adding `@map` to an existing column
+errors. Re-sync or wipe an embedded cache when a mapping changes.
+
+**Where it is allowed.** On models, and on stored scalar fields of models and mixins. It is refused
+on relation fields (including to-many back-references), `@computed` fields, fields of a `view`,
+`type` or `auth` block, and `@@map` on a view (views take their own closed attribute list): in each
+the marker would rename nothing.
+
+**Hand-written SQL uses the mapped names.** A view's `@@server_sql`, query blocks and migration
+`up.pre.sql` / `up.post.sql` files run as written, so they must say `bank` and `bic_code`.
+
+**Changing a mapping is a rename.** `cratestack migrate diff` refuses a changed table or column
+storage name unless the model carries `@@rename(from = "<old_table>")` (or the field
+`@rename(from = "<old_column>")`), so it never silently becomes a drop and a create. To adopt an
+existing database, write the `@@map` / `@map` markers and run
+[`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-with-different-table-names), which
+records the mapping so a later change is refused too. See
+[Migrations](../guides/migrations#renaming-a-table-or-column-with-map).
+
+Audit redaction follows the mapping: a `@pii` or `@sensitive` field with `@map` is redacted in the
+audit row, and a mapped `@id` is recorded in it.
+
 ## Type modifiers
 
 | Suffix | Meaning              | Example                  |
@@ -536,11 +602,12 @@ Only models and views take `@@` attributes, each from its own list, spelled exac
 argument list exactly when the name takes one and nothing after the closing `)`:
 
 - **model:** `@@allow`, `@@deny`, `@@emit`, `@@paged`, `@@audit`, `@@soft_delete`, `@@retain`,
-  `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal`, `@@rename` (and `@@mcp`)
+  `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal`, `@@rename`, `@@map` *(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))* (and `@@mcp`)
 - **view:** see [Views](./views#parse-time-validation-summary)
 
-Any other `@@` name is refused, with a suggestion when one is close: a typo, a Prisma habit such
-as `@@map(…)`, `@@check(…)` (never implemented), or a view-only attribute on a model. So are
+Any other `@@` name is refused, with a suggestion when one is close: a typo, `@@check(…)` (never
+implemented), or a view-only attribute on a model. (`@@map(…)`, a Prisma habit, was refused through
+0.20.0; it is now a model attribute, see [Storage names](#storage-names-map-and-map).) So are
 whitespace before `(`, an empty argument list, and two block attributes on one line
 (`@@audit @@soft_delete`). The `@@allow` / `@@deny` spelling rules are in the
 [auth support matrix](./auth-support-matrix#policy-attribute-spelling).
