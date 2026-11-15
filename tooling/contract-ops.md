@@ -92,11 +92,13 @@ always false, or when there is no `@allow` at all. It is never `true` for an op 
 | A comparison of inputs or fields, an `in [...]` list, a bare boolean field | maybe true |
 | Anything the analysis does not understand | maybe true, and listed in `unanalysed` |
 
-A string literal is a value, never an operator: `label in ["== auth().id", "public"]` is a set-membership
-test (maybe true), not a comparison with `auth()`, and `x != "a == b"` is one `!=`. The analysis and the
-macros read a term with the same code, which looks for set membership before a comparison and ignores `==`,
-`!=`, `&&`, `||` and parentheses inside `"…"` or `'…'` (a backslash escapes a quote). A literal such as
-`@allow(x == "a||b")` therefore compiles, where it used to be rejected as two malformed terms.
+`contract ops` reads every policy exactly as the generated server does: the analysis and the macros read a term
+with the same code, in the same order, quirks included. In particular set membership is read before comparison, so
+`label in ["== auth().id", "public"]` is a set-membership test (maybe true), not a comparison with `auth()`. How
+a string literal holding quotes, backslashes, `&&`, `||`, `==`, `!=` or parentheses is read is whatever the
+generated server does, unchanged; some such spellings are compile errors, and a term the macros would refuse
+is listed in `unanalysed`. The edge cases are tracked in
+[cratestack#1392](https://github.com/cratestack/cratestack/issues/1392); avoid writing policies that depend on them.
 
 Rules combine like this: `&&` is always false if **any** branch is, `||` only if **every** branch is, and several
 `@allow` lines are alternatives. `@deny` is not consulted: it can only refuse, so it cannot make an op callable.
