@@ -65,26 +65,36 @@ let config = cratestack::PgPoolConfig::from_url(&std::env::var("DATABASE_URL")?)
     .acquire_timeout(std::time::Duration::from_secs(5))
     .test_before_acquire(true)
     .session_setting("statement_timeout", "30000")
-    .session_setting("lock_timeout", "10000");
+    .session_setting("lock_timeout", "10000")
+    .application_name("my-service");
 let pool = config.connect_lazy()?;      // or `config.connect().await?` to open one connection now
 config.verify_settings(&pool).await?;   // fail start-up if the server did not apply them
 ```
 
 Session settings are sent as startup options after any `options=` in the URL, so they win over
-a URL that sets the same name. `verify_settings` compares each value as the server renders it
-(`30000` and `30s` agree) and returns `Unavailable`, naming the setting, when they differ,
-which catches a pooler such as PgBouncer in transaction mode that drops startup options.
+a URL that sets the same name. Five names are refused with `BadRequest` (any case): `DateStyle`,
+`client_encoding`, `TimeZone`, `extra_float_digits` and `application_name`, because sqlx sends them
+itself as startup parameters, which the server applies after `-c` options. Use
+`.application_name(&str)` for the last one. `verify_settings` compares each value as the server renders it
+(`30000` and `30s` agree) and returns `Unavailable` ("the server reports X for Y, expected Z") when they differ,
+which catches a pooler such as PgBouncer in transaction mode that drops startup options (or a
+server/role/database-level override). An unset custom setting is a mismatch, and an unknown name,
+or a setting that cannot be changed on a live connection (`shared_buffers`, `log_disconnections`), is `BadRequest`.
 Only `postgres://` URLs are accepted; a `host=... dbname=...` DSN is refused with `BadRequest`.
 sqlx has no separate connect timeout, so `acquire_timeout` bounds the wait for a connection and
-the time to open one. `ServiceConfig::state()` is built on the same type (5 connections, lazy).
+the time to open one. `connect().await` splits its failures: `BadRequest` for a configuration
+fault (unknown database or role, an unknown setting or bad value, a TLS failure, a bad option;
+the message never echoes the URL) and `Unavailable` when the database cannot be reached (I/O, pool
+timeout or closed). `ServiceConfig::state()` is built on the same type (5 connections, lazy; it now also rejects non-`postgres://` schemes and trims whitespace).
 
-Connection-class sqlx errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed`, I/O and TLS) now
-surface as `Unavailable` (HTTP 503) rather than `Database` (500).
+Connection-class sqlx errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed` and I/O) now
+surface as `Unavailable` (HTTP 503) rather than `Database` (500); TLS failures stay `Database`, as a permanent fault.
 
 **Exception:** if you're using `cratestack-service` (the env-driven
 service-bootstrap facade), it builds the pool for you —
-`ServiceConfig::state()` (`crates/cratestack-service/src/config.rs:130-139`)
-opens a lazily-connecting pool via `PgPoolOptions::new().max_connections(5).connect_lazy_with(options)`,
+`ServiceConfig::state()` (in `cratestack-service`'s `config.rs`)
+opens a lazily-connecting pool of 5 (built with `PgPoolConfig` on current main,
+`PgPoolOptions::new().max_connections(5).connect_lazy_with(options)` before that),
 and `run_migrations()` (`crates/cratestack-service/src/migrations.rs:66-73`)
 opens a separate one-off, single-connection pool
 (`PgPoolOptions::new().max_connections(1).connect(database_url)`) purely to
