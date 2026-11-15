@@ -830,7 +830,7 @@ still sends unsigned requests; sealing is a call you make around its transport.
 |---|---|---|
 | `HmacSigner(CoseAlg.hmac256x64, secret)` (or `hmac256x256`) | `COSE_Mac0`, with a secret of at least 32 random bytes | service to service credentials |
 | `Ed25519Signer.fromSeed(seed)` | `COSE_Sign1`, from a 32-byte seed | tests and service credentials |
-| `ExternalSigner.esp256(publicKey:, sign:, timeout:)` | `COSE_Sign1` (ESP256); the key stays in the Android Keystore, the Secure Enclave or WebCrypto | a user's device *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `ExternalSigner.esp256(publicKey:, sign:, timeout:)` | `COSE_Sign1` (ESP256); the key stays in the Android Keystore, the Secure Enclave or WebCrypto | a user's device *(Since 0.19.8, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
 
 `CoseSigner` is sealed and gained this third subtype, so an exhaustive `switch` over it needs an `ExternalSigner()` arm.
 
@@ -842,7 +842,7 @@ envelope, pin the server with `CoseServerKey.hmac(alg, secret)`; for Sign1 use
 
 #### Keystore keys (`ExternalSigner`)
 
-*(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* A key that must never enter the process signs through a callback. The envelope is given the key's **public**
+*(Since 0.19.8, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* A key that must never enter the process signs through a callback. The envelope is given the key's **public**
 half and a function that signs; for each request the function receives the complete to-be-signed bytes and
 returns an ECDSA signature over the SHA-256 of exactly those bytes. Everything else is `cratestack-cose`'s:
 the CBOR, the binding, DER to raw `r || s`, low-`s`, and a check that the signature verifies under your public
@@ -891,9 +891,9 @@ the caught exception is exhaustive:
 |---|---|
 | `CoseRejected` | any failed verification: a tampered body, a wrong key, a response to another request, a stale or replayed message. It has no message and is the same for every cause, so the client is no oracle for which check failed |
 | `CoseMisuse` | local misuse: a key of the wrong length, an empty audience, a binding of the wrong shape, a public key that is not a P-256 point or SPKI (off the curve, another curve, trailing bytes) at `ClientEnvelope.create`, or a signature from an `ExternalSigner` that is not a valid one by its key. The message says what |
-| `CoseSignerCancelled` | the callback returned `SignOutcome.cancelled()`: the person dismissed the keystore's prompt. Empty message *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
-| `CoseSignerTimedOut` | the callback returned `SignOutcome.timedOut()`, or exceeded `ExternalSigner.timeout`. Empty message *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
-| `CoseSignerFailed` | the callback returned `SignOutcome.failed(message)` (the message is yours), or threw (the message names only the exception type) *(Since 0.19.8, unreleased on main, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `CoseSignerCancelled` | the callback returned `SignOutcome.cancelled()`: the person dismissed the keystore's prompt. Empty message *(Since 0.19.8, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `CoseSignerTimedOut` | the callback returned `SignOutcome.timedOut()`, or exceeded `ExternalSigner.timeout`. Empty message *(Since 0.19.8, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
+| `CoseSignerFailed` | the callback returned `SignOutcome.failed(message)` (the message is yours), or threw (the message names only the exception type) *(Since 0.19.8, [cratestack#1151](https://github.com/cratestack/cratestack/issues/1151).)* |
 
 The in-memory signers never throw the three signer exceptions.
 
