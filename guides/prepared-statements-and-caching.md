@@ -75,17 +75,19 @@ Session settings are sent as startup options after any `options=` in the URL, so
 a URL that sets the same name. Five names are refused with `BadRequest` (any case): `DateStyle`,
 `client_encoding`, `TimeZone`, `extra_float_digits` and `application_name`, because sqlx sends them
 itself as startup parameters, which the server applies after `-c` options. Use
-`.application_name(&str)` for the last one. `verify_settings` compares each value as the server renders it
+`.application_name(&str)` for the last one. The same five names inside the URL's own `options=`
+(`-c TimeZone=UTC`) are refused by `from_url` too, since sqlx's startup parameter would silently
+override them; an `options` value ending in an odd number of backslashes is refused as well. `verify_settings` compares each value as the server renders it
 (`30000` and `30s` agree) and returns `Unavailable` ("the server reports X for Y, expected Z") when they differ,
-which catches a pooler such as PgBouncer in transaction mode that drops startup options (or a
-server/role/database-level override). An unset custom setting is a mismatch, and an unknown name,
+which catches a pooler such as PgBouncer in transaction mode that drops or rewrites startup options
+(or a server that ignores them, or a value the server normalises differently). An unset custom setting is a mismatch, and an unknown name,
 or a setting that cannot be changed on a live connection (`shared_buffers`, `log_disconnections`), is `BadRequest`.
 Only `postgres://` URLs are accepted; a `host=... dbname=...` DSN is refused with `BadRequest`.
 sqlx has no separate connect timeout, so `acquire_timeout` bounds the wait for a connection and
 the time to open one. `connect().await` splits its failures: `BadRequest` for a configuration
 fault (unknown database or role, an unknown setting or bad value, a TLS failure, a bad option;
-the message never echoes the URL) and `Unavailable` when the database cannot be reached (I/O, pool
-timeout or closed). `ServiceConfig::state()` is built on the same type (5 connections, lazy; it now also rejects non-`postgres://` schemes and trims whitespace).
+the message never echoes the URL) and `Unavailable` when the database cannot be reached or is going away (I/O, pool
+timeout or closed, SQLSTATE 57P01/57P02/57P03, class 08). `ServiceConfig::state()` is built on the same type (5 connections, lazy; it now also rejects non-`postgres://` schemes and trims whitespace).
 
 Connection-class sqlx errors (`PoolTimedOut`, `PoolClosed`, `WorkerCrashed` and I/O) now
 surface as `Unavailable` (HTTP 503) rather than `Database` (500); TLS failures stay `Database`, as a permanent fault.
