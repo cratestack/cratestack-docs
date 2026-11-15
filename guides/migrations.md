@@ -164,6 +164,34 @@ schema equals the snapshot of the same declarations in one file. `cratestack mig
 committed snapshot reports nothing after the split. See
 [Multi-file Schemas](../reference/multi-file-schemas#splitting-changes-nothing).
 
+## Renaming a table or column with `@@map`
+
+*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. `@@map("<table>")` and `@map("<column>")` set the SQL name without touching routes, op ids
+or clients (see [Storage names](../reference/field-attributes#storage-names-map-and-map)). Because
+the diff matches tables and columns by name, changing a storage name is refused unless you say it
+is a rename:
+
+```cstack
+model Bank {
+  code String @id
+  bic  String @map("bic_code") @rename(from = "bic")
+
+  @@map("bank")
+  @@rename(from = "banks")
+}
+```
+
+This generates `ALTER TABLE banks RENAME TO bank` and `ALTER TABLE bank RENAME COLUMN bic TO bic_code`.
+Without the `@@rename` / `@rename`, `migrate diff` fails with `storage name changed; add
+@@rename(from = "…")` naming the exact marker to add. Adding `@@map` to a model that already has a
+table is such a change too. Remove the `@@rename` marker once the migration has shipped.
+
+**To adopt an existing database**, do not rename its tables: write `@@map` / `@map` to match them
+and run [`migrate baseline`](../tooling/migrate-baseline#adopting-a-database-with-different-table-names).
+Index and foreign-key names are generated from the mapped names, so the first diff after a baseline
+may drop and re-add an index whose live name differs; review it.
+
+
 ## Table naming, pluralization, and `@@rename`
 
 `cratestack migrate diff` matches tables **by name only** — it never

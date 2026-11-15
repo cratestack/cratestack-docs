@@ -81,6 +81,25 @@ model Order {
 }
 ```
 
+## Adopting a database with different table names
+
+*(unreleased on main, [cratestack#1375](https://github.com/cratestack/cratestack/issues/1375))*. If the live tables do not follow CrateStack's derived names (singular `bank` instead of
+`banks`, a legacy `bic_code` column), map the schema to them instead of renaming the database:
+
+```cstack
+model Bank {
+  code String @id
+  bic  String @map("bic_code")
+
+  @@map("bank")
+}
+```
+
+Then run `migrate baseline` as below. Baseline records the introspected database, so the snapshot
+holds `bank` and `bic_code` and the follow-up `migrate diff` reports nothing. Routes, op ids and
+clients are unaffected by the mapping. Index and foreign-key names are generated from the mapped
+names; if the live ones differ, the first diff may drop and re-add them.
+
 ## Running `migrate baseline`
 
 ```bash
