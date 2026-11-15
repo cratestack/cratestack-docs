@@ -60,7 +60,7 @@ The field set is stable: later releases only add fields. Keys come out in exactl
 | `unanalysed` | Rule texts the analysis did not fully understand, and any attribute the macros' own audit would refuse (a mis-spaced `@allow (x)`, an invisible character). |
 | `contract_digest` | The same per-op digest `contract digest` prints. |
 
-Which rules decide which model verb is one table, `cratestack_policy::model_verb_policy_slots`, which the
+Which rules decide which model verb is one table, `cratestack_policy::model_verb_policy_slot`, which the
 macros generate from and this command reads, so the report cannot describe a different slot than the generated
 code consults:
 
@@ -91,6 +91,12 @@ always false, or when there is no `@allow` at all. It is never `true` for an op 
 | A comparison with an `auth()` side (`auth().<claim> == …`, `column == auth().<claim>`, `auth() == <relation>`) | always false, unless a `none` or `every` quantifier wraps it (below) |
 | A comparison of inputs or fields, an `in [...]` list, a bare boolean field | maybe true |
 | Anything the analysis does not understand | maybe true, and listed in `unanalysed` |
+
+A string literal is a value, never an operator: `label in ["== auth().id", "public"]` is a set-membership
+test (maybe true), not a comparison with `auth()`, and `x != "a == b"` is one `!=`. The analysis and the
+macros read a term with the same code, which looks for set membership before a comparison and ignores `==`,
+`!=`, `&&`, `||` and parentheses inside `"…"` or `'…'` (a backslash escapes a quote). A literal such as
+`@allow(x == "a||b")` therefore compiles, where it used to be rejected as two malformed terms.
 
 Rules combine like this: `&&` is always false if **any** branch is, `||` only if **every** branch is, and several
 `@allow` lines are alternatives. `@deny` is not consulted: it can only refuse, so it cannot make an op callable.
