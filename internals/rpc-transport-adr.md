@@ -9,6 +9,8 @@ description: Per-schema RPC generation style with HTTP unary, batch, and content
 
 Accepted. HTTP surface shipped on `main` across PRs #20–#24, slated for the next minor release.
 
+**Amended 2026-11-15 (cbor-seq subscription binding)** *(unreleased on main, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*. Subscriptions later shipped over SSE, WebSocket and WebTransport. This amendment adds a fourth binding, `application/cbor-seq` over plain HTTP. See [Amendment: the cbor-seq subscription binding](#amendment-the-cbor-seq-subscription-binding).
+
 ## Date
 
 2026-05-15
@@ -185,6 +187,43 @@ The "Batching" motivation in this ADR's Context section (doing N writes in one r
 #182 closes that loop from the client side without changing this ADR's server-side design at all. The generated TypeScript RPC client gained a composable `RpcLink` chain (`CratestackRpcClientOptions.links`, modeled on tRPC's Links / Dio's interceptor chain), and a new standalone package, `@cratestack/api`, ships `createBatchLink()` — an `RpcLink` that transparently coalesces same-tick unary calls into one `POST /rpc/batch` request. The wire shape, per-frame error isolation, and no-in-batch-dependencies rules above are all unchanged; `createBatchLink` is purely a client-side scheduler sitting in front of the same batch endpoint. See the [RPC transport guide](../guides/rpc-transport#client-middleware-the-rpclink-chain) for the full design and usage.
 
 This is TypeScript/RPC-transport only for now — the REST binding and gRPC-Web don't have an equivalent link chain, and Rust/Dart clients don't have one either.
+
+## Amendment: the cbor-seq subscription binding
+
+*(unreleased on main, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
+
+Status: accepted for implementation on 2026-11-15. Nothing here is released. The text above stays as accepted; this section appends to it.
+
+The decision above left subscriptions to their own design, which shipped as SSE, WebSocket and WebTransport (see [the subscriptions guide](../guides/subscriptions)). SSE is text, so it cannot carry binary frames without base64, and it cannot say that a stream ended cleanly. This amendment adds a binary binding over plain HTTP that has both properties. Signing a subscription stream builds on it, in [ADR 0006](./cose-envelope-adr#amendment-signed-subscription-open-with-unsigned-frames).
+
+### The binding
+
+- **Media type:** `application/cbor-seq` (RFC 8742).
+- **Item:** one CBOR `ServerFrame`, byte for byte the frame the WebTransport stream carries (design doc `subscriptions-websocket.md` §6a.3). No new frame type is introduced.
+- **Frame order:** `ready` first, then `next` for each event, ending with `err` or `end`. SSE has no explicit end, so a connection cut by a middlebox looks like a quiet stream. Here a clean close is always preceded by a terminal frame, so a stream that stops without one is detectably truncated.
+- **Keep-alive:** a CBOR `null` every 15 seconds. It is not a `ServerFrame`, and readers skip it.
+- **Open body:** CBOR. The RPC `POST` handler decodes the open by `Content-Type`.
+
+### Negotiation
+
+The binding is chosen by the request's `Accept` header and by nothing else.
+
+| `Accept` | Binding |
+|---|---|
+| `application/cbor-seq` | cbor-seq |
+| `text/event-stream` or `*/*` | SSE, unchanged, so existing clients see no difference |
+| missing | `406`, as today |
+
+### REST parity
+
+REST gains `POST` subscribe routes, `POST <procedure path>` and `POST /<plural>/$subscribe`, so the binding is not RPC-only and a browser can send a body. Descriptors and contract rows are added with them.
+
+### Bounds
+
+- **Admission:** a per-principal and a per-connection cap, enforced where sessions are admitted.
+- **Expiry:** the stream closes when the principal's credential expires.
+- **Frame size:** every reader enforces a per-item size cap ([cratestack#1379](https://github.com/cratestack/cratestack/issues/1379)), as the WebTransport frame decoder already does.
+- **Back-pressure:** a reader that lags behind its buffer is ended with an `unavailable` error frame. The server never buffers without bound for a slow client.
 
 ## Read Next
 
