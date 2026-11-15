@@ -313,6 +313,27 @@ the socket sends instead. Until you set it, `auto` stays on SSE.
 feed, a topic behind a subscription procedure, and all three bindings. Its test proves in Chromium
 that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket with UDP blocked.
 
+### Bounding one SSE event
+
+*(unreleased on main, [cratestack#1379](https://github.com/cratestack/cratestack/issues/1379))*
+
+An SSE reader buffers bytes until it sees the blank line that ends an event. A server (or an
+intermediary) that never sends it would grow the client's memory until the process dies, so every
+generated client caps one event at **1 MiB, delimiter included**. A longer event ends the
+subscription with a typed error, and the connection is dropped. Nothing after it is delivered. The
+cap counts the partial `data:` lines and the unfinished line too, so one endless line with no
+newline is refused, not only many lines.
+
+| Client | Set it | The error |
+| --- | --- | --- |
+| Rust | `ClientConfig::new(base).with_max_sse_event_bytes(n)` | `ClientError::EventTooLarge { limit }` |
+| TypeScript | `subscriptions: { maxEventBytes: n }` | `CratestackEventTooLargeError`, code `event_too_large`, `.limit` |
+| Dart | `CratestackSubscriptionOptions(maxEventBytes: n)` | `CratestackEventTooLargeException`, code `event_too_large`, `.limit` |
+
+Raise the cap only if one frame can legitimately be larger than 1 MiB. The WebSocket and
+WebTransport bindings are not governed by this setting. A refused event is not retried, and `Auto`
+does not fall back to another binding on it.
+
 ## Deploying WebTransport
 
 WebTransport is HTTP/3, so it is UDP, normally on the same port number as HTTPS, in the same
