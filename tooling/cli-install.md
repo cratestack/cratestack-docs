@@ -140,6 +140,17 @@ A binary older than 0.20.0 does not know the flag, and ignores the environment v
 enforce a pin. If `cratestack --version` reports a version before 0.20.0, the pin protects nothing until
 you upgrade.
 
+## Pinning the crates
+
+The `cratestack-*` crates version together, so a build should carry one version of all of them. On `main`,
+after 0.20.1 and not yet in a release, each crate requires its siblings exactly (`=x.y.z`) rather than with a
+caret. Pinning one facade, for example `cratestack-client = "=x.y.z"`, then pulls every other `cratestack-*`
+crate to the same version, and a conflicting pin on a second `cratestack-*` crate fails to resolve instead of
+silently mixing patch releases. To upgrade, move every `cratestack-*` pin in the build (and the CLI pin
+above) to the new version in one change. Releases up to 0.20.1 use caret sibling requirements, so with those a
+transitive crate can resolve a newer patch than its neighbours: check `Cargo.lock` for a single version of
+each `cratestack-*` crate.
+
 ## Supported platforms
 
 | OS      | Architecture | Target triple                 |
