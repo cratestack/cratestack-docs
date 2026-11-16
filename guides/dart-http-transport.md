@@ -169,6 +169,10 @@ cancel.complete(); // the call throws CratestackTransportAborted
 
 A final `Tag(48900, RpcErrorBody)` item is the in-band stream error and becomes a `CratestackRpcException`. A server that answers with the single-array `application/cbor` or a JSON answer is still read. See [RPC transport](/guides/rpc-transport) for the server side of streaming.
 
+### A signed subscription open
+
+*(Since 0.20.4, unreleased, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378).)* The generated client never seals; a transport that signs requests does. For a subscription the schema marks `@frames(unsigned)`, the SSE and cbor-seq readers send the open with `cratestack.frames` (`unsigned`), `cratestack.route` (`subscribe/<op id>` on RPC, the route template on REST) and `cratestack.contract` (the op's digest, hex) in `request.extra`. Seal the open under them, ask for the stream beside the seal (`Accept: <stream type>, application/cose`), and answer the reader with either the stream untouched (its `Cratestack-Frames: unsigned` and `Content-Type` headers included: the frames are hints, not signed) or an opened refusal as an ordinary response. Do not add the marker yourself: the reader refuses a `2xx` without it, with another value or of another stream type, and the marker on a subscription the schema does not mark, with a `CratestackSubscriptionException` whose `code` is `unsigned_frames_refused`. See [Signed subscriptions](./signed-transport#from-the-dart-client).
+
 ## Query encoding
 
 A canonical query encoder, `cratestackCanonicalizeQuery`, now builds the REST query string, so no HTTP client's own list or null rules apply:
