@@ -5,7 +5,7 @@ description: "cratestack contract ops lists every op a schema exposes with the r
 
 # Listing Ops, Roles And Principal Requirements
 
-*(unreleased on main, [cratestack#1388](https://github.com/cratestack/cratestack/issues/1388))*
+*(since 0.20.3, [cratestack#1388](https://github.com/cratestack/cratestack/issues/1388))*
 
 `cratestack contract ops` is a read-only report of every op a schema exposes, with the rules written on
 it, the roles those rules name, and whether the op can be called with no principal. It exists for

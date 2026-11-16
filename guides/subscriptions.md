@@ -155,7 +155,7 @@ ends with `unavailable` / `"subscription interrupted"`. Behind PgBouncer in tran
 | Binding | Where | Frames | When |
 |---|---|---|---|
 | SSE | `/rpc/subscribe/<op>` (`GET` with the input as the query, or `POST` with a JSON body); REST `GET /<plural>/$subscribe`, `GET /$procs/<name>` | `event: ready`, `event: message`, one `event: error`; `: keepalive` every 15 s; JSON | everywhere |
-| `application/cbor-seq` *(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))* | the same SSE routes with `Accept: application/cbor-seq`: RPC `GET` and `POST /rpc/subscribe/<op>`, REST `GET /<plural>/$subscribe`, `GET /$procs/<name>` | one CBOR `ServerFrame` per item of a CBOR sequence; a CBOR `null` every 15 s; a `Uuid` is a byte string | a CBOR-only client, or a proxy that mangles `text/event-stream`; plain HTTP |
+| `application/cbor-seq` *(since 0.20.3, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))* | the same SSE routes with `Accept: application/cbor-seq`: RPC `GET` and `POST /rpc/subscribe/<op>`, REST `GET /<plural>/$subscribe`, `GET /$procs/<name>` | one CBOR `ServerFrame` per item of a CBOR sequence; a CBOR `null` every 15 s; a `Uuid` is a byte string | a CBOR-only client, or a proxy that mangles `text/event-stream`; plain HTTP |
 | WebSocket | `GET /rpc/ws` (`/$ws` on REST), with `extension websocket { }` + the `websocket` feature | `Init`, multiplexed `Request`s, `Ready` / `next` / `end` / `err`, `cancel`; CBOR (binary) or JSON (text) | one connection for many subscriptions; where UDP is blocked |
 | WebTransport | `CONNECT /rpc/wt` on a separate UDP listener, with `extension webtransport { }` + the `webtransport` feature | the same frames, one QUIC stream per subscription | no head-of-line blocking; survives a network change |
 
@@ -230,7 +230,7 @@ while let Some(event) = notes.recv().await { let event = event?; /* ModelEvent<N
 2. A WebSocket, with the `client-ws` feature.
 3. SSE.
 
-`SubscriptionTransport::WebTransport`, `WebSocket`, `Sse` and `CborSeq` *(since 0.20.3 (unreleased))* each pin one binding.
+`SubscriptionTransport::WebTransport`, `WebSocket`, `Sse` and `CborSeq` *(since 0.20.3)* each pin one binding.
 `Auto` never picks `CborSeq`.
 
 Both features are native-only. On `cratestack-client` they are named `webtransport` and `ws`.
@@ -276,7 +276,7 @@ for await (const event of client.notes.subscribe({ operations: ["created"] }, { 
 3. SSE over `fetch`.
 
 `subscriptions: { transport: "webtransport" | "websocket" | "sse" | "cbor-seq" }` pins one binding;
-`"cbor-seq"` *(since 0.20.3 (unreleased))* is never chosen by `"auto"`. A WebTransport attempt that is not ready within 3 s is remembered for 10 minutes, so a UDP-blocked
+`"cbor-seq"` *(since 0.20.3)* is never chosen by `"auto"`. A WebTransport attempt that is not ready within 3 s is remembered for 10 minutes, so a UDP-blocked
 network pays that wait once. Breaking out of the loop, or aborting `signal`, cancels the
 subscription. Each hook layer wraps any subscription:
 
@@ -311,7 +311,7 @@ final client = MyCratestackClient(
 ```
 
 `auto` tries WebTransport, then the WebSocket, then SSE, and never `CratestackSubscriptionTransport.cborSeq`
-*(since 0.20.3 (unreleased))*, which you pin with `transport:`. A socket does not go through your HTTP
+*(since 0.20.3)*, which you pin with `transport:`. A socket does not go through your HTTP
 transport, so it cannot carry the token a Dio interceptor adds. `credentials` supplies the headers
 the socket sends instead. Until you set it, `auto` stays on SSE.
 
@@ -343,7 +343,7 @@ does not fall back to another binding on it. A `ready` event over the cap refuse
 
 ### Subscribing over `application/cbor-seq`
 
-*(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
+*(since 0.20.3, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
 
 The SSE routes also answer `Accept: application/cbor-seq`. The body is a CBOR sequence of the frames SSE
 carries, CBOR-encoded, so items arrive in their CBOR shapes, as on a unary CBOR call: a `Uuid` is a byte string. Use it when the client speaks only CBOR, or sits behind a proxy that mangles
