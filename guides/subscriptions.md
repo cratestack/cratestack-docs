@@ -355,7 +355,8 @@ and `*/*` select SSE. Entries are matched literally and **the first entry the se
 missing or unacceptable `Accept` is `406 not_acceptable` before authentication. The message changed to
 `subscription endpoint requires Accept: text/event-stream or application/cbor-seq`, so match on the status or
 the code, not the text. A refusal before the stream (bad auth, policy, a bad body) is the same JSON error
-body as for SSE, with its own status. Every subscribe response, SSE or cbor-seq and a refusal too, carries
+body as for SSE, with its own status. Every subscribe response on both bindings, refusals included (the `406`, auth
+refusals, the `POST` body `400` and an unknown op), carries
 `Vary: Accept`, so a cache keeps the two bindings of one URL apart. `Accept` matching is literal: q-values are
 not parsed.
 
@@ -368,8 +369,10 @@ not parsed.
 | `{id, err}` or `{id, end: {}}` | exactly one terminal frame. A model feed's overflow is `err` with `unavailable`. `end` is sent when the source simply ends (SSE sends nothing then) |
 | `null` (`0xf6`) | the keep-alive, every 15 s while nothing is due. Not a frame |
 
-The response is `Content-Type: application/cbor-seq` (the existing `CBOR_SEQUENCE_CONTENT_TYPE`; no new
-constant).
+The response is `Content-Type: application/cbor-seq` (the existing `cratestack::CBOR_SEQUENCE_CONTENT_TYPE`,
+exported at the crate root on both the `cratestack-pg` and `cratestack-api` facades, not under `cratestack::rpc`; no new
+constant). The binding items are under `cratestack::rpc`: `SubscribeBinding`, `SubscribeCodec`,
+`decode_subscribe_open_body` and `encode_subscription_cbor_seq_response`.
 
 **Routes.** All four generated subscribe routes get it: `GET` and `POST /rpc/subscribe/<op>`,
 `GET /$procs/<name>` and `GET /<plural>/$subscribe`. REST has no `POST` subscribe form, for SSE or for cbor-seq.
@@ -385,7 +388,7 @@ frame is capped by the same per-event cap as SSE (1 MiB by default).
 | Client | Pin it | Cap | Needs |
 | --- | --- | --- | --- |
 | Rust | `ClientConfig::new(base).with_subscription_transport(SubscriptionTransport::CborSeq)` | `with_max_subscription_frame_bytes(n)` (the same setting as `with_max_sse_event_bytes`) | nothing extra |
-| TypeScript | `subscriptions: { transport: "cbor-seq" }` | `maxEventBytes` | `@cratestack/cbor`, loaded on first use (a dependency of an RPC package, an optional peer of a REST one) |
+| TypeScript | `subscriptions: { transport: "cbor-seq" }` | `maxEventBytes` | `@cratestack/cbor`, loaded on first use (a dependency of an RPC package, an optional peer of a REST one; without it on a REST package the subscription fails with `CratestackSubscriptionError` code `codec_unavailable` before any request is sent) |
 | Dart | `CratestackSubscriptionOptions(transport: CratestackSubscriptionTransport.cborSeq)` | `maxEventBytes` | nothing extra (the generated `cratestack_cbor` codec) |
 
 **What a client refuses.** Before the first frame a client checks the response `Content-Type` is
