@@ -1471,7 +1471,7 @@ The request's single `Accept` must contain, literally, `application/cbor-seq` or
 
 A `2xx` stream comes back unsealed with `Cratestack-Frames: unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a `403` from `@allow` is a sealed error, never taken for frames. This holds in every mode that accepts a signed request (`Required`, `Optional` and `UnsignedRequestSealedReply`): it is the one exception to "a signed request is always answered sealed". A tampered, replayed or wrongly addressed open is still the coarse unsigned `401`, and an old op contract the unsigned `426`.
 
-An unsigned `POST` to a subscribe route under `policy(EnvelopeMode::Required)` was already refused (a `405`) and is now the coarse unsigned `401`. It reached the handler unsigned only under a closure policy with a non-strict `unresolved_mode`, because the resolver did not bind `POST` there: a pre-existing bypass this closes.
+An unsigned `POST` to a subscribe route under `policy(EnvelopeMode::Required)` was already refused (a `405`) and is now the coarse unsigned `401`. It reached the handler unsigned under any policy whose `unresolved_mode` is not strict (for example `policy(EnvelopeMode::Required).unresolved_mode(Optional)`, or a custom `EnvelopePolicy`), because the resolver did not bind `POST` there: a pre-existing bypass this closes. Under `policy(EnvelopeMode::UnsignedRequestSealedReply)`, an unsigned `POST` to a subscribe route changes from a `405` to the unsigned sealed-reply path, which refuses a subscription with the unsigned `406` before the handler runs.
 
 ### How long it lives: `max_signed_stream_life`
 
