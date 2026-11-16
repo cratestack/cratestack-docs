@@ -54,7 +54,7 @@ The default statement-cache capacity is 100 distinct statements per
 connection, LRU-evicted — that's sqlx's default, not something CrateStack
 changes.
 
-### Building a bounded pool without naming sqlx *(unreleased on main, [cratestack#1385](https://github.com/cratestack/cratestack/issues/1385))*
+### Building a bounded pool without naming sqlx *(since 0.20.2, [cratestack#1385](https://github.com/cratestack/cratestack/issues/1385))*
 
 A crate that only uses generated `cratestack-pg` models can build its pool with
 `cratestack::PgPoolConfig` instead of `PgPoolOptions`:

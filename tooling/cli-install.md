@@ -143,7 +143,7 @@ you upgrade.
 ## Pinning the crates
 
 The `cratestack-*` crates version together, so a build should carry one version of all of them.
-*(unreleased on main, [cratestack#1390](https://github.com/cratestack/cratestack/issues/1390))* Each crate
+*(since 0.20.2, [cratestack#1390](https://github.com/cratestack/cratestack/issues/1390))* Each crate
 requires its siblings exactly (`=x.y.z`) rather than with a caret. Pinning one facade, for example
 `cratestack-client = "=x.y.z"`, then pulls every other `cratestack-*` crate to the same version, and an older
 facade pinned beside a newer sibling fails to resolve instead of silently mixing patch releases. To upgrade,
