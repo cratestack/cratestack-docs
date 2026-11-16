@@ -155,6 +155,7 @@ ends with `unavailable` / `"subscription interrupted"`. Behind PgBouncer in tran
 | Binding | Where | Frames | When |
 |---|---|---|---|
 | SSE | `/rpc/subscribe/<op>` (`GET` with the input as the query, or `POST` with a JSON body); REST `GET /<plural>/$subscribe`, `GET /$procs/<name>` | `event: ready`, `event: message`, one `event: error`; `: keepalive` every 15 s; JSON | everywhere |
+| `application/cbor-seq` *(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))* | the same SSE routes with `Accept: application/cbor-seq`: RPC `GET` and `POST /rpc/subscribe/<op>`, REST `GET /<plural>/$subscribe`, `GET /$procs/<name>` | one CBOR `ServerFrame` per item of a CBOR sequence; a CBOR `null` every 15 s; a `Uuid` is a byte string | a CBOR-only client, or a proxy that mangles `text/event-stream`; plain HTTP |
 | WebSocket | `GET /rpc/ws` (`/$ws` on REST), with `extension websocket { }` + the `websocket` feature | `Init`, multiplexed `Request`s, `Ready` / `next` / `end` / `err`, `cancel`; CBOR (binary) or JSON (text) | one connection for many subscriptions; where UDP is blocked |
 | WebTransport | `CONNECT /rpc/wt` on a separate UDP listener, with `extension webtransport { }` + the `webtransport` feature | the same frames, one QUIC stream per subscription | no head-of-line blocking; survives a network change |
 
@@ -229,6 +230,9 @@ while let Some(event) = notes.recv().await { let event = event?; /* ModelEvent<N
 2. A WebSocket, with the `client-ws` feature.
 3. SSE.
 
+`SubscriptionTransport::WebTransport`, `WebSocket`, `Sse` and `CborSeq` *(since 0.20.3 (unreleased))* each pin one binding.
+`Auto` never picks `CborSeq`.
+
 Both features are native-only. On `cratestack-client` they are named `webtransport` and `ws`.
 
 ```rust
@@ -271,7 +275,8 @@ for await (const event of client.notes.subscribe({ operations: ["created"] }, { 
 2. A shared WebSocket.
 3. SSE over `fetch`.
 
-A WebTransport attempt that is not ready within 3 s is remembered for 10 minutes, so a UDP-blocked
+`subscriptions: { transport: "webtransport" | "websocket" | "sse" | "cbor-seq" }` pins one binding;
+`"cbor-seq"` *(since 0.20.3 (unreleased))* is never chosen by `"auto"`. A WebTransport attempt that is not ready within 3 s is remembered for 10 minutes, so a UDP-blocked
 network pays that wait once. Breaking out of the loop, or aborting `signal`, cancels the
 subscription. Each hook layer wraps any subscription:
 
@@ -305,7 +310,8 @@ final client = MyCratestackClient(
 );
 ```
 
-`auto` tries WebTransport, then the WebSocket, then SSE. A socket does not go through your HTTP
+`auto` tries WebTransport, then the WebSocket, then SSE, and never `CratestackSubscriptionTransport.cborSeq`
+*(since 0.20.3 (unreleased))*, which you pin with `transport:`. A socket does not go through your HTTP
 transport, so it cannot carry the token a Dio interceptor adds. `credentials` supplies the headers
 the socket sends instead. Until you set it, `auto` stays on SSE.
 
@@ -331,8 +337,65 @@ newline is refused, not only many lines.
 | Dart | `CratestackSubscriptionOptions(maxEventBytes: n)` | `CratestackEventTooLargeException`, code `event_too_large`, `.limit` |
 
 Raise the cap only if one frame can legitimately be larger than 1 MiB. The WebSocket and
-WebTransport bindings are not governed by this setting. A refused event is not retried by the client, and `Auto`
+WebTransport bindings are not governed by this setting. The `application/cbor-seq` binding is: see
+[Subscribing over `application/cbor-seq`](#subscribing-over-application-cbor-seq). A refused event is not retried by the client, and `Auto`
 does not fall back to another binding on it. A `ready` event over the cap refuses the open with the same typed error. On the Rust RPC client it is `RpcClientError::EventTooLarge { limit }` (not `InvalidResponse`). In the Dart `--preset riverpod` stream providers, Riverpod 3 retries a failed provider (up to 10 times, with backoff) unless the error is an `Error` or `ProviderException`; the generated providers pass `retry: cratestackSubscriptionRetry`, which defers to Riverpod's `ProviderContainer.defaultRetry` and opts `CratestackEventTooLargeException` out of that retry (it reaches the provider as an `AsyncError` at once; `ref.invalidate` retries by hand) and keeps the default for every other error.
+
+### Subscribing over `application/cbor-seq`
+
+*(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
+
+The SSE routes also answer `Accept: application/cbor-seq`. The body is a CBOR sequence of the same
+`ServerFrame`s the WebTransport stream carries, so items arrive in their CBOR shapes, as on a unary CBOR call:
+a `Uuid` is a byte string. Use it when the client speaks only CBOR, or sits behind a proxy that mangles
+`text/event-stream`.
+
+**The server picks the binding from `Accept`.** `application/cbor-seq` selects cbor-seq; `text/event-stream`
+and `*/*` select SSE. Entries are matched literally and **the first entry the server speaks wins**:
+`application/cbor-seq, text/event-stream` is cbor-seq, `text/event-stream, application/cbor-seq` is SSE. A
+missing or unacceptable `Accept` is `406 not_acceptable` before authentication. The message changed to
+`subscription endpoint requires Accept: text/event-stream or application/cbor-seq`, so match on the status or
+the code, not the text. A refusal before the stream (bad auth, policy, a bad body) is the same JSON error
+body as for SSE, with its own status.
+
+**Framing.** Each item is one CBOR `ServerFrame`:
+
+| Item | Meaning |
+| --- | --- |
+| `{id: 1, ready: {}}` | first; the subscription is live |
+| `{id: n, next: <item>}` | one per event; `n` counts up from 2, as on SSE |
+| `{id, err}` or `{id, end: {}}` | exactly one terminal frame. A model feed's overflow is `err` with `unavailable`. `end` is sent when the source simply ends (SSE sends nothing then) |
+| `null` (`0xf6`) | the keep-alive, every 15 s while nothing is due. Not a frame |
+
+The response is `Content-Type: application/cbor-seq`.
+
+**Routes.** All four generated subscribe routes get it: `GET` and `POST /rpc/subscribe/<op>`,
+`GET /$procs/<name>` and `GET /<plural>/$subscribe`. REST has no `POST` subscribe form, for SSE or for cbor-seq.
+`POST /rpc/subscribe/<op>` now reads its open body by `Content-Type`: `application/cbor` is CBOR, anything
+else (or none) is JSON. The bounds are SSE's: the credential-expiry cut-off and the open rate limit apply. The
+per-principal session cap (`SessionRegistry::admit`) is used only by the WebSocket and WebTransport bindings,
+so cbor-seq does not use it, as SSE does not.
+
+**Clients opt in; `Auto` never picks it.** A body that ends inside a frame, or between frames without `end` or
+`err`, is an error in every client, never a quiet end, because the server always sends a terminal frame. One
+frame is capped by the same per-event cap as SSE (1 MiB by default).
+
+| Client | Pin it | Cap | Needs |
+| --- | --- | --- | --- |
+| Rust | `ClientConfig::new(base).with_subscription_transport(SubscriptionTransport::CborSeq)` | `with_max_subscription_frame_bytes(n)` (the same setting as `with_max_sse_event_bytes`) | nothing extra |
+| TypeScript | `subscriptions: { transport: "cbor-seq" }` | `maxEventBytes` | `@cratestack/cbor`, loaded on first use (a dependency of an RPC package, an optional peer of a REST one) |
+| Dart | `CratestackSubscriptionOptions(transport: CratestackSubscriptionTransport.cborSeq)` | `maxEventBytes` | nothing extra (the generated `cratestack_cbor` codec) |
+
+Over the cap the error is `ClientError::EventTooLarge`, `CratestackEventTooLargeError` or
+`CratestackEventTooLargeException`, as for SSE. A truncated or unterminated stream is
+`ClientError::InvalidResponse` (Rust), a `CratestackSubscriptionError` (TypeScript) or a
+`CratestackSubscriptionException` with code `invalid_response` (Dart).
+
+::: warning Breaking for exhaustive matches
+`SubscriptionTransport` (Rust) and `CratestackSubscriptionTransport` (Dart) each gained a variant. An
+exhaustive `match` or `switch` needs a new arm. A generated TypeScript package also emits `src/cbor-item.ts`
+and `src/cbor-argument.ts` when a REST schema has a subscription, as an RPC package already did.
+:::
 
 ## Deploying WebTransport
 
