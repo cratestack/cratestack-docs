@@ -140,7 +140,7 @@ A `db = None` schema that declares a topic has a `Cratestack` that is `Clone` bu
 
 ### Signed services: `@frames(unsigned)`
 
-*Since 0.20.4 (unreleased), [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378): the server and the generated Rust, TypeScript and Dart clients.*
+*Since 0.20.4, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378): the server and the generated Rust, TypeScript and Dart clients.*
 
 A service that requires [signed requests](./signed-transport) cannot stream to a signed client, because a stream cannot be sealed. Mark a subscription procedure `@frames(unsigned)` to let it open signed:
 
