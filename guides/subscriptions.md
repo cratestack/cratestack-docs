@@ -315,7 +315,7 @@ that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket wi
 
 ### Bounding one SSE event
 
-*(unreleased on main, [cratestack#1379](https://github.com/cratestack/cratestack/issues/1379))*
+*(since 0.20.2, [cratestack#1379](https://github.com/cratestack/cratestack/issues/1379))*
 
 An SSE reader buffers bytes until it sees the blank line that ends an event. A server (or an
 intermediary) that never sends it would grow the client's memory until the process dies, so every
