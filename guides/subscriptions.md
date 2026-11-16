@@ -140,7 +140,7 @@ A `db = None` schema that declares a topic has a `Cratestack` that is `Clone` bu
 
 ### Signed services: `@frames(unsigned)`
 
-*Since 0.20.4 (unreleased), server half only: generated clients still refuse a sealed subscription open locally until the client PR.*
+*Since 0.20.4 (unreleased), [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378): the server and the generated Rust, TypeScript and Dart clients.*
 
 A service that requires [signed requests](./signed-transport) cannot stream to a signed client, because a stream cannot be sealed. Mark a subscription procedure `@frames(unsigned)` to let it open signed:
 
@@ -150,6 +150,14 @@ subscription procedure roomMessages(args: RoomArgs): RoomEvent
 ```
 
 The open is verified like a unary call and `@allow` sees the principal its signature names, but **the frames that follow are not signed**. Treat each as a hint (an id) and re-read through a sealed call. The stream ends after `max_signed_stream_life` (default one hour) with `unavailable` / `stream lifetime`, and the client resubscribes. The only argument is `unsigned`; `sealed` and `chain` are reserved and refused, and `@frames` is refused on unary and `@stream` procedures and when repeated. It is part of the op contract, so adding or removing it is wire-incompatible, and it does not apply to `@@subscribe` model feeds. Details, the wire and the limits: [Signed subscriptions](./signed-transport#signed-subscriptions-frames-unsigned).
+
+The generated clients open it signed; a client that holds an envelope never opens a subscription in plain:
+
+- **Rust.** `subscribe()` seals the open (a `POST` of the input's CBOR on RPC, a `GET` with a body on REST) and reads the plain stream, over cbor-seq (`Auto` picks it) or SSE. An unmarked subscription, a WebSocket or WebTransport pin, and REST on `wasm32` are `EnvelopeError::StreamsUnsupported`, with nothing sent. A stream that lost `Cratestack-Frames: unsigned`, a forged plain `200` or the wrong `Content-Type` is `EnvelopeError::UnsignedFramesRefused`.
+- **TypeScript.** Give the runtime `subscriptions: { seal: createSealedSubscriptions({ cose, contracts }) }`. RPC only: a REST route is a `CoseFailure` `misuse`. An unmarked subscription or a socket pin is a `CratestackSubscriptionError` with code `streams_unsupported`. The sealed `fetch` never follows a redirect, and an unsigned refusal is `unsigned_refusal`, never a server code. A cross-origin browser page needs the server to send `Access-Control-Expose-Headers: Cratestack-Frames`.
+- **Dart.** Opt in with `CratestackSubscriptionOptions(sealsSubscriptions: true)`. The generated client then hands your signing `CratestackHttpTransport` the route and contract in `request.extra` and refuses an answer without the marker (`unsigned_frames_refused`); an unmarked subscription and a socket pin are `streams_unsupported`, and an unsigned refusal is `unsigned_refusal`. Without the opt-in a subscription opens as it always did. It never seals itself.
+
+Each reconnect is a new signed open. A relay can forge the terminal `unavailable` frame, so resubscribe with a jittered backoff. See [Signed subscriptions](./signed-transport#from-the-generated-clients).
 
 ## Every replica sees every event
 

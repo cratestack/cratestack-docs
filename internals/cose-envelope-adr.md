@@ -915,7 +915,7 @@ story per phase). The unsigned streaming it builds on is
 
 *(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*
 
-Status: accepted on 2026-11-15; the **server half is implemented** on main (since 0.20.4, unreleased, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378) part B1). The generated clients still refuse a sealed subscription open locally until the client PR lands. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
+Status: accepted on 2026-11-15; the **server half** (part B1) and the **generated Rust, TypeScript and Dart clients** (part B2) are implemented on main (since 0.20.4, unreleased, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378)). The TypeScript sealer is RPC only. The generated clients still refuse a sealed subscription open locally until the client PR lands. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
 
 ### Why
 
@@ -974,5 +974,4 @@ Signed frames, and a `ready` frame sealed and bound to the request digest, are d
 Also deferred:
 
 - **A REST `POST` open.** REST subscribe stays `GET`, so a browser cannot open one signed over REST (together with the TypeScript `sealedFetch` `GET` bug, [#1407](https://github.com/cratestack/cratestack/issues/1407)).
-- **The generated clients.** Rust, TypeScript, Dart and the swr and riverpod layers still refuse a sealed subscription open locally (`StreamsUnsupported`); they follow in the client PR.
 - **The Flutter bridge** (`execute_streamed`) is out of scope for this amendment.
