@@ -355,9 +355,11 @@ and `*/*` select SSE. Entries are matched literally and **the first entry the se
 missing or unacceptable `Accept` is `406 not_acceptable` before authentication. The message changed to
 `subscription endpoint requires Accept: text/event-stream or application/cbor-seq`, so match on the status or
 the code, not the text. A refusal before the stream (bad auth, policy, a bad body) is the same JSON error
-body as for SSE, with its own status. Every subscribe response on both bindings, refusals included (the `406`, auth
-refusals, the `POST` body `400` and an unknown op), carries
-`Vary: Accept`, so a cache keeps the two bindings of one URL apart. `Accept` matching is literal: q-values are
+body as for SSE, with its own status. Every response the generated subscribe handler makes carries
+`Vary: Accept` exactly once, so a cache keeps the two bindings of one URL apart. That covers success on both
+bindings and every refusal the handler itself makes: the `406`, auth refusals, the RPC `POST` body `400` and an
+unknown op. A refusal from a layer in front of the handler does not carry it: the `413` body limit, a `405`, a
+path rejection, the rate-limit `429` or an envelope-layer error. `Accept` matching is literal: q-values are
 not parsed.
 
 **Framing.** Each item is one CBOR `ServerFrame`:
