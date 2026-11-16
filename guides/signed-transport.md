@@ -197,9 +197,9 @@ op), and so is any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`. There is no default
 
 | Mode | Unsigned request | Signed request |
 | --- | --- | --- |
-| `Required` | Refused, unsigned `401`. | Opened; response always sealed. |
-| `Optional` | Runs. Response sealed only with a valid `Cratestack-Nonce` **and** (the default `ResponseSealPolicy`) an `Accept` naming `application/cose`; otherwise plain. | Opened; response always sealed. |
-| `UnsignedRequestSealedReply` | Runs only if its reply can be sealed: exactly one valid `Cratestack-Nonce`, an `Accept` naming `application/cose` (and the `ResponseSealPolicy` agreeing), and not a subscription. Otherwise refused with an unsigned `406` **before the handler runs**. | Opened; response always sealed. |
+| `Required` | Refused, unsigned `401`. | Opened; response always sealed, except a marked [signed subscription open](#signed-subscriptions-frames-unsigned). |
+| `Optional` | Runs. Response sealed only with a valid `Cratestack-Nonce` **and** (the default `ResponseSealPolicy`) an `Accept` naming `application/cose`; otherwise plain. | Opened; response always sealed, except a marked signed subscription open. |
+| `UnsignedRequestSealedReply` | Runs only if its reply can be sealed: exactly one valid `Cratestack-Nonce`, an `Accept` naming `application/cose` (and the `ResponseSealPolicy` agreeing), and not a subscription. Otherwise refused with an unsigned `406` **before the handler runs**. | Opened; response always sealed, except a marked signed subscription open. |
 | `Off` | Untouched. | Refused, unsigned `415`. |
 
 - **Everything is signed under `Required`**, `GET`, `HEAD` and `DELETE` included: a bodiless
@@ -209,7 +209,10 @@ op), and so is any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`. There is no default
   refuse the request. Prefer `GET` under `Required`.
 - **A signed request is always answered sealed**, under `Optional` as under `Required`, with
   its `Accept` forced to `application/cbor`. A verification failure is the `401`, never a
-  downgrade to unsigned.
+  downgrade to unsigned. There is one exception, in every mode that accepts a signed request
+  (`Required`, `Optional` and `UnsignedRequestSealedReply` alike): a verified signed open of a
+  subscription marked `@frames(unsigned)` is answered with an unsealed stream, labelled
+  `Cratestack-Frames: unsigned`. Any other answer to that open, such as a refusal, is still sealed.
 - **Use `UnsignedRequestSealedReply` for "unsigned request allowed, unsigned reply never"**
   (device enrollment, server identity bootstrap). Under `Optional` a request that lacks the nonce
   or the `cose` `Accept` still runs and is answered plain; under this mode the same request is a
@@ -1466,9 +1469,9 @@ Nothing signs the frames, the `Cratestack-Frames` header or the request's `Accep
 
 The request's single `Accept` must contain, literally, `application/cbor-seq` or `text/event-stream`. The first one listed wins; `*/*`, no `Accept`, or two `Accept` headers is a sealed `406`. The `406` means two things now: the subscription is not marked, or the open names no stream.
 
-A `2xx` stream comes back unsealed with `Cratestack-Frames: unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a `403` from `@allow` is a sealed error, never taken for frames. A tampered, replayed or wrongly addressed open is still the coarse unsigned `401`, and an old op contract the unsigned `426`.
+A `2xx` stream comes back unsealed with `Cratestack-Frames: unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a `403` from `@allow` is a sealed error, never taken for frames. This holds in every mode that accepts a signed request (`Required`, `Optional` and `UnsignedRequestSealedReply`): it is the one exception to "a signed request is always answered sealed". A tampered, replayed or wrongly addressed open is still the coarse unsigned `401`, and an old op contract the unsigned `426`.
 
-An unsigned `POST` to a subscribe route under a `Required` policy is now a `401`; it used to reach the handler, because the resolver did not bind `POST` there.
+An unsigned `POST` to a subscribe route under `policy(EnvelopeMode::Required)` was already refused (a `405`) and is now the coarse unsigned `401`. It reached the handler unsigned only under a closure policy with a non-strict `unresolved_mode`, because the resolver did not bind `POST` there: a pre-existing bypass this closes.
 
 ### How long it lives: `max_signed_stream_life`
 
@@ -1481,7 +1484,7 @@ let layer = EnvelopeLayer::builder(envelope, "my-service", contracts)
     .build()?;
 ```
 
-At the deadline the stream ends with a terminal `unavailable` frame, message `stream lifetime`; the client resubscribes with a fresh signed open (a nonce is single-use) and jittered backoff, since a relay can forge that frame too. The credential's own `exp` applies as well, and the earlier wins. `build` refuses a zero lifetime. A lifetime too long to represent as a deadline applies none and logs a warning at open.
+At the deadline the stream ends with a terminal `unavailable` frame, message `stream lifetime`; the client resubscribes with a fresh signed open (a nonce is single-use) and jittered backoff, since a relay can forge that frame too. The credential's own `exp` applies as well, and the earlier wins. `build` refuses a zero lifetime, and one above `MAX_SIGNED_STREAM_LIFE` (24 hours) with a `Validation` error naming the cap, so a configured lifetime can always be applied.
 
 ### What it does not do
 
