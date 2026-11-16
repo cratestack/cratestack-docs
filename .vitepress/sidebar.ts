@@ -90,6 +90,7 @@ const documentation: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Installing the CLI", link: "/tooling/cli-install" },
       { text: "Schema diff", link: "/tooling/schema-diff" },
+      { text: "Listing ops and roles", link: "/tooling/contract-ops" },
       { text: "Adopting an Existing Database", link: "/tooling/migrate-baseline" },
       { text: "CrateStack Editor Tooling", link: "/tooling/editor-tooling" },
       { text: "Generating WireMock stubs", link: "/tooling/generate-wiremock" },
