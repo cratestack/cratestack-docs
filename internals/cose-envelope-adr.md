@@ -42,7 +42,7 @@ compact one included, is never sealable. The Rust client negotiates the mode per
 calls do, and the Dart and wasm sealers take the payload type on their call binding
 ([cratestack design `compact-wire-keys.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/compact-wire-keys.md)).
 
-**Amended 2026-11-15 (signed subscription open with unsigned frames)** *(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*. A subscription may opt in to a signed open whose frames are not signed. This is weaker than the signed subscription binding §6 plans, and the threat model says exactly how much weaker. See [Amendment: signed subscription open with unsigned frames](#amendment-signed-subscription-open-with-unsigned-frames).
+**Amended 2026-11-15 (signed subscription open with unsigned frames)** *(server half since 0.20.4, unreleased; [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*. A subscription may opt in to a signed open whose frames are not signed. This is weaker than the signed subscription binding §6 plans, and the threat model says exactly how much weaker. See [Amendment: signed subscription open with unsigned frames](#amendment-signed-subscription-open-with-unsigned-frames).
 
 **Prepared retries (since 0.18.1, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297)).** A durable prepared call retains the inner payload, not a reusable outer envelope. Each sealed attempt needs fresh claims and the matching response-opening state; see [idempotency](../guides/idempotency#preserve-a-request-before-the-first-attempt).
 
@@ -915,7 +915,7 @@ story per phase). The unsigned streaming it builds on is
 
 *(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*
 
-Status: accepted for implementation on 2026-11-15. Nothing here is released. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
+Status: accepted on 2026-11-15; the **server half is implemented** on main (since 0.20.4, unreleased, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378) part B1). The generated clients still refuse a sealed subscription open locally until the client PR lands. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
 
 ### Why
 
@@ -933,6 +933,18 @@ Today a signed route that is a subscription gets a sealed `406`, because §6 pla
 - **Clients:** a client accepts a `2xx` only when it has the requested stream `Content-Type`, carries the marker, and the generated target says `frames: unsigned`. Anything else is refused. A dropped marker, or a marker on an op that did not opt in, is an error, not a silent downgrade.
 - **Model feeds are refused.** `@@subscribe` streams rows, which are values, not ids. They stay out of unsigned frames; see the threat model.
 
+### Wire
+
+*(since 0.20.4, unreleased; the server half. The generated clients do not send this yet.)*
+
+- **Routes.** RPC: `POST /rpc/subscribe/{op_id}`, the sealed message as the body, or `GET` with the input as a query. REST: `GET /$procs/<name>` with the sealed message as the body. A browser's `fetch`, wasm `reqwest` and Dart web cannot send a `GET` with a body, so a REST open is for native clients, and the RPC `POST` is the form every client can send ([cratestack#1407](https://github.com/cratestack/cratestack/issues/1407)). A sealed `HEAD` on a subscription is a sealed `406`.
+- **Which opens.** The layer reads the generated `SUBSCRIPTION_FRAMES` table. On RPC a row matches by bare op id, and only for a route bound as a subscription, so a unary call to the same op id is not an open. On REST the row is `"<METHOD> <path>"` and matches the method as sent. An empty table (the default for a hand-built layer) opens nothing.
+- **Naming the stream.** The request's single `Accept` must contain, literally, `application/cbor-seq` or `text/event-stream`; the first one listed wins, and parameters and case variants do not match. `*/*` alone, no `Accept`, or two `Accept` headers is a sealed `406`. The layer reads `Accept` before rewriting it for the router, then sets the one stream type, so the handler negotiates exactly that binding.
+- **Order.** Verify the open (signature, `kid`, audience, replay, nonce, contract), check the `Accept`, map the principal, set the stream deadline, then call the handler. An unmarked RPC subscription is refused before its handler runs.
+- **Answer.** A `2xx` stream in the requested type, produced by a subscription binding, is returned unsealed with `Cratestack-Frames: unsigned` and `Cache-Control: no-store`, and without `Cratestack-Payload-Type`. Every other answer (`400`, `403`, `404`, a stream of another type, a body that no binding produced) is sealed, so a refusal is never mistaken for frames.
+- **Verification failures** are unchanged: the coarse unsigned `401` (replay, tamper, wrong audience, a signer the principal mapper refuses) and the unsigned `426` for an old op contract. An unsigned `POST` to a subscribe route under a `Required` policy is a `401`; it used to reach the handler, because the resolver did not bind `POST` there.
+- **Lifetime.** `EnvelopeLayerBuilder::max_signed_stream_life` (default one hour, zero refused at `build`) puts a deadline in the request extensions. The stream then ends with the terminal `unavailable` frame, message `stream lifetime`, and the credential's own `exp` still wins if earlier. A lifetime too long to represent as a deadline applies none and logs a warning at open.
+
 ### Threat model
 
 What is protected: the open. A tampered, replayed or wrongly addressed open is a `401` and the handler never runs, and the principal that `@allow` sees is the one the signature names.
@@ -948,6 +960,19 @@ What is **not** protected: after a signed open, the integrity and authenticity o
 
 An application that cannot meet the hints-only rule must not use `@frames(unsigned)`.
 
+Added with the server half:
+
+- **A forged `unavailable` can cause a resubscribe storm.** A relay that injects the terminal frame makes every client reopen at once. Clients resubscribe with jittered backoff.
+- **Refusal detail is lost once sealed.** A client sees the status and the sealed body, not the plain message a refusal would carry on an open stream.
+- **No per-principal cap on concurrent signed streams.** One credential may hold many opens until each lifetime ends. Front the router with `RateLimitLayer::for_subscriptions`.
+- **The lifetime bounds exposure, not forgery.** It limits how long one signed open vouches for a stream; it does not authenticate any frame inside it.
+
 ### Deferred
 
 Signed frames, and a `ready` frame sealed and bound to the request digest, are deferred to [#1020](https://github.com/cratestack/cratestack/issues/1020), with `chain` in [#1008](https://github.com/cratestack/cratestack/issues/1008). The Phasing row "Signed subscription binding" (P3) is unchanged and still open.
+
+Also deferred:
+
+- **A REST `POST` open.** REST subscribe stays `GET`, so a browser cannot open one signed over REST (together with the TypeScript `sealedFetch` `GET` bug, [#1407](https://github.com/cratestack/cratestack/issues/1407)).
+- **The generated clients.** Rust, TypeScript, Dart and the swr and riverpod layers still refuse a sealed subscription open locally (`StreamsUnsupported`); they follow in the client PR.
+- **The Flutter bridge** (`execute_streamed`) is out of scope for this amendment.

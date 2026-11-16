@@ -128,7 +128,7 @@ commits. Inside `tx_db.transaction(async |tx| ..)`, call `publish_in_tx(tx, &msg
 `transaction(..)` rolls back, its messages are dropped even though the attempt around it commits.
 
 A subscription procedure returns one item type (not `T[]`). It cannot declare `@stream`,
-`@isolation`, `@no_idempotency`, `@status`, `@no_rate_limit` or `@mcp`. It works under
+`@isolation`, `@no_idempotency`, `@status`, `@no_rate_limit` or `@mcp`. It may declare `@frames(unsigned)` (below). It works under
 `db = None` too, with your own stream as the source.
 
 Topics work under `db = None` as well, on `cratestack-api`: the same `db.topics().room_tick(&id)`
@@ -137,6 +137,19 @@ the work is done. The default backplane is an `InProcessBackplane` shared by eve
 `Cratestack::builder().build()` of the schema in the process, so it reaches one replica only. To reach
 others, pass your own `SubscriptionBackplane` with `Cratestack::builder().with_backplane(Arc::new(..))`.
 A `db = None` schema that declares a topic has a `Cratestack` that is `Clone` but not `Copy`.
+
+### Signed services: `@frames(unsigned)`
+
+*Since 0.20.4 (unreleased), server half only: generated clients still refuse a sealed subscription open locally until the client PR.*
+
+A service that requires [signed requests](./signed-transport) cannot stream to a signed client, because a stream cannot be sealed. Mark a subscription procedure `@frames(unsigned)` to let it open signed:
+
+```text
+subscription procedure roomMessages(args: RoomArgs): RoomEvent
+  @frames(unsigned)
+```
+
+The open is verified like a unary call and `@allow` sees the principal its signature names, but **the frames that follow are not signed**. Treat each as a hint (an id) and re-read through a sealed call. The stream ends after `max_signed_stream_life` (default one hour) with `unavailable` / `stream lifetime`, and the client resubscribes. The only argument is `unsigned`; `sealed` and `chain` are reserved and refused, and `@frames` is refused on unary and `@stream` procedures and when repeated. It is part of the op contract, so adding or removing it is wire-incompatible, and it does not apply to `@@subscribe` model feeds. Details, the wire and the limits: [Signed subscriptions](./signed-transport#signed-subscriptions-frames-unsigned).
 
 ## Every replica sees every event
 

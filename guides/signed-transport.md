@@ -511,7 +511,7 @@ signed request gets back is sealed**, errors included.
 | `405` | unsigned | Another method on a generated path, under a `Required` `unresolved_mode`. |
 | `500` | unsigned | `envelope misconfigured` (a route the contract table has no row for included, which a custom resolver fixes with `ResolvedRoute::with_contract_key`); a key-resolver, nonce-store or signer outage; an envelope that labels its seal as a non-envelope type. The detail is only logged. |
 | handler errors, `409`, `412`, `422`, `429` | **sealed** | Anything the router answers for a bound op: a handler's `404` or `403`, the rate limiter's `429`, the idempotency layer's `409`/`412`/`422`, the RPC router's `404` for a well-formed unknown op id. An error in a type the request did not negotiate (axum's own `413`, a `text/plain` fallback) is re-encoded as the transport's error, in CBOR or JSON, first. A plain request to an unmatched path gets the router's plain `404`. |
-| `406` | **sealed** | A signed request to an RPC subscription (before its handler runs), or any other response a signed request would get as a stream. |
+| `406` | **sealed** | A signed request to an RPC subscription **not marked** `@frames(unsigned)` (before its handler runs), or any other response a signed request would get as a stream. A signed open of a marked subscription that names no stream `Accept`, or a sealed `HEAD` on a subscription, is the same `406`; see [Signed subscriptions](#signed-subscriptions-frames-unsigned) *(since 0.20.4, unreleased)*. |
 | `400` | **sealed** | A signed `/rpc/batch` whose frames cannot be read once opened. |
 | `500` | **sealed** | A success to a signed request in a payload type it did not negotiate (CBOR unless the client named another); a response over `MAX_RESPONSE_REBUFFER_BYTES`; the principal mapper failed (other than `Unauthorized`) or returned `""`. |
 
@@ -1438,12 +1438,65 @@ What changes for you:
   mode in which one accepts the other's messages.
 - **Streams are not sealed** until ADR 0006 P1, as for every COSE mode (see [Limits](#limits)).
 
+## Signed subscriptions (`@frames(unsigned)`)
+
+*Since 0.20.4 (unreleased), [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378) part B1. This is the server half: the generated Rust, TypeScript and Dart clients still refuse a sealed subscription open locally (`StreamsUnsupported`) until the client PR lands, so today you reach it with a hand-sealed request.*
+
+A stream cannot be sealed until `chain` mode, so a signed client could not subscribe at all: a signed open of a subscription was a sealed `406`. A subscription procedure may now opt in:
+
+```text
+subscription procedure roomMessages(args: RoomArgs): RoomEvent
+  @frames(unsigned)
+  @allow(auth() != null)
+```
+
+Then the **open** is signed and verified exactly like a unary call (signature, `kid`, audience, replay, nonce, op contract), `@allow` runs against the principal that signature names, and the **frames that answer are plain**. Everything else stays a sealed `406`, and a layer built by hand with no `SUBSCRIPTION_FRAMES` table opens nothing.
+
+::: warning The frames are hints, not evidence
+Nothing signs the frames, the `Cratestack-Frames` header or the request's `Accept`. A relay inside TLS termination can forge, drop or end them. Use `@frames(unsigned)` only when a frame carries an id and the client re-reads through a sealed call. `@@subscribe` model feeds carry rows, so they are not eligible. The threat model is in [ADR 0006](../internals/cose-envelope-adr#amendment-signed-subscription-open-with-unsigned-frames).
+:::
+
+### Opening one
+
+| | RPC | REST |
+|---|---|---|
+| Method and path | `POST /rpc/subscribe/{op_id}` (sealed message is the body), or `GET` with the input as a query | `GET /$procs/<name>`, sealed message as the body |
+| Browsers | can send the `POST` | cannot: a `GET` with a body is not sendable from `fetch` or wasm ([cratestack#1407](https://github.com/cratestack/cratestack/issues/1407)) |
+| `HEAD` | sealed `406` | sealed `406` |
+
+The request's single `Accept` must contain, literally, `application/cbor-seq` or `text/event-stream`. The first one listed wins; `*/*`, no `Accept`, or two `Accept` headers is a sealed `406`. The `406` means two things now: the subscription is not marked, or the open names no stream.
+
+A `2xx` stream comes back unsealed with `Cratestack-Frames: unsigned` and `Cache-Control: no-store`. Every other answer is sealed, so a `403` from `@allow` is a sealed error, never taken for frames. A tampered, replayed or wrongly addressed open is still the coarse unsigned `401`, and an old op contract the unsigned `426`.
+
+An unsigned `POST` to a subscribe route under a `Required` policy is now a `401`; it used to reach the handler, because the resolver did not bind `POST` there.
+
+### How long it lives: `max_signed_stream_life`
+
+One signed open vouches for a stream of unsigned frames, so its life is bounded:
+
+```rust
+let layer = EnvelopeLayer::builder(envelope, "my-service", contracts)
+    .policy(EnvelopeMode::Required)
+    .max_signed_stream_life(std::time::Duration::from_secs(900)) // default: one hour
+    .build()?;
+```
+
+At the deadline the stream ends with a terminal `unavailable` frame, message `stream lifetime`; the client resubscribes with a fresh signed open (a nonce is single-use) and jittered backoff, since a relay can forge that frame too. The credential's own `exp` applies as well, and the earlier wins. `build` refuses a zero lifetime. A lifetime too long to represent as a deadline applies none and logs a warning at open.
+
+### What it does not do
+
+- Refusal detail is lost once sealed: a client sees the status and the sealed body, not a plain message.
+- There is no per-principal cap on concurrent signed streams; front the router with `RateLimitLayer::for_subscriptions`.
+- Signed frames are [#1020](https://github.com/cratestack/cratestack/issues/1020), chained frames [#1008](https://github.com/cratestack/cratestack/issues/1008); `@frames(sealed)` and `@frames(chain)` are refused until then.
+
 ## Limits
 
 - **Streams cannot be sealed** until ADR 0006 P1 (`chain` mode). A signed request gets
   `Accept` of sealable types only (never a stream), so a `@stream` op answers with one buffered, sealed array; a
-  signed subscription is a sealed `406` before its handler runs. Only an unsigned request under
-  `Optional` streams (plain), so give subscriptions `Optional` or `Off` in the policy.
+  signed subscription is a sealed `406` before its handler runs, **unless** the schema marks it
+  `@frames(unsigned)` (since 0.20.4, unreleased; see [Signed subscriptions](#signed-subscriptions-frames-unsigned)).
+  Otherwise only an unsigned request under `Optional` streams (plain), so give such subscriptions
+  `Optional` or `Off` in the policy.
 - **Responses are re-buffered** to be sealed, up to `MAX_RESPONSE_REBUFFER_BYTES` (8 MiB);
   a longer one becomes a sealed `500`. The payload is copied once into the sealed message; the
   zero-copy API is cratestack#1076.
