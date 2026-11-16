@@ -345,9 +345,8 @@ does not fall back to another binding on it. A `ready` event over the cap refuse
 
 *(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
 
-The SSE routes also answer `Accept: application/cbor-seq`. The body is a CBOR sequence of the same
-`ServerFrame`s the WebTransport stream carries, so items arrive in their CBOR shapes, as on a unary CBOR call:
-a `Uuid` is a byte string. Use it when the client speaks only CBOR, or sits behind a proxy that mangles
+The SSE routes also answer `Accept: application/cbor-seq`. The body is a CBOR sequence of the frames SSE
+carries, CBOR-encoded, so items arrive in their CBOR shapes, as on a unary CBOR call: a `Uuid` is a byte string. Use it when the client speaks only CBOR, or sits behind a proxy that mangles
 `text/event-stream`.
 
 **The server picks the binding from `Accept`.** `application/cbor-seq` selects cbor-seq; `text/event-stream`
@@ -356,18 +355,21 @@ and `*/*` select SSE. Entries are matched literally and **the first entry the se
 missing or unacceptable `Accept` is `406 not_acceptable` before authentication. The message changed to
 `subscription endpoint requires Accept: text/event-stream or application/cbor-seq`, so match on the status or
 the code, not the text. A refusal before the stream (bad auth, policy, a bad body) is the same JSON error
-body as for SSE, with its own status.
+body as for SSE, with its own status. Every subscribe response, SSE or cbor-seq and a refusal too, carries
+`Vary: Accept`, so a cache keeps the two bindings of one URL apart. `Accept` matching is literal: q-values are
+not parsed.
 
 **Framing.** Each item is one CBOR `ServerFrame`:
 
 | Item | Meaning |
 | --- | --- |
 | `{id: 1, ready: {}}` | first; the subscription is live |
-| `{id: n, next: <item>}` | one per event; `n` counts up from 2, as on SSE |
+| `{id: n, next: <item>}` | one per event; `n` counts up from 2, as on SSE. The ids count up per frame; WebTransport instead carries one subscription id on every frame |
 | `{id, err}` or `{id, end: {}}` | exactly one terminal frame. A model feed's overflow is `err` with `unavailable`. `end` is sent when the source simply ends (SSE sends nothing then) |
 | `null` (`0xf6`) | the keep-alive, every 15 s while nothing is due. Not a frame |
 
-The response is `Content-Type: application/cbor-seq`.
+The response is `Content-Type: application/cbor-seq` (the existing `CBOR_SEQUENCE_CONTENT_TYPE`; no new
+constant).
 
 **Routes.** All four generated subscribe routes get it: `GET` and `POST /rpc/subscribe/<op>`,
 `GET /$procs/<name>` and `GET /<plural>/$subscribe`. REST has no `POST` subscribe form, for SSE or for cbor-seq.
@@ -386,10 +388,21 @@ frame is capped by the same per-event cap as SSE (1 MiB by default).
 | TypeScript | `subscriptions: { transport: "cbor-seq" }` | `maxEventBytes` | `@cratestack/cbor`, loaded on first use (a dependency of an RPC package, an optional peer of a REST one) |
 | Dart | `CratestackSubscriptionOptions(transport: CratestackSubscriptionTransport.cborSeq)` | `maxEventBytes` | nothing extra (the generated `cratestack_cbor` codec) |
 
+**What a client refuses.** Before the first frame a client checks the response `Content-Type` is
+`application/cbor-seq` (parameters ignored, case-insensitive), and that the stream opens with `ready`. If `err`
+comes first, that is the server's refusal and the error carries the server's code. If `end` or `next` comes
+first, or an item is not a map, the response is invalid. A stream that ends without `end` or `err` is an error.
+All of these are `ClientError::InvalidResponse` (Rust), a `CratestackSubscriptionError` with code
+`invalid_response` (TypeScript) or a `CratestackSubscriptionException` with code `invalid_response` (Dart).
+
+**Model event ids.** A model event's `event_id` travels as a 16-byte CBOR byte string on cbor-seq. The
+TypeScript and Dart clients revive it to the canonical hyphenated UUID string (`ModelEvent.event_id`,
+`CratestackModelEvent.eventId`); in Rust `ModelEvent.event_id` is a `Uuid`.
+
 Over the cap the error is `ClientError::EventTooLarge`, `CratestackEventTooLargeError` or
 `CratestackEventTooLargeException`, as for SSE. A truncated or unterminated stream is
-`ClientError::InvalidResponse` (Rust), a `CratestackSubscriptionError` (TypeScript) or a
-`CratestackSubscriptionException` with code `invalid_response` (Dart).
+`ClientError::InvalidResponse` (Rust), a `CratestackSubscriptionError` with code `invalid_response`
+(TypeScript) or a `CratestackSubscriptionException` with code `invalid_response` (Dart).
 
 ::: warning Breaking for exhaustive matches
 `SubscriptionTransport` (Rust) and `CratestackSubscriptionTransport` (Dart) each gained a variant. An
