@@ -516,7 +516,7 @@ signed request gets back is sealed**, errors included.
 | `405` | unsigned | Another method on a generated path, under a `Required` `unresolved_mode`. |
 | `500` | unsigned | `envelope misconfigured` (a route the contract table has no row for included, which a custom resolver fixes with `ResolvedRoute::with_contract_key`); a key-resolver, nonce-store or signer outage; an envelope that labels its seal as a non-envelope type. The detail is only logged. |
 | handler errors, `409`, `412`, `422`, `429` | **sealed** | Anything the router answers for a bound op: a handler's `404` or `403`, the rate limiter's `429`, the idempotency layer's `409`/`412`/`422`, the RPC router's `404` for a well-formed unknown op id. An error in a type the request did not negotiate (axum's own `413`, a `text/plain` fallback) is re-encoded as the transport's error, in CBOR or JSON, first. A plain request to an unmatched path gets the router's plain `404`. |
-| `406` | **sealed** | A signed request to an RPC subscription **not marked** `@frames(unsigned)` (before its handler runs), or any other response a signed request would get as a stream. A signed open of a marked subscription that names no stream `Accept`, or a sealed `HEAD` on a subscription, is the same `406`; see [Signed subscriptions](#signed-subscriptions-frames-unsigned) *(since 0.20.4, unreleased)*. |
+| `406` | **sealed** | A signed request to an RPC subscription **not marked** `@frames(unsigned)` (before its handler runs), or any other response a signed request would get as a stream. A signed open of a marked subscription that names no stream `Accept`, or a sealed `HEAD` on a subscription, is the same `406`; see [Signed subscriptions](#signed-subscriptions-frames-unsigned) *(since 0.20.4)*. |
 | `400` | **sealed** | A signed `/rpc/batch` whose frames cannot be read once opened. |
 | `500` | **sealed** | A success to a signed request in a payload type it did not negotiate (CBOR unless the client named another); a response over `MAX_RESPONSE_REBUFFER_BYTES`; the principal mapper failed (other than `Unauthorized`) or returned `""`. |
 
@@ -639,7 +639,7 @@ to plain:
 | The unsigned `426` whose body code is `contract_unsupported` (REST `CONTRACT_UNSUPPORTED`): the server no longer accepts this client's wire shape for the op | `EnvelopeError::ContractUnsupported { op }` (`op` is `METHOD /template` on REST, the op id on RPC). The body is read only for that code, which is unauthenticated. **Unsigned, so a hint and never proof**: offer "update the app" for that feature, and know that other ops are unaffected. A `426` with any other code (a proxy that requires TLS or h2, say) is `EnvelopeError::Unsigned { status: 426 }` |
 | Sealed under a payload type the call did not ask for (`Cratestack-Payload-Type`, absent meaning CBOR, is not among the types the codec lists) | `EnvelopeError::UnexpectedPayloadType { got }`, and the body is never opened, let alone decoded |
 | A streamed call (`*_streamed`, `call_streaming`), or a subscription that cannot be opened signed (see [Signed subscriptions](#from-the-rust-client)) | `EnvelopeError::StreamsUnsupported`, before anything is sent. A `@stream` procedure called through `post_list` is sealed and works, as one buffered array |
-| A subscription marked `@frames(unsigned)` *(since 0.20.4, unreleased)* | opened sealed, then the plain stream is read ([below](#from-the-rust-client)). An answer that is not the unsigned stream asked for is `EnvelopeError::UnsignedFramesRefused` |
+| A subscription marked `@frames(unsigned)` *(since 0.20.4)* | opened sealed, then the plain stream is read ([below](#from-the-rust-client)). An answer that is not the unsigned stream asked for is `EnvelopeError::UnsignedFramesRefused` |
 
 The generated code tells the client which route each call is for, so a REST call binds the
 template (`/widgets/{id}`) and the values (`7`), and an RPC call its op id (`batch` for
@@ -757,7 +757,7 @@ envelope out of band, because keys cannot travel in `RuntimeConfigWire`; the con
 one of the existing error codes with an `envelope_*` `remote_code`
 (`envelope_unsigned`, `envelope_contract_unsupported` (with HTTP status `426`),
 `envelope_unverified`, `envelope_seal`, `envelope_open`, `envelope_unexpected_payload_type`,
-`envelope_streams_unsupported`, `envelope_unsigned_frames_refused` *(since 0.20.4, unreleased)*).
+`envelope_streams_unsupported`, `envelope_unsigned_frames_refused` *(since 0.20.4)*).
 
 ## The Dart client
 
@@ -1025,7 +1025,7 @@ fixed message, never your error text.
 |---|---|
 | RPC | `createSealedLink({ cose, contracts: OP_CONTRACTS })` in the runtime's `links` array. Seals unary and `/rpc/batch` calls; a sealed batch is CBOR both ways |
 | REST | `createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath })` as the runtime's `fetch` option. The route template and path parameters come from matching the URL against the keys of `OP_CONTRACTS` |
-| RPC subscriptions *(since 0.20.4, unreleased)* | `createSealedSubscriptions({ cose, contracts: OP_CONTRACTS })` as the runtime's `subscriptions.seal`, for subscriptions marked `@frames(unsigned)`; see [From the TypeScript client](#from-the-typescript-client). REST is a `misuse` |
+| RPC subscriptions *(since 0.20.4)* | `createSealedSubscriptions({ cose, contracts: OP_CONTRACTS })` as the runtime's `subscriptions.seal`, for subscriptions marked `@frames(unsigned)`; see [From the TypeScript client](#from-the-typescript-client). REST is a `misuse` |
 
 ```ts
 const runtime = new CratestackRuntime(origin, {
@@ -1447,7 +1447,7 @@ What changes for you:
 
 ## Signed subscriptions (`@frames(unsigned)`)
 
-*Since 0.20.4 (unreleased), [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378): the server (part B1) and the generated Rust, TypeScript and Dart clients (part B2).*
+*Since 0.20.4, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378): the server (part B1) and the generated Rust, TypeScript and Dart clients (part B2).*
 
 A stream cannot be sealed until `chain` mode, so a signed client could not subscribe at all: a signed open of a subscription was a sealed `406`. A subscription procedure may now opt in:
 
@@ -1479,7 +1479,7 @@ An unsigned `POST` to a subscribe route under `policy(EnvelopeMode::Required)` w
 
 ### From the generated clients
 
-All three open a marked subscription signed *(since 0.20.4, unreleased)*. A client that holds an envelope never sends a subscription in plain: it seals the open or refuses it locally, with nothing sent.
+All three open a marked subscription signed *(since 0.20.4)*. A client that holds an envelope never sends a subscription in plain: it seals the open or refuses it locally, with nothing sent.
 
 #### From the Rust client
 
@@ -1556,7 +1556,7 @@ At the deadline the stream ends with a terminal `unavailable` frame, message `st
 - **Streams cannot be sealed** until ADR 0006 P1 (`chain` mode). A signed request gets
   `Accept` of sealable types only (never a stream), so a `@stream` op answers with one buffered, sealed array; a
   signed subscription is a sealed `406` before its handler runs, **unless** the schema marks it
-  `@frames(unsigned)` (since 0.20.4, unreleased; see [Signed subscriptions](#signed-subscriptions-frames-unsigned)),
+  `@frames(unsigned)` (since 0.20.4; see [Signed subscriptions](#signed-subscriptions-frames-unsigned)),
   which the generated clients open signed. Otherwise only an unsigned request under `Optional` streams (plain), so give such subscriptions
   `Optional` or `Off` in the policy.
 - **Responses are re-buffered** to be sealed, up to `MAX_RESPONSE_REBUFFER_BYTES` (8 MiB);

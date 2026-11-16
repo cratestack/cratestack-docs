@@ -42,7 +42,7 @@ compact one included, is never sealable. The Rust client negotiates the mode per
 calls do, and the Dart and wasm sealers take the payload type on their call binding
 ([cratestack design `compact-wire-keys.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/compact-wire-keys.md)).
 
-**Amended 2026-11-15 (signed subscription open with unsigned frames)** *(server half since 0.20.4, unreleased; [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*. A subscription may opt in to a signed open whose frames are not signed. This is weaker than the signed subscription binding §6 plans, and the threat model says exactly how much weaker. See [Amendment: signed subscription open with unsigned frames](#amendment-signed-subscription-open-with-unsigned-frames).
+**Amended 2026-11-15 (signed subscription open with unsigned frames)** *(since 0.20.4; [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*. A subscription may opt in to a signed open whose frames are not signed. This is weaker than the signed subscription binding §6 plans, and the threat model says exactly how much weaker. See [Amendment: signed subscription open with unsigned frames](#amendment-signed-subscription-open-with-unsigned-frames).
 
 **Prepared retries (since 0.18.1, [cratestack#1297](https://github.com/cratestack/cratestack/pull/1297)).** A durable prepared call retains the inner payload, not a reusable outer envelope. Each sealed attempt needs fresh claims and the matching response-opening state; see [idempotency](../guides/idempotency#preserve-a-request-before-the-first-attempt).
 
@@ -913,9 +913,9 @@ story per phase). The unsigned streaming it builds on is
 
 ## Amendment: signed subscription open with unsigned frames
 
-*(unreleased on main, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*
+*(since 0.20.4, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378))*
 
-Status: accepted on 2026-11-15; the **server half** (part B1) and the **generated Rust, TypeScript and Dart clients** (part B2) are implemented on main (since 0.20.4, unreleased, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378)). The TypeScript sealer is RPC only. The generated clients still refuse a sealed subscription open locally until the client PR lands. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
+Status: accepted on 2026-11-15; the **server half** (part B1) and the **generated Rust, TypeScript and Dart clients** (part B2) are implemented (since 0.20.4, [cratestack#1378](https://github.com/cratestack/cratestack/issues/1378)). The TypeScript sealer is RPC only. The text above stays as accepted; this section appends to it. It builds on the cbor-seq subscription binding of [ADR 0005](./rpc-transport-adr#amendment-the-cbor-seq-subscription-binding).
 
 ### Why
 
@@ -935,7 +935,7 @@ Today a signed route that is a subscription gets a sealed `406`, because §6 pla
 
 ### Wire
 
-*(since 0.20.4, unreleased; the server half. The generated clients do not send this yet.)*
+*(since 0.20.4)*
 
 - **Routes.** RPC: `POST /rpc/subscribe/{op_id}`, the sealed message as the body, or `GET` with the input as a query. REST: `GET /$procs/<name>` with the sealed message as the body. A browser's `fetch`, wasm `reqwest` and Dart web cannot send a `GET` with a body, so a REST open is for native clients, and the RPC `POST` is the form every client can send ([cratestack#1407](https://github.com/cratestack/cratestack/issues/1407)). A sealed `HEAD` on a subscription is a sealed `406`.
 - **Which opens.** The layer reads the generated `SUBSCRIPTION_FRAMES` table. On RPC a row matches by bare op id, and only for a route bound as a subscription, so a unary call to the same op id is not an open. On REST the row is `"<METHOD> <path>"` and matches the method as sent. An empty table (the default for a hand-built layer) opens nothing.
