@@ -504,7 +504,7 @@ Schemas can't switch styles without migrating clients, so pick deliberately. If 
 
 ## Subscriptions
 
-`model.<X>.subscribe` and `subscription procedure` ops are served on `/rpc/subscribe/{op_id}` (SSE, or, with `Accept: application/cbor-seq`, a CBOR sequence of frames *(since 0.20.3 (unreleased), [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*), and, with their extensions, over a WebSocket at `/rpc/ws` and over WebTransport. *(Since 0.18.0.)* See [Subscriptions](./subscriptions) for the delivery contract, the per-event read policy, the bindings and the clients.
+`model.<X>.subscribe` and `subscription procedure` ops are served on `/rpc/subscribe/{op_id}` (SSE, or, with `Accept: application/cbor-seq`, a CBOR sequence of frames *(since 0.20.3, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*), and, with their extensions, over a WebSocket at `/rpc/ws` and over WebTransport. *(Since 0.18.0.)* See [Subscriptions](./subscriptions) for the delivery contract, the per-event read policy, the bindings and the clients.
 
 ## Read Next
 

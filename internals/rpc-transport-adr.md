@@ -9,7 +9,7 @@ description: Per-schema RPC generation style with HTTP unary, batch, and content
 
 Accepted. HTTP surface shipped on `main` across PRs #20–#24, slated for the next minor release.
 
-**Amended 2026-11-15 (cbor-seq subscription binding)** *(unreleased on main, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*. Subscriptions later shipped over SSE, WebSocket and WebTransport. This amendment adds a fourth binding, `application/cbor-seq` over plain HTTP. See [Amendment: the cbor-seq subscription binding](#amendment-the-cbor-seq-subscription-binding).
+**Amended 2026-11-15 (cbor-seq subscription binding)** *(since 0.20.3, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*. Subscriptions later shipped over SSE, WebSocket and WebTransport. This amendment adds a fourth binding, `application/cbor-seq` over plain HTTP. See [Amendment: the cbor-seq subscription binding](#amendment-the-cbor-seq-subscription-binding).
 
 ## Date
 
@@ -190,7 +190,7 @@ This is TypeScript/RPC-transport only for now — the REST binding and gRPC-Web 
 
 ## Amendment: the cbor-seq subscription binding
 
-*(unreleased on main, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
+*(since 0.20.3, [cratestack#1001](https://github.com/cratestack/cratestack/issues/1001))*
 
 Status: accepted for implementation on 2026-11-15. Nothing here is released. The text above stays as accepted; this section appends to it.
 
