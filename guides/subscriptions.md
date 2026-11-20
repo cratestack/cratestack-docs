@@ -222,7 +222,7 @@ credentials on the handshake; a browser, which cannot set headers there, sends t
   | 4500 | the provider could not decide; retry, do not sign out |
 
 - A later `Init` refreshes the credentials, and must name the same principal.
-- The session closes with 4401 when the credential's `exp` passes. A WebSocket always did; WebTransport does too *(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*.
+- The session closes with 4401 when the credential's `exp` passes. A WebSocket always did; WebTransport does too *(since 0.20.5, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*.
 - Origins are same-origin by default (`OriginPolicy`).
 - Limits per socket and per principal are configuration (`WebSocketLimits`,
   `WebTransportLimits`), never schema syntax.
@@ -233,7 +233,7 @@ credentials on the handshake; a browser, which cannot set headers there, sends t
 
 ## Ending a stream when its principal is revoked
 
-*(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
+*(since 0.20.5, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
 
 A stream authenticates once, at open. Until 0.20.5 only its credential's `exp` ended it, so a device revoked a minute later kept receiving events. Now your app tells the server, and every stream and socket session of that principal ends, on every binding (SSE, cbor-seq, WebSocket, WebTransport), REST and RPC alike. Nothing changes until you call it: the default registry never revokes.
 
@@ -267,7 +267,7 @@ A stream is held under the keys of the context that opened it.
 
 `until` keeps a tombstone: until then the key is refused for **new stream opens and new socket `Init`s**, so a context your server still has cached cannot reopen what you just ended. Set it to the latest `exp` such a context could carry. `None` ends live streams only.
 
-Tombstone only with a terminal reason: `session_ended`, `principal_suspended`, `device_revoked` (or `credential_expired`). `revoke` or `publish` with `stream_lifetime` or `revocation_resync` ends the live streams but keeps **no** tombstone, with a `warn!` log, because clients retry those two reasons without a cap and would reconnect until the tombstone lapsed. *(Since 0.20.5, unreleased.)*
+Tombstone only with a terminal reason: `session_ended`, `principal_suspended`, `device_revoked` (or `credential_expired`). `revoke` or `publish` with `stream_lifetime` or `revocation_resync` ends the live streams but keeps **no** tombstone, with a `warn!` log, because clients retry those two reasons without a cap and would reconnect until the tombstone lapsed. *(Since 0.20.5.)*
 
 A tombstone does not refuse unary calls. Refusing those for a revoked principal stays the [`AuthProvider`](./auth-provider)'s job. A flood of revocations is bounded by `with_max_tombstones(n)` (default 100,000, `DEFAULT_MAX_TOMBSTONES`); over the cap, the tombstone that lapses soonest is dropped first, with a `warn!` log.
 
@@ -287,7 +287,7 @@ db.stream_revocations()
     .await?;
 ```
 
-`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). The local revoke is not undone: if the backplane send fails, `publish` returns `Err` with the local streams already ended and the tombstone kept, and only the other replicas missed it, so retry. A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change. Its payload is JSON `{"kind", "key", "reason", "until"}`, and `until` is **integer seconds since the epoch**: a fraction (what `extract(epoch from ...)` yields) or a numeric string is accepted and rounded up, so a tombstone never lapses early. *(Since 0.20.5, unreleased.)*
+`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). The local revoke is not undone: if the backplane send fails, `publish` returns `Err` with the local streams already ended and the tombstone kept, and only the other replicas missed it, so retry. A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change. Its payload is JSON `{"kind", "key", "reason", "until"}`, and `until` is **integer seconds since the epoch**: a fraction (what `extract(epoch from ...)` yields) or a numeric string is accepted and rounded up, so a tombstone never lapses early. *(Since 0.20.5.)*
 
 Delivery is **at most once**, like the backplane. When the feed says messages may have been lost (`Resync`, `Lagged`, or the listener dropping), the follower applies a `ResyncPolicy` and subscribes again:
 
@@ -432,7 +432,7 @@ that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket wi
 
 ### Reading why a stream ended
 
-*(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
+*(since 0.20.5, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
 
 Each client reads `details.reason` of the terminal `err` frame, and of the `{id: 0, err}` frame a closed socket session sends, on REST and RPC over every binding.
 
