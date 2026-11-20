@@ -173,7 +173,7 @@ ends with `unavailable` / `"subscription interrupted"`. Behind PgBouncer in tran
 
 ### Byte payloads on the backplane
 
-*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+*(since 0.20.6, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
 
 The backplane carries more than the framework's own events: your app can publish to a channel too. Until 0.20.6 a payload was text. Now `SubscriptionBackplane::publish_bytes(channel, &[u8])` sends a byte payload (a CBOR-encoded row, say), and a subscriber receives it as `BackplaneMessage::Bytes(Arc<[u8]>)`, exactly as published. Text (`BackplaneMessage::Payload`) and bytes can be mixed on one channel and arrive in the order they were published. `InProcessBackplane` and `PgNotifyBackplane` implement it.
 
@@ -204,7 +204,7 @@ The framework's own text channels (the model feed, topics and revocations) never
 
 #### The `NOTIFY` envelope is CBOR
 
-*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+*(since 0.20.6, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
 
 `PgNotifyBackplane` now writes each notification on the `cratestack_events` Postgres channel as the text `cbor:` followed by the standard, padded base64 of a CBOR map:
 
@@ -243,7 +243,7 @@ let db = Cratestack::builder(pool).with_backplane(backplane.clone()).build();
 
 #### Source-breaking edges
 
-*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+*(since 0.20.6, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
 
 - `BackplaneMessage` gains the variant `Bytes` and becomes `#[non_exhaustive]`. A `match` on it outside `cratestack-core` needs a wildcard arm, now and for every later variant.
 - `SubscriptionBackplane` gains `publish_bytes`. It is defaulted, so a hand-written backplane compiles but refuses bytes until it overrides it.
