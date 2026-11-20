@@ -1,6 +1,6 @@
 ---
 title: Subscriptions
-description: Live data from a CrateStack server — model feeds (`@@subscribe`), subscription procedures and topics — over SSE, WebSocket or WebTransport, with the read policy applied to every event, and typed Rust, TypeScript and Dart clients.
+description: Live data from a CrateStack server — model feeds (`@@subscribe`), subscription procedures and topics — over SSE, WebSocket or WebTransport, with the read policy applied to every event, streams ended when a principal is revoked, and typed Rust, TypeScript and Dart clients.
 ---
 
 # Subscriptions
@@ -222,7 +222,7 @@ credentials on the handshake; a browser, which cannot set headers there, sends t
   | 4500 | the provider could not decide; retry, do not sign out |
 
 - A later `Init` refreshes the credentials, and must name the same principal.
-- The session closes with 4401 when the credential's `exp` passes.
+- The session closes with 4401 when the credential's `exp` passes. A WebSocket always did; WebTransport does too *(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*.
 - Origins are same-origin by default (`OriginPolicy`).
 - Limits per socket and per principal are configuration (`WebSocketLimits`,
   `WebTransportLimits`), never schema syntax.
@@ -230,6 +230,92 @@ credentials on the handshake; a browser, which cannot set headers there, sends t
   or `WebTransportConfig` charges one token per subscription `Request`. A throttled open is an `err` frame
   with `resource_exhausted` and `details.retry_after_secs`, and the socket stays open. SSE opens are charged by
   `RateLimitLayer` already. See [Rate limiting](./rate-limiting#subscriptions).
+
+## Ending a stream when its principal is revoked
+
+*(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
+
+A stream authenticates once, at open. Until 0.20.5 only its credential's `exp` ended it, so a device revoked a minute later kept receiving events. Now your app tells the server, and every stream and socket session of that principal ends, on every binding (SSE, cbor-seq, WebSocket, WebTransport), REST and RPC alike. Nothing changes until you call it: the default registry never revokes.
+
+The generated runtime carries one registry, `StreamRevocations`. Read it with `db.stream_revocations()`, or give your own with `Cratestack::builder(..).with_stream_revocations(registry)`. On a `db = None` schema it exists only when the schema declares a `topic` or a `subscription procedure`.
+
+```rust
+// In the logout handler:
+let ended = db.stream_revocations().revoke(
+    RevocationKey::Session(sid),
+    StreamEndReason::SessionEnded,
+    Some(exp), // the latest `exp` a cached context could still carry
+);
+```
+
+`revoke(key, reason, until)` ends every live stream and socket session that holds `key` and returns how many it ended. A stream that already has an end reason keeps its first one.
+
+### Keys
+
+A stream is held under the keys of the context that opened it.
+
+| Key | Names | Revoke it for |
+|---|---|---|
+| `RevocationKey::Subject(String)` | the principal, `ctx.subject()` | a suspension: every session of one user |
+| `RevocationKey::Session(String)` | one login session, the `sid` claim | a logout |
+| `RevocationKey::Signer([u8; 32])` | the thumbprint of the key that signed the open | one enrolled device |
+| `RevocationKey::Custom(String)` | anything your app keys by | whatever you choose |
+
+`default_revocation_keys` reads the subject, a `sid` claim **only when it is a string**, and the signer thumbprint of a [signed open](./signed-transport). `sid` is not a reserved claim, so if your session id lives under another name, replace the function with `registry.with_keys(my_keys)`. It takes a `fn(&CratestackContext) -> Vec<RevocationKey>` and applies to streams and socket sessions alike, so a stream and the socket it rides on never disagree.
+
+### Tombstones
+
+`until` keeps a tombstone: until then the key is refused for **new stream opens and new socket `Init`s**, so a context your server still has cached cannot reopen what you just ended. Set it to the latest `exp` such a context could carry. `None` ends live streams only.
+
+A tombstone does not refuse unary calls. Refusing those for a revoked principal stays the [`AuthProvider`](./auth-provider)'s job. A flood of revocations is bounded by `with_max_tombstones(n)` (default 100,000, `DEFAULT_MAX_TOMBSTONES`); over the cap, the tombstone that lapses soonest is dropped first.
+
+The order inside a stream is revocation first, then the credential clock, then items. A socket `Init` refresh re-registers the session but does not extend streams already open.
+
+### Across replicas
+
+`revoke` acts on one replica. To reach the others, publish over the [subscription backplane](#every-replica-sees-every-event) and have every replica follow:
+
+```rust
+// Every replica, once at startup:
+tokio::spawn(db.stream_revocations().follow(backplane.clone()));
+
+// The handler that revokes:
+db.stream_revocations()
+    .publish(&*backplane, RevocationKey::Subject(user), StreamEndReason::PrincipalSuspended, Some(exp))
+    .await?;
+```
+
+`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change.
+
+Delivery is **at most once**, like the backplane. When the feed says messages may have been lost (`Resync`, `Lagged`, or the listener dropping), the follower applies a `ResyncPolicy` and subscribes again:
+
+| `ResyncPolicy` | Effect |
+|---|---|
+| `EndAll` (default) | every watched stream ends with `revocation_resync`: no stream is trusted when a revocation may have been lost |
+| `Ignore` | streams stay; a lost revocation goes unnoticed until the stream's `exp` or lifetime |
+
+`follow(backplane)` is `follow_with(backplane, ResyncPolicy::EndAll)`; pass `ResyncPolicy::Ignore` to `follow_with` where a flapping `LISTEN` costs more than that window. A revoke lost *without* a gap signal is missed the same way. If `follow` returns an error (it could not subscribe), spawn it again after a pause.
+
+A hand-written `SubscriptionDispatcher` gets none of this, as with expiry.
+
+### What the client sees
+
+The stream ends with a terminal `err` frame whose `details` is `{"reason": "<name>"}`. The two ends that existed before keep their code and message byte for byte, so an older client reads them as it always did.
+
+| `details.reason` | Code | Meaning | What the client does |
+|---|---|---|---|
+| `credential_expired` | `unauthenticated` 401 | the credential's `exp` passed | refresh the credential, then resubscribe |
+| `stream_lifetime` | `unavailable` 503 | a signed open reached `max_signed_stream_life` | resubscribe, with a jittered backoff |
+| `session_ended` | `unauthenticated` 401 | the login session ended | sign in again; never retry on its own |
+| `principal_suspended` | `permission_denied` 403 | the principal was suspended | never retry |
+| `device_revoked` | `permission_denied` 403 | the device key that signed the open was revoked | re-enrol; never retry |
+| `revocation_resync` | `unavailable` 503 | the revocation feed lost messages | resubscribe, with a jittered backoff |
+
+A refusal at open (a tombstoned key) is an ordinary error of the call with the same code and reason, before `Ready`.
+
+A WebSocket or WebTransport session that ends this way sends its own `{id: 0, err}` frame, then closes by the code's status: **4401** for 401, **4403** for 403, **4500** for 503. 4500 means retry, do not sign out.
+
+The reason list will grow, so every reader treats a name it does not know as no reason and falls back to the code.
 
 ## Clients
 
@@ -339,6 +425,39 @@ the socket sends instead. Until you set it, `auto` stays on SSE.
 `examples/realtime-chat` in the framework repository puts all of this together. It has a model
 feed, a topic behind a subscription procedure, and all three bindings. Its test proves in Chromium
 that `"auto"` uses WebTransport with UDP open and falls back to the WebSocket with UDP blocked.
+
+### Reading why a stream ended
+
+*(since 0.20.5, unreleased, [cratestack#1381](https://github.com/cratestack/cratestack/issues/1381))*
+
+Each client reads `details.reason` of the terminal `err` frame, and of the `{id: 0, err}` frame a closed socket session sends, on REST and RPC over every binding.
+
+| Client | Reader |
+|---|---|
+| Rust | `ClientError::stream_end_reason() -> Option<StreamEndReason>`. `None` for a refusal, an end without a reason, or a reason this client does not know. Match with a wildcard arm: `StreamEndReason` is `#[non_exhaustive]`. |
+| TypeScript | `CratestackSubscriptionError.endReason`, typed by the exported `StreamEndReason` union (`undefined` when absent or unknown). Helpers: `isTerminalEndReason(reason)`, `shouldResubscribe(error)` and `resubscribeDelayMs(attempt)` (full jitter, capped at 30 s). |
+| Dart | `CratestackSubscriptionException.endReason`, a `CratestackStreamEndReason` (`null` for none, `unknown` for a name a newer server sent), with `isTerminal` and `resubscribes`. |
+
+```rust
+while let Some(event) = notes.recv().await {
+    match event {
+        Ok(event) => render(event),
+        Err(error) => match error.stream_end_reason() {
+            Some(StreamEndReason::DeviceRevoked) => re_enrol(),
+            Some(StreamEndReason::SessionEnded) => sign_in_again(),
+            _ => { /* decide by the code, as before */ }
+        },
+    }
+}
+```
+
+The retry helpers apply the table above for you:
+
+- **Riverpod** (`--preset riverpod`): `cratestackSubscriptionRetry` never retries `session_ended`, `principal_suspended` or `device_revoked`. It retries `stream_lifetime` and `revocation_resync` with the default backoff, jittered. `credential_expired` keeps the default retry, since only your app can refresh the credential.
+- **`--tanstack`**: `useSubscriptionQuery` retries `stream_lifetime` and `revocation_resync` up to 5 times with a jittered delay, and nothing else. It used to set `retry: false`.
+- **`--swr`**: `useSubscription` reopens those two ends after a jittered backoff and surfaces every other end as `error`, as before.
+
+A client that never reads the reason keeps working: the code and message are the ones it knew.
 
 ### Bounding one SSE event
 
