@@ -213,28 +213,33 @@ The framework's own text channels (the model feed, topics and revocations) never
 | `v` | the version marker, `1`. Any other version is refused |
 | `c` | the backplane channel |
 | `t`, `b` or `r` | exactly one of: the text payload, the byte payload, or the 16-byte outbox event id |
-| `n` | a nonce, so Postgres does not fold two identical notifications of one transaction into one |
+| `n` | a nonce, so Postgres does not fold two identical notifications of one transaction into one. Readers ignore it |
 
 The `cbor:` prefix cannot be confused with the legacy JSON envelope, which starts with `{`. Unknown keys are skipped.
 
 - **The limit is on the final text.** Postgres refuses a notification of 8000 bytes or more. The backplane applies **7,900 bytes** to the finished `cbor:` text, not to the payload, and base64 grows 3 bytes into 4. The largest byte payload that fits is therefore about **5.8 KB**, depending on the channel name.
+- **A text payload now fits in less.** Under CBOR a plain-text `publish` or topic message must fit in about **5,900 bytes** with a one-character channel, less the channel's length (5,866 for a 35-character topic channel). Under JSON it is about 7,870 (7,840). A text payload between those sizes used to be sent and now errors with `BadRequest`, unless `PgNotifyBackplane::use_json_envelope()` is on, which keeps the JSON figure.
 - **An oversized byte payload is an error.** `publish_bytes` returns `BadRequest` that names the payload size, the encoded size and the limit. It never truncates, and there is no outbox fallback, because no row holds the payload. Split it, or keep the bytes elsewhere and publish a reference.
-- **A text model event still falls back.** One over the limit goes as a reference to its outbox row, as before.
-- **The reader reads both envelopes.** A 0.20.6 replica understands the CBOR envelope and the legacy JSON one (`{"c","p","r","n"}`), so it hears a 0.20.5 replica. A notification that is neither (bad base64, bad CBOR, an unknown version, no payload) is logged with `warn!` and skipped. The listener keeps running.
+- **A text model event still falls back.** One over the limit goes as a reference to its outbox row, as before. If even the reference does not fit, the write fails with `CratestackError::Internal` (the model name is the schema's, not the caller's input) instead of committing an event no subscriber is told of. Under CBOR that starts at a model name of about 5,880 characters (JSON: about 7,860); in 0.20.5 it needed about 7,900 and failed the statement with a database error.
+- **The reader reads both envelopes.** A 0.20.6 replica understands the CBOR envelope and the legacy JSON one (`{"c","p","r","n"}`, plus `b` for bytes), so it hears a 0.20.5 replica. Whitespace before the JSON `{` is accepted, as 0.20.5 accepted it. The nonce `n` is ignored.
+- **The readers are strict.** A notification is refused, logged with `warn!` and skipped when it is bad base64 or bad CBOR, has an unknown version, carries no payload, or is ambiguous: under CBOR a duplicate key, a second payload key (`t`/`b`/`r`) or bytes after the map; under JSON more than one of `p`/`r`/`b`. The listener keeps running.
 
 #### Rolling deploy from 0.20.5
 
 A 0.20.5 replica cannot read the CBOR envelope: its JSON parse fails and it skips the notification. During a mixed rollout, model events and topic messages written by a 0.20.6 replica would not reach it. In two steps:
 
-1. **Deploy 0.20.6 with `with_json_envelope()` on every replica.** They write the legacy JSON envelope that old replicas read, and read both.
-2. **Once no 0.20.5 replica is left,** remove the option and redeploy. They write CBOR from then on.
+1. **Deploy 0.20.6 with `PgNotifyBackplane::use_json_envelope()` called at startup on every replica.** They write the legacy JSON envelope that old replicas read, and read both.
+2. **Once no 0.20.5 replica is left,** remove the call and redeploy. They write CBOR from then on.
 
 ```rust
-let backplane = Arc::new(PgNotifyBackplane::new(pool.clone()).with_json_envelope());
+// Once, at startup, before the first write.
+PgNotifyBackplane::use_json_envelope();
+
+let backplane = Arc::new(PgNotifyBackplane::new(pool.clone()));
 let db = Cratestack::builder(pool).with_backplane(backplane.clone()).build();
 ```
 
-`with_json_envelope()` is **process-wide**. The writers that hold no backplane (a model event's write path, a topic's `publish_in_tx`) share the setting, so it covers every notification this process writes from the moment it is called. In JSON mode a byte payload goes as base64 in a new field, `b`, which 0.20.5 readers ignore: bytes reach 0.20.6 replicas only. The 7,900-byte limit then applies to the base64 text. Skipping step 1 costs a 0.20.5 replica the notifications it cannot read, until it is upgraded.
+`use_json_envelope()` is a **process-wide switch**, not a setting of one backplane. It covers every `PgNotifyBackplane` in the process, built before or after the call, and the writers that hold no backplane (a model event's outbox write, a topic's `publish_in_tx`). Writes made before the call went out as CBOR, and the switch cannot be undone in-process: to go back, redeploy without it. `with_json_envelope()` is a thin builder wrapper around it (`PgNotifyBackplane::new(pool).with_json_envelope()`); it is just as process-wide. In JSON mode a byte payload goes as base64 in a new field, `b`, which 0.20.5 readers ignore: bytes reach 0.20.6 replicas only. The 7,900-byte limit then applies to the base64 text. Skipping step 1 costs a 0.20.5 replica the notifications it cannot read, until it is upgraded.
 
 #### Source-breaking edges
 
