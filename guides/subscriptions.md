@@ -171,6 +171,79 @@ ends with `unavailable` / `"subscription interrupted"`. Behind PgBouncer in tran
 `LISTEN` does not work. In that case, run a single replica with
 `Cratestack::builder(pool).with_backplane(Arc::new(cratestack::InProcessBackplane::new()))`.
 
+### Byte payloads on the backplane
+
+*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+
+The backplane carries more than the framework's own events: your app can publish to a channel too. Until 0.20.6 a payload was text. Now `SubscriptionBackplane::publish_bytes(channel, &[u8])` sends a byte payload (a CBOR-encoded row, say), and a subscriber receives it as `BackplaneMessage::Bytes(Arc<[u8]>)`, exactly as published. Text (`BackplaneMessage::Payload`) and bytes can be mixed on one channel and arrive in the order they were published. `InProcessBackplane` and `PgNotifyBackplane` implement it.
+
+```rust
+use cratestack::{BackplaneMessage, CratestackCodec, CborCodec};
+use futures_util::StreamExt;
+
+// Encode with CrateStack's own CBOR, not hand-rolled base64.
+let bytes = CborCodec.encode(&row)?;
+backplane.publish_bytes("rows.invoice", &bytes).await?;
+
+let mut rx = backplane.subscribe("rows.invoice").await?;
+while let Some(message) = rx.next().await {
+    match message {
+        BackplaneMessage::Bytes(bytes) => { /* decode with the same codec */ }
+        BackplaneMessage::Payload(text) => { /* text published on this channel */ }
+        // Required: the enum is #[non_exhaustive] (see below).
+        _ => {}
+    }
+}
+```
+
+`Resync` and `Lagged` fall under the wildcard in this sketch; a real consumer ends the stream on either, as the framework's own do. Encoding is the publisher's job: the backplane moves bytes and never looks inside them.
+
+A hand-written `SubscriptionBackplane` still compiles, because `publish_bytes` has a default. The default returns an `Internal` error, "this backplane does not carry byte payloads", so override it if your backplane should carry bytes.
+
+The framework's own text channels (the model feed, topics and revocations) never publish bytes. Should a stray `Bytes` message reach one, that consumer logs a `warn!`, skips the message and keeps running. It does not end the stream or panic.
+
+#### The `NOTIFY` envelope is CBOR
+
+*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+
+`PgNotifyBackplane` now writes each notification on the `cratestack_events` Postgres channel as the text `cbor:` followed by the standard, padded base64 of a CBOR map:
+
+| key | content |
+|---|---|
+| `v` | the version marker, `1`. Any other version is refused |
+| `c` | the backplane channel |
+| `t`, `b` or `r` | exactly one of: the text payload, the byte payload, or the 16-byte outbox event id |
+| `n` | a nonce, so Postgres does not fold two identical notifications of one transaction into one |
+
+The `cbor:` prefix cannot be confused with the legacy JSON envelope, which starts with `{`. Unknown keys are skipped.
+
+- **The limit is on the final text.** Postgres refuses a notification of 8000 bytes or more. The backplane applies **7,900 bytes** to the finished `cbor:` text, not to the payload, and base64 grows 3 bytes into 4. The largest byte payload that fits is therefore about **5.8 KB**, depending on the channel name.
+- **An oversized byte payload is an error.** `publish_bytes` returns `BadRequest` that names the payload size, the encoded size and the limit. It never truncates, and there is no outbox fallback, because no row holds the payload. Split it, or keep the bytes elsewhere and publish a reference.
+- **A text model event still falls back.** One over the limit goes as a reference to its outbox row, as before.
+- **The reader reads both envelopes.** A 0.20.6 replica understands the CBOR envelope and the legacy JSON one (`{"c","p","r","n"}`), so it hears a 0.20.5 replica. A notification that is neither (bad base64, bad CBOR, an unknown version, no payload) is logged with `warn!` and skipped. The listener keeps running.
+
+#### Rolling deploy from 0.20.5
+
+A 0.20.5 replica cannot read the CBOR envelope: its JSON parse fails and it skips the notification. During a mixed rollout, model events and topic messages written by a 0.20.6 replica would not reach it. In two steps:
+
+1. **Deploy 0.20.6 with `with_json_envelope()` on every replica.** They write the legacy JSON envelope that old replicas read, and read both.
+2. **Once no 0.20.5 replica is left,** remove the option and redeploy. They write CBOR from then on.
+
+```rust
+let backplane = Arc::new(PgNotifyBackplane::new(pool.clone()).with_json_envelope());
+let db = Cratestack::builder(pool).with_backplane(backplane.clone()).build();
+```
+
+`with_json_envelope()` is **process-wide**. The writers that hold no backplane (a model event's write path, a topic's `publish_in_tx`) share the setting, so it covers every notification this process writes from the moment it is called. In JSON mode a byte payload goes as base64 in a new field, `b`, which 0.20.5 readers ignore: bytes reach 0.20.6 replicas only. The 7,900-byte limit then applies to the base64 text. Skipping step 1 costs a 0.20.5 replica the notifications it cannot read, until it is upgraded.
+
+#### Source-breaking edges
+
+*(since 0.20.6, unreleased, [cratestack#1419](https://github.com/cratestack/cratestack/pull/1419))*
+
+- `BackplaneMessage` gains the variant `Bytes` and becomes `#[non_exhaustive]`. A `match` on it outside `cratestack-core` needs a wildcard arm, now and for every later variant.
+- `SubscriptionBackplane` gains `publish_bytes`. It is defaulted, so a hand-written backplane compiles but refuses bytes until it overrides it.
+- `LocalHub::deliver` (`#[doc(hidden)]`) now takes a `BackplaneMessage`, not an `Arc<str>`.
+
 ## The bindings
 
 | Binding | Where | Frames | When |
