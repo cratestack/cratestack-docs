@@ -267,9 +267,9 @@ A stream is held under the keys of the context that opened it.
 
 `until` keeps a tombstone: until then the key is refused for **new stream opens and new socket `Init`s**, so a context your server still has cached cannot reopen what you just ended. Set it to the latest `exp` such a context could carry. `None` ends live streams only.
 
-A tombstone does not refuse unary calls. Refusing those for a revoked principal stays the [`AuthProvider`](./auth-provider)'s job. A flood of revocations is bounded by `with_max_tombstones(n)` (default 100,000, `DEFAULT_MAX_TOMBSTONES`); over the cap, the tombstone that lapses soonest is dropped first.
+A tombstone does not refuse unary calls. Refusing those for a revoked principal stays the [`AuthProvider`](./auth-provider)'s job. A flood of revocations is bounded by `with_max_tombstones(n)` (default 100,000, `DEFAULT_MAX_TOMBSTONES`); over the cap, the tombstone that lapses soonest is dropped first, with a `warn!` log.
 
-The order inside a stream is revocation first, then the credential clock, then items. A socket `Init` refresh re-registers the session but does not extend streams already open.
+The order inside a stream is revocation first, then the credential clock, then items. A socket `Init` refresh re-registers the session but does not extend streams already open, and a revoke that lands mid-refresh still ends the session.
 
 ### Across replicas
 
@@ -285,7 +285,7 @@ db.stream_revocations()
     .await?;
 ```
 
-`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change.
+`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). The local revoke is not undone: if the backplane send fails, `publish` returns `Err` with the local streams already ended and the tombstone kept, and only the other replicas missed it, so retry. A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change.
 
 Delivery is **at most once**, like the backplane. When the feed says messages may have been lost (`Resync`, `Lagged`, or the listener dropping), the follower applies a `ResyncPolicy` and subscribes again:
 
@@ -294,7 +294,9 @@ Delivery is **at most once**, like the backplane. When the feed says messages ma
 | `EndAll` (default) | every watched stream ends with `revocation_resync`: no stream is trusted when a revocation may have been lost |
 | `Ignore` | streams stay; a lost revocation goes unnoticed until the stream's `exp` or lifetime |
 
-`follow(backplane)` is `follow_with(backplane, ResyncPolicy::EndAll)`; pass `ResyncPolicy::Ignore` to `follow_with` where a flapping `LISTEN` costs more than that window. A revoke lost *without* a gap signal is missed the same way. If `follow` returns an error (it could not subscribe), spawn it again after a pause.
+`follow(backplane)` is `follow_with(backplane, ResyncPolicy::EndAll)`; pass `ResyncPolicy::Ignore` to `follow_with` where a flapping `LISTEN` costs more than that window. A revoke lost *without* a gap signal is missed the same way.
+
+A payload cannot end the follower. An out-of-range `until` is clamped to now + 24 h and the revoke still applies; a malformed payload is skipped with a `warn!` log; a `reason` this version does not know (a newer replica, mid-rollout) still revokes the key, as `session_ended`, with a warning. However the follower ends, it applies its `ResyncPolicy` last, so with `EndAll` every watched stream ends with `revocation_resync` rather than staying trusted with nothing listening. If `follow` returns an error (it could not subscribe), spawn it again after a pause.
 
 A hand-written `SubscriptionDispatcher` gets none of this, as with expiry.
 
@@ -313,7 +315,7 @@ The stream ends with a terminal `err` frame whose `details` is `{"reason": "<nam
 
 A refusal at open (a tombstoned key) is an ordinary error of the call with the same code and reason, before `Ready`.
 
-A WebSocket or WebTransport session that ends this way sends its own `{id: 0, err}` frame, then closes by the code's status: **4401** for 401, **4403** for 403, **4500** for 503. 4500 means retry, do not sign out.
+A WebSocket or WebTransport session that ends this way sends its own `{id: 0, err}` frame, then closes by the code's status. On a revocation or expiry, each open subscription first gets its own `err` frame with the reason (WebSocket: one per subscription, in id order; WebTransport: one on each stream), so none of them sees a bare close. The close codes are: **4401** for 401, **4403** for 403, **4500** for 503. 4500 means retry, do not sign out.
 
 The reason list will grow, so every reader treats a name it does not know as no reason and falls back to the code.
 
@@ -453,9 +455,11 @@ while let Some(event) = notes.recv().await {
 
 The retry helpers apply the table above for you:
 
-- **Riverpod** (`--preset riverpod`): `cratestackSubscriptionRetry` never retries `session_ended`, `principal_suspended` or `device_revoked`. It retries `stream_lifetime` and `revocation_resync` with the default backoff, jittered. `credential_expired` keeps the default retry, since only your app can refresh the credential.
-- **`--tanstack`**: `useSubscriptionQuery` retries `stream_lifetime` and `revocation_resync` up to 5 times with a jittered delay, and nothing else. It used to set `retry: false`.
+- **Riverpod** (`--preset riverpod`): `cratestackSubscriptionRetry` never retries `session_ended`, `principal_suspended` or `device_revoked`. It retries `stream_lifetime` and `revocation_resync` with the default backoff, jittered, and never gives up on them (the count that sizes the backoff is clamped to 5). `credential_expired` keeps the default retry, since only your app can refresh the credential.
+- **`--tanstack`**: `useSubscriptionQuery` retries `stream_lifetime` and `revocation_resync` with a jittered delay and no cap on the count, and nothing else. It used to set `retry: false`.
 - **`--swr`**: `useSubscription` reopens those two ends after a jittered backoff and surfaces every other end as `error`, as before.
+
+A session's `{id: 0, err}` is the terminal error of every subscription open on that socket. The Rust WebSocket client, the TypeScript socket runtime (for every open subscription, and for any opened later on that dead socket) and the Dart socket reader hand it to each one with its code, message and `details.reason`, so a stream a revoke ended is not mistaken for a dropped socket and resubscribed.
 
 A client that never reads the reason keeps working: the code and message are the ones it knew.
 
