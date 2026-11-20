@@ -267,6 +267,8 @@ A stream is held under the keys of the context that opened it.
 
 `until` keeps a tombstone: until then the key is refused for **new stream opens and new socket `Init`s**, so a context your server still has cached cannot reopen what you just ended. Set it to the latest `exp` such a context could carry. `None` ends live streams only.
 
+Tombstone only with a terminal reason: `session_ended`, `principal_suspended`, `device_revoked` (or `credential_expired`). `revoke` or `publish` with `stream_lifetime` or `revocation_resync` ends the live streams but keeps **no** tombstone, with a `warn!` log, because clients retry those two reasons without a cap and would reconnect until the tombstone lapsed. *(Since 0.20.5, unreleased.)*
+
 A tombstone does not refuse unary calls. Refusing those for a revoked principal stays the [`AuthProvider`](./auth-provider)'s job. A flood of revocations is bounded by `with_max_tombstones(n)` (default 100,000, `DEFAULT_MAX_TOMBSTONES`); over the cap, the tombstone that lapses soonest is dropped first, with a `warn!` log.
 
 The order inside a stream is revocation first, then the credential clock, then items. A socket `Init` refresh re-registers the session but does not extend streams already open, and a revoke that lands mid-refresh still ends the session.
@@ -285,7 +287,7 @@ db.stream_revocations()
     .await?;
 ```
 
-`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). The local revoke is not undone: if the backplane send fails, `publish` returns `Err` with the local streams already ended and the tombstone kept, and only the other replicas missed it, so retry. A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change.
+`publish` revokes on this replica, then sends the revocation on the `cratestack.revocation` channel (`REVOCATION_CHANNEL`, server-internal JSON, never part of the client wire). The local revoke is not undone: if the backplane send fails, `publish` returns `Err` with the local streams already ended and the tombstone kept, and only the other replicas missed it, so retry. A replica that is not following never hears it. With `PgNotifyBackplane` you can issue the same `NOTIFY` in the transaction that records the change. Its payload is JSON `{"kind", "key", "reason", "until"}`, and `until` is **integer seconds since the epoch**: a fraction (what `extract(epoch from ...)` yields) or a numeric string is accepted and rounded up, so a tombstone never lapses early. *(Since 0.20.5, unreleased.)*
 
 Delivery is **at most once**, like the backplane. When the feed says messages may have been lost (`Resync`, `Lagged`, or the listener dropping), the follower applies a `ResyncPolicy` and subscribes again:
 
@@ -296,7 +298,7 @@ Delivery is **at most once**, like the backplane. When the feed says messages ma
 
 `follow(backplane)` is `follow_with(backplane, ResyncPolicy::EndAll)`; pass `ResyncPolicy::Ignore` to `follow_with` where a flapping `LISTEN` costs more than that window. A revoke lost *without* a gap signal is missed the same way.
 
-A payload cannot end the follower. An out-of-range `until` is clamped to now + 24 h and the revoke still applies; a malformed payload is skipped with a `warn!` log; a `reason` this version does not know (a newer replica, mid-rollout) still revokes the key, as `session_ended`, with a warning. However the follower ends, it applies its `ResyncPolicy` last, so with `EndAll` every watched stream ends with `revocation_resync` rather than staying trusted with nothing listening. If `follow` returns an error (it could not subscribe), spawn it again after a pause.
+A payload cannot end the follower. The revoke always applies. Only an `until` no `SystemTime` can hold is clamped to now + 24 h; a negative, NaN or non-numeric `until` revokes with no tombstone, with a `warn!` log; a malformed payload is skipped with a `warn!` log; a `reason` this version does not know (a newer replica, mid-rollout) still revokes the key, as `session_ended`, with a warning. However the follower ends, it applies its `ResyncPolicy` last, so with `EndAll` every watched stream ends with `revocation_resync` rather than staying trusted with nothing listening. If `follow` returns an error (it could not subscribe), spawn it again after a pause.
 
 A hand-written `SubscriptionDispatcher` gets none of this, as with expiry.
 
