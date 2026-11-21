@@ -165,8 +165,10 @@ framework's default `NULLS LAST`.
 
 A spatial field is a `Vec<u8>` holding **EWKB**, PostGIS's binary
 format — the same Rust type a `Bytes` field gets, so it serialises as
-base64 on the REST/RPC surface and maps to `Uint8List` (Dart) and
-`Uint8Array` (TypeScript) in generated clients.
+an array of integers on JSON and, under CBOR, as a byte string *(since 0.21.0, unreleased, [cratestack#1425](https://github.com/cratestack/cratestack/issues/1425))*
+(an array of integers before 0.21.0), and maps to `Uint8List` (Dart) and
+`Uint8Array` (TypeScript) in generated clients. See
+[Bytes on the wire](../reference/scalars#bytes-on-the-wire).
 
 CrateStack does not parse EWKB for you. Produce and consume it with
 PostGIS's own functions (`ST_GeogFromText`, `ST_AsEWKB`) or a geometry

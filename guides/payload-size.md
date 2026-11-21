@@ -209,6 +209,24 @@ Adding an enum variant is a schema change and a client regeneration.
 Don't shorten variant names into codes (`PR` for `PendingReview`) to save bytes. Under
 compression the saving is near zero, and the cost is a schema nobody can read.
 
+### Binary fields: `Bytes`, `Geography`, `Geometry`
+
+*(since 0.21.0, unreleased, [cratestack#1425](https://github.com/cratestack/cratestack/issues/1425))*. Under CBOR these go out as a byte string: `{"data": [1, 2, 255]}`
+is `a1 64 64617461 43 01 02 ff`, where it was `a1 64 64617461 83 01 02 18 ff`.
+A value takes about half the bytes it did, because every byte from 24 up cost
+two as an integer, and a 4 MiB value is 4,194,309 bytes on the wire. It applies to responses, `type` blocks, procedure `Args` and CRUD inputs from the Rust client, `/rpc/batch`
+frames and CBOR socket items. JSON is unchanged (an array of integers), so the
+saving is a CBOR one; compression helps JSON, not the shape.
+
+This is a hard cutover with no switch, so upgrade readers before the server:
+
+- Servers read both forms since 0.8.15, and the TypeScript client needed no change.
+- **Dart** needs `cratestack_cbor` 0.19.6 or later. Generated packages now require it, which moves existing lock files. The Dart client still *sends* arrays, which servers accept.
+- **Rust clients** up to 0.20.6 cannot read a projection view (`get_view`, `list_view`, `list_view_paged`, and the RPC `view` calls) from a 0.21.0 server; later clients can.
+- A hand-written decoder that accepts only an array of integers breaks.
+- **Not changed:** bare procedure returns (`returns Bytes`, `Bytes?`, `Bytes[]`, `@stream`) are still arrays of integers.
+- **Retries:** the idempotency request hash covers the raw body, so retrying one `Idempotency-Key` across a client upgrade is refused as a payload mismatch until the key expires ([idempotency](./idempotency)). COSE envelopes, ETags and op-contract digests do not change. Code that signs or hashes a re-encoding of a generated value must verify over the stored bytes, since bytes signed before the upgrade no longer re-encode to themselves.
+
 ### Identifiers
 
 `Int` ids are 1–9 bytes. `Uuid` is 17 bytes on CBOR and 38 on JSON (a generated TypeScript or Dart client still *sends* it as CBOR text, 37 bytes, which servers accept since 0.19.6; responses are 17). A `Cuid` is text. Choose by

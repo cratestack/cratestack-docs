@@ -22,7 +22,7 @@ representation.
 | `DateTime` | `chrono::DateTime<chrono::Utc>`  | `TIMESTAMPTZ`     |                                                        |
 | `Decimal`  | `cratestack::Decimal`            | `NUMERIC`         | See backend selection below.                           |
 | `Json`     | `cratestack::Json<cratestack::Value>` | `JSONB`      |                                                        |
-| `Bytes`    | `Vec<u8>`                        | `BYTEA`           |                                                        |
+| `Bytes`    | `Vec<u8>`                        | `BYTEA`           | CBOR: a byte string; JSON: an array of integers. `Geography` and `Geometry` (EWKB) are the same *(since 0.21.0, unreleased, [cratestack#1425](https://github.com/cratestack/cratestack/issues/1425))*. Before 0.21.0 CBOR wrote an array of integers too, and servers accept either form on requests. See [Bytes on the wire](#bytes-on-the-wire). |
 | `Uuid`     | `cratestack::uuid::Uuid`         | `UUID`            | CBOR: 16-byte string; JSON: text. Servers accept either form on CBOR requests *(since 0.19.6, [cratestack#1359](https://github.com/cratestack/cratestack/issues/1359))*; generated TypeScript and Dart clients revive the bytes into a `string` / `String`. |
 
 Type modifiers `?` (optional) and `[]` (list) apply on top of any scalar
@@ -48,6 +48,37 @@ signature.
 
 See [Spatial Columns (PostGIS)](../guides/spatial-postgis) for the
 geography/geometry argument forms, generated DDL and query builders.
+
+## Bytes on the wire
+
+*(since 0.21.0, unreleased, [cratestack#1425](https://github.com/cratestack/cratestack/issues/1425))*. Under CBOR, a generated `Bytes`, `Geography` or `Geometry` value is
+written as a CBOR byte string (major type 2). Before 0.21.0 it was an array of
+integers.
+
+```text
+{"data": [1, 2, 255]}
+0.21.0 and later  a1 64 64617461 43 01 02 ff
+before 0.21.0     a1 64 64617461 83 01 02 18 ff
+```
+
+A field takes about half the bytes it did (each byte from 24 up took two), and
+a generic decoder holds one value per field instead of one per byte. This covers
+model responses (REST and RPC `get` and `list`, `Page` and `CursorPage` items,
+included relations, `@computed` values), `type` blocks, procedure `Args` and
+CRUD inputs (including patch shapes) sent by the Rust client, `/rpc/batch`
+frames and the CBOR WebSocket, WebTransport and `cbor-seq` items.
+
+**JSON is unchanged.** It is still an array of integers, byte for byte, so JSON
+bodies, SSE, audit and outbox payloads, cursors and JSON Schema do not move.
+
+Servers have accepted both forms in requests since 0.8.15
+([cratestack#783](https://github.com/cratestack/cratestack/issues/783)). The
+upgrade rules for readers, and what is not covered yet, are in
+[CBOR byte strings](../guides/payload-size#binary-fields-bytes-geography-geometry).
+For a `Vec<u8>` field you write yourself, which keeps serde's default, add
+`#[serde(serialize_with = "cratestack::serialize_bytes_shape")]` to write the
+same form, and `#[serde(deserialize_with = "cratestack::deserialize_bytes")]` to
+read either one.
 
 ## BigInt
 
