@@ -54,6 +54,60 @@ and similar predicates can compare typed fields instead of substring-matching
 the stringified detail. A missing row (`sqlx::Error::RowNotFound`) is mapped
 to `CratestackError::NotFound` so the response is a 404 rather than a 500.
 
+### Reading a database error
+
+*(since 0.21.0, unreleased, [a24-context#745](https://github.com/skyengpro/a24-context/issues/745), [cratestack#1429](https://github.com/cratestack/cratestack/pull/1429))*
+A `DatabaseTyped` (or `ConflictTyped`) error now carries the table, column and schema the
+database named, next to the SQLSTATE and constraint. Read all of them through accessors on
+`CratestackError`, so you never match the variant or the message text:
+
+| Accessor | Returns |
+| --- | --- |
+| `db_sqlstate()` | the five-character SQLSTATE (`"23505"`) |
+| `db_constraint()` | the constraint name, when the error is constraint-related |
+| `db_table()` / `db_column()` / `db_schema()` | the table, column (NOT NULL and similar) and schema the server reported |
+| `db_message()` | the server's own message text, for when you want it on purpose |
+
+Each returns `None` for any other variant, including the untyped `Database(String)`.
+
+**Log the accessors, not `Display`.** `Display` is unchanged: it still prints the server
+message, which can quote row values. The SQLSTATE,
+constraint, table, column and schema are names from your schema, not row data, so they are the
+log-safe path. `db_message()` is the same text `Display` prints, so keep it out of logs that
+must not carry row values.
+
+A classification sketch (SQLSTATE plus constraint plus table, never the message):
+
+```rust
+match (err.db_sqlstate(), err.db_constraint(), err.db_table()) {
+    // Unique violation on a named constraint: a conflict the caller can fix.
+    (Some("23505"), Some(name), _) => handle_conflict(name),
+    // Your own trigger's `RAISE ... USING ERRCODE = 'A2401'`: any code passes through.
+    (Some("A2401"), _, _) => handle_reservation_refused(),
+    // Serialization failure or deadlock: retry the transaction.
+    (Some("40001" | "40P01"), _, _) => retry(),
+    // A CHECK failure with a table and no constraint: no partition accepts the row.
+    (Some("23514"), None, Some(table)) => handle_partition_miss(table),
+    _ => fail(),
+}
+```
+
+`DbErrorInfo`, the payload of both variants, is `#[non_exhaustive]` since 0.21.0, so a struct
+literal outside `cratestack-core` no longer compiles. Build one with
+`DbErrorInfo::new(detail).with_sqlstate(..).with_constraint(..).with_table(..).with_column(..).with_schema(..)`
+and read it with its `table()`, `column()` and `schema()` methods (its `detail`, `sqlstate` and
+`constraint` fields stay public).
+
+Two more changes in 0.21.0 *(unreleased)*:
+
+- sqlx `Configuration` and `Tls` errors map to the fixed messages `database connection
+  configuration error` and `database TLS error` (still `Database`, not retryable). sqlx's own text
+  for them can carry the connection URL and password, so the cause goes to tracing only.
+- The migration runner, the idempotency store, the audit-table bootstrap and the materialized-view
+  refresh used to flatten sqlx errors to `Database(String)`. They now go through
+  `cratestack_error_from_sqlx`, so they keep their SQLSTATE and constraint, a lost connection
+  there is `Unavailable` (503) instead of 500, and a missing row is `NotFound`.
+
 The closure receives the transaction and must return it back paired with
 the body's result — the wrapper owns the commit so the retry loop can
 control it.
