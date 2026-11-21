@@ -178,6 +178,10 @@ The generated `router()` / `rpc_router()` entry points apply a request body ceil
 
 On the RPC binding specifically, `POST /rpc/batch` additionally caps the number of frames in one batch at `BATCH_MAX_ITEMS` (1000), independent of the byte-size limit above — a batch over the frame cap is rejected with an error naming the maximum, even if its total byte size is well under `body_limit_bytes`.
 
+### Byte values under CBOR
+
+*(since 0.21.0, unreleased, [cratestack#1425](https://github.com/cratestack/cratestack/issues/1425))* Under `application/cbor`, a generated `Bytes`, `Geography` or `Geometry` value is a CBOR byte string (major type 2) in responses, `/rpc/batch` frames and CBOR socket items, and in requests from the Rust client. Under `application/json` it is an array of integers, as before. A decoder must accept both forms on input: servers do since 0.8.15. Bare procedure returns (`Bytes`, `Bytes?`, `Bytes[]`, `@stream`) are still arrays of integers, and the Dart client still sends arrays. COSE signs the bytes as sent, so envelopes are unaffected. See [Bytes on the wire](../reference/scalars#bytes-on-the-wire).
+
 ### CBOR nesting depth limit
 
 *(Since 0.19.4, [cratestack#1315](https://github.com/cratestack/cratestack/issues/1315).)* The byte limit above does not bound how deeply a body nests: about 8000 one-element-array headers fit in 8 KB, and before 0.19.4 decoding them overflowed the stack, an uncatchable crash. Every CBOR decode now refuses input nested deeper than **128** levels, where a level is an array, a map or a tag, definite or indefinite. Exactly 128 levels decode; 129 are refused. The server answers a refused request body with the usual codec error (`CODEC_ERROR` on REST, `invalid_argument` on `/rpc`, status 400), and the process carries on. The server's `CodecSet` path always uses the default and has no knob. See [Reducing payload size](../guides/payload-size#cbor-nesting-depth-limit) for the limit's reach and how to change it where it can be changed.
